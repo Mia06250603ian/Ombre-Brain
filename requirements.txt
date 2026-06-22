@@ -27,3 +27,8 @@ httpx>=0.27.0
 # 向量相似度计算 (导入模式/聚类)
 numpy>=1.24.0
 scikit-learn>=1.2.0
+
+# 本地 Embedding 模型（API 不可用时的 fallback）
+# 安装后约 420MB 模型权重会在首次使用时自动下载
+# Local embedding fallback when DeepSeek API is unavailable (~420 MB download on first use)
+sentence-transformers>=2.2.0
