@@ -2,10 +2,23 @@
 # Module: Embedding Engine (embedding_engine.py)
 # 模块：向量化引擎
 #
-# Generates embeddings via Gemini API (OpenAI-compatible),
-# stores them in SQLite, and provides cosine similarity search.
-# 通过 Gemini API（OpenAI 兼容）生成 embedding，
-# 存储在 SQLite 中，提供余弦相似度搜索。
+# Primary backend: DeepSeek API (OpenAI-compatible)
+#   - base_url: OMBRE_BASE_URL env var  (falls back to config, then deepseek default)
+#   - api_key:  OMBRE_API_KEY env var   (falls back to config)
+#   - model:    config embedding.model  (default: "deepseek-embedding")
+#
+# Fallback backend: sentence-transformers (local, no API required)
+#   - model: paraphrase-multilingual-MiniLM-L12-v2
+#   - activated automatically when API call fails or no API key is set
+#   - requires: pip install sentence-transformers
+#
+# If both backends are unavailable, all operations degrade silently to
+# keyword-only search — the rest of the system keeps working.
+#
+# Storage: SQLite (buckets_dir/embeddings.db)
+#   - model_id column tracks which backend produced each embedding
+#   - search_similar() only compares embeddings from the same backend
+#     to avoid dimension mismatches between API (e.g. 1536-d) and local (384-d)
 #
 # Depended on by: server.py, bucket_manager.py
 # 被谁依赖：server.py, bucket_manager.py
@@ -15,38 +28,46 @@ import os
 import json
 import math
 import sqlite3
+import asyncio
 import logging
 
-from openai import AsyncOpenAI
-
 logger = logging.getLogger("ombre_brain.embedding")
+
+_LOCAL_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
 
 
 class EmbeddingEngine:
     """
-    Embedding generation + SQLite vector storage + cosine search.
-    向量生成 + SQLite 向量存储 + 余弦搜索。
+    Dual-backend embedding engine with automatic fallback.
+    双后端向量化引擎，API不可用时自动降级到本地模型。
     """
 
     def __init__(self, config: dict):
         dehy_cfg = config.get("dehydration", {})
         embed_cfg = config.get("embedding", {})
 
-        self.api_key = (embed_cfg.get("api_key") or dehy_cfg.get("api_key") or "").strip()
-        self.base_url = (
-            (embed_cfg.get("base_url") or "").strip()
-            or (dehy_cfg.get("base_url") or "").strip()
-            or "https://generativelanguage.googleapis.com/v1beta/openai/"
+        # --- OMBRE_API_KEY / OMBRE_BASE_URL have highest priority (instruction C) ---
+        self.api_key = (
+            os.environ.get("OMBRE_API_KEY", "").strip()
+            or (embed_cfg.get("api_key") or "").strip()
+            or (dehy_cfg.get("api_key") or "").strip()
         )
-        self.model = embed_cfg.get("model", "gemini-embedding-001")
-        self.enabled = bool(self.api_key) and embed_cfg.get("enabled", True)
+        self.base_url = (
+            os.environ.get("OMBRE_BASE_URL", "").strip()
+            or (embed_cfg.get("base_url") or "").strip()
+            or (dehy_cfg.get("base_url") or "").strip()
+            or "https://api.deepseek.com/v1"
+        )
+        self.model = embed_cfg.get("model", "deepseek-embedding")
 
         # --- SQLite path: buckets_dir/embeddings.db ---
-        db_path = os.path.join(config["buckets_dir"], "embeddings.db")
-        self.db_path = db_path
+        self.db_path = os.path.join(config["buckets_dir"], "embeddings.db")
 
-        # --- Initialize client ---
-        if self.enabled:
+        # --- API client ---
+        self._api_available = bool(self.api_key)
+        self._api_failed = False  # flipped True on first embedding API error
+        if self._api_available:
+            from openai import AsyncOpenAI
             self.client = AsyncOpenAI(
                 api_key=self.api_key,
                 base_url=self.base_url,
@@ -54,79 +75,100 @@ class EmbeddingEngine:
             )
         else:
             self.client = None
+            logger.info("No API key for embedding — will try local sentence-transformers")
 
-        # --- Initialize SQLite ---
+        # --- Local fallback state ---
+        self._local_model = None       # lazy-loaded SentenceTransformer
+        self._local_available = None   # None=untried, True/False after first attempt
+
+        # Always True: degrades to keyword-only when both backends fail
+        self.enabled = True
+
         self._init_db()
 
+    # ---------------------------------------------------------
+    # SQLite init / migration
+    # ---------------------------------------------------------
     def _init_db(self):
-        """Create embeddings table if not exists."""
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        os.makedirs(os.path.dirname(self.db_path) or ".", exist_ok=True)
         conn = sqlite3.connect(self.db_path)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS embeddings (
-                bucket_id TEXT PRIMARY KEY,
-                embedding TEXT NOT NULL,
+                bucket_id  TEXT PRIMARY KEY,
+                embedding  TEXT NOT NULL,
+                model_id   TEXT,
                 updated_at TEXT NOT NULL
             )
         """)
+        # Migration: add model_id column to pre-existing databases
+        try:
+            conn.execute("ALTER TABLE embeddings ADD COLUMN model_id TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
         conn.commit()
         conn.close()
 
+    # ---------------------------------------------------------
+    # Public API
+    # ---------------------------------------------------------
     async def generate_and_store(self, bucket_id: str, content: str) -> bool:
         """
-        Generate embedding for content and store in SQLite.
-        为内容生成 embedding 并存入 SQLite。
-        Returns True on success, False on failure.
+        Generate embedding for content and persist to SQLite.
+        Returns True on success, False when both backends unavailable.
         """
-        if not self.enabled or not content or not content.strip():
+        if not content or not content.strip():
             return False
-
         try:
-            embedding = await self._generate_embedding(content)
-            if not embedding:
+            embedding, model_id = await self._generate_embedding(content)
+            if not embedding or model_id == "none":
                 return False
-            self._store_embedding(bucket_id, embedding)
+            self._store_embedding(bucket_id, embedding, model_id)
             return True
         except Exception as e:
             logger.warning(f"Embedding generation failed for {bucket_id}: {e}")
             return False
 
-    async def _generate_embedding(self, text: str) -> list[float]:
-        """Call API to generate embedding vector."""
-        # Truncate to avoid token limits
-        truncated = text[:2000]
+    async def search_similar(
+        self, query: str, top_k: int = 10
+    ) -> list[tuple[str, float]]:
+        """
+        Semantic search: returns [(bucket_id, cosine_similarity)] sorted desc.
+        Falls back to [] when no embedding backend is available.
+        Only compares embeddings produced by the same backend (same model_id)
+        to avoid dimension-mismatch errors.
+        """
         try:
-            response = await self.client.embeddings.create(
-                model=self.model,
-                input=truncated,
-            )
-            if response.data and len(response.data) > 0:
-                return response.data[0].embedding
-            return []
+            query_embedding, model_id = await self._generate_embedding(query)
+            if not query_embedding or model_id == "none":
+                return []
         except Exception as e:
-            logger.warning(f"Embedding API call failed: {e}")
+            logger.warning(f"Query embedding failed: {e}")
             return []
 
-    def _store_embedding(self, bucket_id: str, embedding: list[float]):
-        """Store embedding in SQLite."""
-        from utils import now_iso
         conn = sqlite3.connect(self.db_path)
-        conn.execute(
-            "INSERT OR REPLACE INTO embeddings (bucket_id, embedding, updated_at) VALUES (?, ?, ?)",
-            (bucket_id, json.dumps(embedding), now_iso()),
-        )
-        conn.commit()
+        rows = conn.execute(
+            "SELECT bucket_id, embedding FROM embeddings WHERE model_id = ?",
+            (model_id,),
+        ).fetchall()
         conn.close()
 
-    def delete_embedding(self, bucket_id: str):
-        """Remove embedding when bucket is deleted."""
-        conn = sqlite3.connect(self.db_path)
-        conn.execute("DELETE FROM embeddings WHERE bucket_id = ?", (bucket_id,))
-        conn.commit()
-        conn.close()
+        if not rows:
+            return []
+
+        results = []
+        for bucket_id, emb_json in rows:
+            try:
+                stored = json.loads(emb_json)
+                sim = self._cosine_similarity(query_embedding, stored)
+                results.append((bucket_id, sim))
+            except Exception:
+                continue
+
+        results.sort(key=lambda x: x[1], reverse=True)
+        return results[:top_k]
 
     async def get_embedding(self, bucket_id: str) -> list[float] | None:
-        """Retrieve stored embedding for a bucket. Returns None if not found."""
+        """Retrieve stored embedding vector for a bucket (any backend)."""
         conn = sqlite3.connect(self.db_path)
         row = conn.execute(
             "SELECT embedding FROM embeddings WHERE bucket_id = ?", (bucket_id,)
@@ -139,48 +181,106 @@ class EmbeddingEngine:
                 return None
         return None
 
-    async def search_similar(self, query: str, top_k: int = 10) -> list[tuple[str, float]]:
-        """
-        Search for buckets similar to query text.
-        Returns list of (bucket_id, similarity_score) sorted by score desc.
-        搜索与查询文本相似的桶。返回 (bucket_id, 相似度分数) 列表。
-        """
-        if not self.enabled:
-            return []
-
-        try:
-            query_embedding = await self._generate_embedding(query)
-            if not query_embedding:
-                return []
-        except Exception as e:
-            logger.warning(f"Query embedding failed: {e}")
-            return []
-
-        # Load all embeddings from SQLite
+    def delete_embedding(self, bucket_id: str) -> None:
+        """Remove embedding when a bucket is deleted."""
         conn = sqlite3.connect(self.db_path)
-        rows = conn.execute("SELECT bucket_id, embedding FROM embeddings").fetchall()
+        conn.execute("DELETE FROM embeddings WHERE bucket_id = ?", (bucket_id,))
+        conn.commit()
         conn.close()
 
-        if not rows:
+    # ---------------------------------------------------------
+    # Internal: embedding generation (API → local fallback)
+    # ---------------------------------------------------------
+    async def _generate_embedding(self, text: str) -> tuple[list[float], str]:
+        """
+        Returns (embedding_vector, model_id_string).
+        model_id is "api:<model>" or "local:<model>" or "none".
+        """
+        truncated = text[:2000]
+
+        # --- Try DeepSeek (or any OpenAI-compatible) API ---
+        if self._api_available and not self._api_failed:
+            try:
+                response = await self.client.embeddings.create(
+                    model=self.model,
+                    input=truncated,
+                )
+                if response.data and response.data[0].embedding:
+                    return response.data[0].embedding, f"api:{self.model}"
+                # Empty response treated as failure
+                raise ValueError("Empty embedding response from API")
+            except Exception as e:
+                logger.warning(
+                    f"Embedding API unavailable, switching to local model: {e}"
+                )
+                self._api_failed = True
+
+        # --- Local sentence-transformers fallback ---
+        local_emb = await self._local_embedding(truncated)
+        if local_emb:
+            return local_emb, f"local:{_LOCAL_MODEL_NAME}"
+
+        return [], "none"
+
+    async def _local_embedding(self, text: str) -> list[float]:
+        """Encode text with local sentence-transformers model (lazy-loaded)."""
+        if self._local_available is False:
             return []
 
-        # Calculate cosine similarity
-        results = []
-        for bucket_id, emb_json in rows:
+        if self._local_model is None:
             try:
-                stored_embedding = json.loads(emb_json)
-                sim = self._cosine_similarity(query_embedding, stored_embedding)
-                results.append((bucket_id, sim))
-            except (json.JSONDecodeError, Exception):
-                continue
+                from sentence_transformers import SentenceTransformer
+                self._local_model = SentenceTransformer(_LOCAL_MODEL_NAME)
+                self._local_available = True
+                logger.info(
+                    f"Local embedding model loaded: {_LOCAL_MODEL_NAME}"
+                )
+            except ImportError:
+                logger.warning(
+                    "sentence-transformers not installed; "
+                    "run `pip install sentence-transformers` for local fallback. "
+                    "Keyword-only search active."
+                )
+                self._local_available = False
+                return []
+            except Exception as e:
+                logger.warning(f"Local embedding model load failed: {e}")
+                self._local_available = False
+                return []
 
-        results.sort(key=lambda x: x[1], reverse=True)
-        return results[:top_k]
+        try:
+            loop = asyncio.get_event_loop()
+            embedding: list[float] = await loop.run_in_executor(
+                None, lambda: self._local_model.encode(text).tolist()
+            )
+            return embedding
+        except Exception as e:
+            logger.warning(f"Local embedding encode failed: {e}")
+            return []
 
+    # ---------------------------------------------------------
+    # Internal: SQLite persistence
+    # ---------------------------------------------------------
+    def _store_embedding(
+        self, bucket_id: str, embedding: list[float], model_id: str
+    ) -> None:
+        from utils import now_iso
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            "INSERT OR REPLACE INTO embeddings "
+            "(bucket_id, embedding, model_id, updated_at) VALUES (?, ?, ?, ?)",
+            (bucket_id, json.dumps(embedding), model_id, now_iso()),
+        )
+        conn.commit()
+        conn.close()
+
+    # ---------------------------------------------------------
+    # Utility
+    # ---------------------------------------------------------
     @staticmethod
     def _cosine_similarity(a: list[float], b: list[float]) -> float:
-        """Calculate cosine similarity between two vectors."""
-        if len(a) != len(b) or not a:
+        """Cosine similarity in [0, 1]. Returns 0.0 on dimension mismatch."""
+        if not a or not b or len(a) != len(b):
             return 0.0
         dot = sum(x * y for x, y in zip(a, b))
         norm_a = math.sqrt(sum(x * x for x in a))
