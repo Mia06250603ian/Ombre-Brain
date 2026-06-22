@@ -492,6 +492,32 @@ async def _merge_or_create(
     return bucket_id, False
 
 
+def _format_bucket_summary_line(b: dict, prefix: str = "") -> str:
+    """Return a compact one-line summary for a bucket (no content text)."""
+    meta = b["metadata"]
+    bid = b["id"]
+    name = meta.get("name", bid)
+    domain_val = meta.get("domain", [])
+    if isinstance(domain_val, list):
+        domain_str = "/".join(domain_val) if domain_val else "-"
+    else:
+        domain_str = str(domain_val) if domain_val else "-"
+    valence = meta.get("valence")
+    arousal = meta.get("arousal")
+    if isinstance(valence, (int, float)) and isinstance(arousal, (int, float)):
+        emotion = f"(v={float(valence):.2f},a={float(arousal):.2f})"
+    elif isinstance(valence, (int, float)):
+        emotion = f"(v={float(valence):.2f})"
+    else:
+        emotion = "-"
+    importance = meta.get("importance", "-")
+    last_active = meta.get("last_active") or meta.get("created", "-")
+    if isinstance(last_active, str) and len(last_active) > 10:
+        last_active = last_active[:10]
+    line = f"[bucket_id:{bid}] {name} | 主题:{domain_str} | 情感:{emotion} | 重要度:{importance} | 更新:{last_active}"
+    return f"{prefix}{line}" if prefix else line
+
+
 # =============================================================
 # Tool 1: breath — Breathe
 # 工具 1：breath — 呼吸
@@ -510,8 +536,9 @@ async def breath(
     arousal: float = -1,
     max_results: int = 20,
     importance_min: int = -1,
+    mode: str = "summary",
 ) -> str:
-    """检索/浮现记忆。不传query或传空=自动浮现,有query=关键词检索。max_tokens控制返回总token上限(默认10000)。domain逗号分隔,valence/arousal 0~1(-1忽略)。max_results控制返回数量上限(默认20,最大50)。importance_min>=1时按重要度批量拉取(不走语义搜索,按importance降序返回最多20条)。"""
+    """检索/浮现记忆。不传query或传空=自动浮现,有query=关键词检索。max_tokens控制返回总token上限(默认10000)。domain逗号分隔,valence/arousal 0~1(-1忽略)。max_results控制返回数量上限(默认20,最大50)。importance_min>=1时按重要度批量拉取(不走语义搜索,按importance降序返回最多20条)。mode=summary(默认)时每个桶仅返回一行摘要(bucket_id+桶名+主题+情感坐标+重要度+更新时间),mode=full时返回完整内容;query非空时忽略mode始终返回full。"""
     await decay_engine.ensure_started()
     await backup_exporter.ensure_started()
     max_results = min(max_results, 50)
@@ -539,14 +566,22 @@ async def breath(
             if token_used >= max_tokens:
                 break
             try:
-                clean_meta = {k: v for k, v in b["metadata"].items() if k != "tags"}
-                summary = await dehydrator.dehydrate(strip_wikilinks(b["content"]), clean_meta)
-                t = count_tokens_approx(summary)
-                if token_used + t > max_tokens:
-                    break
                 imp = b["metadata"].get("importance", 0)
-                results.append(f"[importance:{imp}] [bucket_id:{b['id']}] {summary}")
-                token_used += t
+                if mode == "summary":
+                    line = _format_bucket_summary_line(b, prefix=f"[importance:{imp}] ")
+                    t = count_tokens_approx(line)
+                    if token_used + t > max_tokens:
+                        break
+                    results.append(line)
+                    token_used += t
+                else:
+                    clean_meta = {k: v for k, v in b["metadata"].items() if k != "tags"}
+                    summary = await dehydrator.dehydrate(strip_wikilinks(b["content"]), clean_meta)
+                    t = count_tokens_approx(summary)
+                    if token_used + t > max_tokens:
+                        break
+                    results.append(f"[importance:{imp}] [bucket_id:{b['id']}] {summary}")
+                    token_used += t
             except Exception as e:
                 logger.warning(f"importance_min dehydrate failed: {e}")
         return "\n---\n".join(results) if results else "没有可以展示的记忆。"
@@ -569,9 +604,12 @@ async def breath(
         pinned_results = []
         for b in pinned_buckets:
             try:
-                clean_meta = {k: v for k, v in b["metadata"].items() if k != "tags"}
-                summary = await dehydrator.dehydrate(strip_wikilinks(b["content"]), clean_meta)
-                pinned_results.append(f"📌 [核心准则] [bucket_id:{b['id']}] {summary}")
+                if mode == "summary":
+                    pinned_results.append("📌 [核心准则] " + _format_bucket_summary_line(b))
+                else:
+                    clean_meta = {k: v for k, v in b["metadata"].items() if k != "tags"}
+                    summary = await dehydrator.dehydrate(strip_wikilinks(b["content"]), clean_meta)
+                    pinned_results.append(f"📌 [核心准则] [bucket_id:{b['id']}] {summary}")
             except Exception as e:
                 logger.warning(f"Failed to dehydrate pinned bucket / 钉选桶脱水失败: {e}")
                 continue
@@ -639,15 +677,23 @@ async def breath(
             if token_budget <= 0:
                 break
             try:
-                clean_meta = {k: v for k, v in b["metadata"].items() if k != "tags"}
-                summary = await dehydrator.dehydrate(strip_wikilinks(b["content"]), clean_meta)
-                summary_tokens = count_tokens_approx(summary)
-                if summary_tokens > token_budget:
-                    break
-                # NOTE: no touch() here — surfacing should NOT reset decay timer
                 score = decay_engine.calculate_score(b["metadata"])
-                dynamic_results.append(f"[权重:{score:.2f}] [bucket_id:{b['id']}] {summary}")
-                token_budget -= summary_tokens
+                if mode == "summary":
+                    line = _format_bucket_summary_line(b, prefix=f"[权重:{score:.2f}] ")
+                    line_tokens = count_tokens_approx(line)
+                    if line_tokens > token_budget:
+                        break
+                    dynamic_results.append(line)
+                    token_budget -= line_tokens
+                else:
+                    clean_meta = {k: v for k, v in b["metadata"].items() if k != "tags"}
+                    summary = await dehydrator.dehydrate(strip_wikilinks(b["content"]), clean_meta)
+                    summary_tokens = count_tokens_approx(summary)
+                    if summary_tokens > token_budget:
+                        break
+                    # NOTE: no touch() here — surfacing should NOT reset decay timer
+                    dynamic_results.append(f"[权重:{score:.2f}] [bucket_id:{b['id']}] {summary}")
+                    token_budget -= summary_tokens
             except Exception as e:
                 logger.warning(f"Failed to dehydrate surfaced bucket / 浮现脱水失败: {e}")
                 continue
