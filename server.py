@@ -519,6 +519,41 @@ def _format_bucket_summary_line(b: dict, prefix: str = "") -> str:
     return f"{prefix}{line}" if prefix else line
 
 
+def _is_dormant_candidate(meta: dict) -> bool:
+    """True if bucket meets auto-dormant criteria: >30d untouched, importance<3, not pinned."""
+    if meta.get("pinned") or meta.get("protected"):
+        return False
+    try:
+        importance = int(meta.get("importance", 5) or 5)
+    except (ValueError, TypeError):
+        importance = 5
+    if importance >= 3:
+        return False
+    la = meta.get("last_active") or meta.get("created", "")
+    if not la:
+        return False
+    try:
+        last_active = datetime.fromisoformat(str(la).replace("Z", "+00:00")).replace(tzinfo=None)
+        return (datetime.now() - last_active).total_seconds() / 86400 > 30
+    except (ValueError, TypeError):
+        return False
+
+
+async def _apply_dormant_sweep(buckets: list) -> int:
+    """Mark dormant-eligible buckets. Returns count of newly-marked buckets."""
+    newly_marked = 0
+    for b in buckets:
+        meta = b["metadata"]
+        if not meta.get("dormant") and _is_dormant_candidate(meta):
+            try:
+                await bucket_mgr.update(b["id"], dormant=True)
+                meta["dormant"] = True
+                newly_marked += 1
+            except Exception:
+                pass
+    return newly_marked
+
+
 # =============================================================
 # Tool 1: breath — Breathe
 # 工具 1：breath — 呼吸
@@ -540,8 +575,9 @@ async def breath(
     mode: str = "summary",
     date_from: str = "",
     date_to: str = "",
+    include_dormant: bool = False,
 ) -> str:
-    """检索/浮现记忆。不传query或传空=自动浮现,有query=关键词检索。max_tokens控制返回总token上限(默认10000)。domain逗号分隔,valence/arousal 0~1(-1忽略)。max_results控制返回数量上限(默认5,最大50),超出的在末尾附注还有N个相关桶未显示,钉选桶不计入名额。importance_min>=1时按重要度批量拉取(不走语义搜索,按importance降序)。mode=summary(默认)时每个桶仅返回一行摘要(bucket_id+桶名+主题+情感坐标+重要度+更新时间),mode=full时返回完整内容;query非空时忽略mode始终返回full。搜索排名三级权重：精确匹配tags(keywords)字段最高→关键词出现在content次高→语义向量匹配最低;≤4字中文短词强制精确子串匹配防止被拆散。date_from/date_to(YYYY-MM-DD)按桶last_active过滤,可与其他参数组合;钉选桶不受日期过滤。命中桶若metadata含related字段(bucket_id列表),在该桶结果下附一行关联提示(id+名称,不展开全文)。"""
+    """检索/浮现记忆。不传query或传空=自动浮现,有query=关键词检索。max_tokens控制返回总token上限(默认10000)。domain逗号分隔,valence/arousal 0~1(-1忽略)。max_results控制返回数量上限(默认5,最大50),超出的在末尾附注还有N个相关桶未显示,钉选桶不计入名额。importance_min>=1时按重要度批量拉取(不走语义搜索,按importance降序)。mode=summary(默认)时每个桶仅返回一行摘要(bucket_id+桶名+主题+情感坐标+重要度+更新时间),mode=full时返回完整内容;query非空时忽略mode始终返回full。搜索排名三级权重：精确匹配tags(keywords)字段最高→关键词出现在content次高→语义向量匹配最低;≤4字中文短词强制精确子串匹配防止被拆散。date_from/date_to(YYYY-MM-DD)按桶last_active过滤,可与其他参数组合;钉选桶不受日期过滤。命中桶若metadata含related字段(bucket_id列表),在该桶结果下附一行关联提示(id+名称,不展开全文)。include_dormant=false(默认)时休眠桶不出现在结果中;include_dormant=true时包含休眠桶。休眠条件：>30天未访问且importance<3且非钉选桶；被命中后自动解除休眠。"""
     await decay_engine.ensure_started()
     await backup_exporter.ensure_started()
     max_results = min(max_results, 50)
@@ -606,11 +642,13 @@ async def breath(
             all_buckets = await bucket_mgr.list_all(include_archive=False)
         except Exception as e:
             return f"记忆系统暂时无法访问: {e}"
+        await _apply_dormant_sweep(all_buckets)
         filtered = [
             b for b in all_buckets
             if int(b["metadata"].get("importance", 0)) >= importance_min
             and b["metadata"].get("type") not in ("feel",)
             and _date_ok(b)
+            and (include_dormant or not b["metadata"].get("dormant", False))
         ]
         filtered.sort(key=lambda b: int(b["metadata"].get("importance", 0)), reverse=True)
         filtered_total = len(filtered)
@@ -679,6 +717,9 @@ async def breath(
                 logger.warning(f"Failed to dehydrate pinned bucket / 钉选桶脱水失败: {e}")
                 continue
 
+        # --- Auto-mark dormant candidates before surfacing ---
+        await _apply_dormant_sweep(all_buckets)
+
         # --- Unresolved buckets: surface top N by weight ---
         # --- 未解决桶：按权重浮现前 N 条 ---
         unresolved = [
@@ -688,6 +729,7 @@ async def breath(
             and not b["metadata"].get("pinned", False)
             and not b["metadata"].get("protected", False)
             and _date_ok(b)
+            and (include_dormant or not b["metadata"].get("dormant", False))
         ]
 
         logger.info(
@@ -841,6 +883,11 @@ async def breath(
     # --- Apply date filter after both channels are collected ---
     if dt_from or dt_to:
         matches = [b for b in matches if _date_ok(b)]
+
+    # --- Apply dormant sweep + filter ---
+    await _apply_dormant_sweep(matches)
+    if not include_dormant:
+        matches = [b for b in matches if not b["metadata"].get("dormant", False)]
 
     # --- Cap to max_results; track hidden count for end-of-response note ---
     total_matches = len(matches)
@@ -1247,6 +1294,9 @@ async def trace(
             updates["digested"] = bool(digested)
         if content and not batch:
             updates["content"] = content
+        # Auto-undormant on any access
+        if bucket["metadata"].get("dormant"):
+            updates["dormant"] = False
 
         if not updates:
             return f"{bid}: 没有任何字段需要修改"
@@ -1320,6 +1370,9 @@ async def trace(
             updates["digested"] = bool(digested)
         if content:
             updates["content"] = content
+        # Auto-undormant on any access
+        if bucket["metadata"].get("dormant"):
+            updates["dormant"] = False
 
         if not updates:
             return "没有任何字段需要修改。"
@@ -1412,9 +1465,18 @@ async def pulse(include_archive: bool = False, show_all: bool = False) -> str:
             f"标签:{','.join(meta.get('tags', []))}"
         )
 
+    # --- Auto-mark dormant candidates ---
+    await _apply_dormant_sweep(buckets)
+
+    dormant_count = sum(1 for b in buckets if b.get("metadata", {}).get("dormant", False))
+
     # --- Separate pinned from the rest and sort non-pinned by weight ---
     pinned = [b for b in buckets if b.get("metadata", {}).get("pinned") or b.get("metadata", {}).get("protected")]
-    non_pinned = [b for b in buckets if not (b.get("metadata", {}).get("pinned") or b.get("metadata", {}).get("protected"))]
+    non_pinned = [
+        b for b in buckets
+        if not (b.get("metadata", {}).get("pinned") or b.get("metadata", {}).get("protected"))
+        and not b.get("metadata", {}).get("dormant", False)
+    ]
     non_pinned.sort(
         key=lambda b: decay_engine.calculate_score(b.get("metadata", {})),
         reverse=True,
@@ -1432,10 +1494,13 @@ async def pulse(include_archive: bool = False, show_all: bool = False) -> str:
 
     summary_stat = (
         f"\n=== 统计 ===\n"
-        f"共 {total} 个桶（钉选:{len(pinned)} 非钉选:{len(non_pinned)}）"
+        f"共 {total} 个桶（钉选:{len(pinned)} 非钉选:{len(non_pinned)}"
+        + (f" 休眠:{dormant_count}" if dormant_count else "") + "）"
     )
+    if dormant_count:
+        summary_stat += f"\n休眠桶 {dormant_count} 个已隐藏（breath include_dormant=true 可见，trace 始终可访问）"
     if not show_all and hidden > 0:
-        summary_stat += f"，已显示前 {len(displayed)} 个，另有 {hidden} 个未展示（传 show_all=true 查看全部）"
+        summary_stat += f"\n已显示前 {len(displayed)} 个，另有 {hidden} 个未展示（传 show_all=true 查看全部）"
 
     return status + "\n=== 记忆列表 ===\n" + "\n".join(lines) + summary_stat
 

@@ -280,6 +280,8 @@ class BucketManager:
                 post["importance"] = 10  # pinned → lock importance to 10
         if "digested" in kwargs:
             post["digested"] = bool(kwargs["digested"])
+        if "dormant" in kwargs:
+            post["dormant"] = bool(kwargs["dormant"])
         if "model_valence" in kwargs:
             post["model_valence"] = max(0.0, min(1.0, float(kwargs["model_valence"])))
 
@@ -362,6 +364,8 @@ class BucketManager:
             post = frontmatter.load(file_path)
             post["last_active"] = now_iso()
             post["activation_count"] = post.get("activation_count", 0) + 1
+            if post.get("dormant"):
+                post["dormant"] = False  # any touch wakes a dormant bucket
 
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(frontmatter.dumps(post))
