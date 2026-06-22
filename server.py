@@ -56,6 +56,7 @@ from dehydrator import Dehydrator
 from decay_engine import DecayEngine
 from embedding_engine import EmbeddingEngine
 from import_memory import ImportEngine
+from backup_exporter import BackupExporter
 from utils import load_config, setup_logging, strip_wikilinks, count_tokens_approx
 
 # --- Load config & init logging / 加载配置 & 初始化日志 ---
@@ -76,6 +77,11 @@ except ValueError:
 # 详见 ENV_VARS.md。
 OMBRE_HOOK_URL = os.environ.get("OMBRE_HOOK_URL", "").strip()
 OMBRE_HOOK_SKIP = os.environ.get("OMBRE_HOOK_SKIP", "").strip().lower() in ("1", "true", "yes", "on")
+
+# OMBRE_BACKUP_TRIGGER_TOKEN: shared secret for GitHub Actions to call /api/export-backup
+# without a dashboard session cookie. Must match the value in the GitHub Actions secret.
+# OMBRE_BACKUP_TRIGGER_TOKEN: GitHub Actions 调用 /api/export-backup 时使用的共享密钥。
+OMBRE_BACKUP_TRIGGER_TOKEN = os.environ.get("OMBRE_BACKUP_TRIGGER_TOKEN", "").strip()
 
 
 async def _fire_webhook(event: str, payload: dict) -> None:
@@ -102,6 +108,7 @@ bucket_mgr = BucketManager(config, embedding_engine=embedding_engine)  # Bucket 
 dehydrator = Dehydrator(config)                      # Dehydrator / 脱水器
 decay_engine = DecayEngine(config, bucket_mgr)       # Decay engine / 衰减引擎
 import_engine = ImportEngine(config, bucket_mgr, dehydrator, embedding_engine)  # Import engine / 导入引擎
+backup_exporter = BackupExporter(config, bucket_mgr) # Backup exporter / 备份导出器
 
 # --- Create MCP server instance / 创建 MCP 服务器实例 ---
 # host="0.0.0.0" so Docker container's SSE is externally reachable
@@ -506,6 +513,7 @@ async def breath(
 ) -> str:
     """检索/浮现记忆。不传query或传空=自动浮现,有query=关键词检索。max_tokens控制返回总token上限(默认10000)。domain逗号分隔,valence/arousal 0~1(-1忽略)。max_results控制返回数量上限(默认20,最大50)。importance_min>=1时按重要度批量拉取(不走语义搜索,按importance降序返回最多20条)。"""
     await decay_engine.ensure_started()
+    await backup_exporter.ensure_started()
     max_results = min(max_results, 50)
     max_tokens = min(max_tokens, 20000)
 
@@ -1891,6 +1899,9 @@ async def api_system_status(request):
         stats = await bucket_mgr.get_stats()
         return JSONResponse({
             "decay_engine": "running" if decay_engine.is_running else "stopped",
+            "backup_loop": "running" if backup_exporter.is_running else (
+                "disabled" if not backup_exporter.enabled else "idle"
+            ),
             "embedding_enabled": embedding_engine.enabled,
             "buckets": {
                 "permanent": stats.get("permanent_count", 0),
@@ -1902,6 +1913,47 @@ async def api_system_status(request):
             "version": "1.3.0",
         })
     except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# =============================================================
+# /api/export-backup — manual or scheduled backup trigger
+# /api/export-backup — 手动或定时触发备份
+#
+# Auth: dashboard session cookie OR X-Backup-Token header
+#       (the latter is used by GitHub Actions via OMBRE_BACKUP_TRIGGER_TOKEN secret)
+# =============================================================
+@mcp.custom_route("/api/export-backup", methods=["POST"])
+async def api_export_backup(request):
+    """Export all buckets to JSON and push to the private backup GitHub repo."""
+    from starlette.responses import JSONResponse
+
+    # Allow either a valid dashboard session OR a matching trigger token header
+    trigger_token = request.headers.get("X-Backup-Token", "")
+    if trigger_token:
+        if not OMBRE_BACKUP_TRIGGER_TOKEN:
+            return JSONResponse({"error": "Backup trigger token not configured on server"}, status_code=403)
+        if not hmac.compare_digest(trigger_token, OMBRE_BACKUP_TRIGGER_TOKEN):
+            return JSONResponse({"error": "Invalid backup trigger token"}, status_code=401)
+    elif not _is_authenticated(request):
+        return JSONResponse(
+            {"error": "Unauthorized", "setup_needed": _is_setup_needed()},
+            status_code=401,
+        )
+
+    if not backup_exporter.enabled:
+        return JSONResponse(
+            {"error": "Backup not configured — set OMBRE_BACKUP_REPO_URL and OMBRE_BACKUP_TOKEN"},
+            status_code=503,
+        )
+
+    try:
+        # Ensure the daily loop is also running after first manual call
+        await backup_exporter.ensure_started()
+        result = await backup_exporter.run_backup()
+        return JSONResponse(result)
+    except Exception as e:
+        logger.error(f"Backup export failed: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)
 
 

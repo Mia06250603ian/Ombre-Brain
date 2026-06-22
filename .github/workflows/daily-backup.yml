@@ -1,0 +1,50 @@
+name: Daily Backup
+
+# Trigger: daily at 02:00 UTC + manual dispatch
+# 触发：每日 UTC 02:00 自动运行，支持手动触发
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      note:
+        description: 'Optional note (logged only)'
+        required: false
+        default: ''
+
+jobs:
+  trigger-backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger backup on Ombre Brain server
+        # Calls POST /api/export-backup with X-Backup-Token header.
+        # Set the following secrets in the repository settings:
+        #   OMBRE_URL              — public URL of your running server (no trailing slash)
+        #                            e.g. https://my-ombre-brain.onrender.com
+        #   OMBRE_BACKUP_TRIGGER_TOKEN — shared secret matching OMBRE_BACKUP_TRIGGER_TOKEN on server
+        #                            e.g. a long random string
+        #
+        # If OMBRE_URL is not set the step is skipped gracefully.
+        # The server itself also runs the backup on its own 24h loop, so this
+        # workflow is an additional safety net and the source of workflow_dispatch.
+        env:
+          OMBRE_URL: ${{ secrets.OMBRE_URL }}
+          OMBRE_BACKUP_TRIGGER_TOKEN: ${{ secrets.OMBRE_BACKUP_TRIGGER_TOKEN }}
+        run: |
+          if [ -z "${OMBRE_URL}" ]; then
+            echo "OMBRE_URL secret not set — skipping server trigger."
+            echo "The server's built-in 24h backup loop will still run if configured."
+            exit 0
+          fi
+          echo "Triggering backup on ${OMBRE_URL} ..."
+          HTTP_STATUS=$(curl -s -o /tmp/backup_response.json -w "%{http_code}" \
+            --max-time 180 \
+            -X POST \
+            -H "X-Backup-Token: ${OMBRE_BACKUP_TRIGGER_TOKEN}" \
+            "${OMBRE_URL}/api/export-backup")
+          echo "HTTP status: ${HTTP_STATUS}"
+          cat /tmp/backup_response.json
+          if [ "${HTTP_STATUS}" != "200" ]; then
+            echo "Backup request failed with status ${HTTP_STATUS}"
+            exit 1
+          fi
