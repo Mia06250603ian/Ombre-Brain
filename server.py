@@ -534,11 +534,11 @@ async def breath(
     domain: str = "",
     valence: float = -1,
     arousal: float = -1,
-    max_results: int = 20,
+    max_results: int = 5,
     importance_min: int = -1,
     mode: str = "summary",
 ) -> str:
-    """检索/浮现记忆。不传query或传空=自动浮现,有query=关键词检索。max_tokens控制返回总token上限(默认10000)。domain逗号分隔,valence/arousal 0~1(-1忽略)。max_results控制返回数量上限(默认20,最大50)。importance_min>=1时按重要度批量拉取(不走语义搜索,按importance降序返回最多20条)。mode=summary(默认)时每个桶仅返回一行摘要(bucket_id+桶名+主题+情感坐标+重要度+更新时间),mode=full时返回完整内容;query非空时忽略mode始终返回full。"""
+    """检索/浮现记忆。不传query或传空=自动浮现,有query=关键词检索。max_tokens控制返回总token上限(默认10000)。domain逗号分隔,valence/arousal 0~1(-1忽略)。max_results控制返回数量上限(默认5,最大50),超出的在末尾附注还有N个相关桶未显示,钉选桶不计入名额。importance_min>=1时按重要度批量拉取(不走语义搜索,按importance降序)。mode=summary(默认)时每个桶仅返回一行摘要(bucket_id+桶名+主题+情感坐标+重要度+更新时间),mode=full时返回完整内容;query非空时忽略mode始终返回full。"""
     await decay_engine.ensure_started()
     await backup_exporter.ensure_started()
     max_results = min(max_results, 50)
@@ -557,7 +557,8 @@ async def breath(
             and b["metadata"].get("type") not in ("feel",)
         ]
         filtered.sort(key=lambda b: int(b["metadata"].get("importance", 0)), reverse=True)
-        filtered = filtered[:20]
+        filtered_total = len(filtered)
+        filtered = filtered[:max_results]
         if not filtered:
             return f"没有重要度 >= {importance_min} 的记忆。"
         results = []
@@ -584,6 +585,9 @@ async def breath(
                     token_used += t
             except Exception as e:
                 logger.warning(f"importance_min dehydrate failed: {e}")
+        hidden_by_cap = max(0, filtered_total - max_results)
+        if hidden_by_cap > 0:
+            results.append(f"还有 {hidden_by_cap} 个相关桶未显示。")
         return "\n---\n".join(results) if results else "没有可以展示的记忆。"
 
     # --- No args or empty query: surfacing mode (weight pool active push) ---
@@ -669,7 +673,8 @@ async def breath(
                 random.shuffle(pool)
                 non_cold = top1 + pool + non_cold[min(20, len(non_cold)):]
             candidates = cold_start + non_cold
-        # Hard cap: never surface more than max_results buckets
+        # Hard cap: never surface more than max_results buckets (pinned not counted)
+        total_unresolved = len(scored_with_cold)
         candidates = candidates[:max_results]
 
         dynamic_results = []
@@ -701,11 +706,15 @@ async def breath(
         if not pinned_results and not dynamic_results:
             return "权重池平静，没有需要处理的记忆。"
 
+        hidden_unresolved = max(0, total_unresolved - len(dynamic_results))
         parts = []
         if pinned_results:
             parts.append("=== 核心准则 ===\n" + "\n---\n".join(pinned_results))
         if dynamic_results:
-            parts.append("=== 浮现记忆 ===\n" + "\n---\n".join(dynamic_results))
+            surfacing_section = "=== 浮现记忆 ===\n" + "\n---\n".join(dynamic_results)
+            if hidden_unresolved > 0:
+                surfacing_section += f"\n\n还有 {hidden_unresolved} 个相关桶未显示。"
+            parts.append(surfacing_section)
         return "\n\n".join(parts)
 
     # --- Feel retrieval: domain="feel" is a special channel ---
@@ -735,10 +744,11 @@ async def breath(
     q_valence = valence if 0 <= valence <= 1 else None
     q_arousal = arousal if 0 <= arousal <= 1 else None
 
+    fetch_limit = max_results * 4 + 10
     try:
         matches = await bucket_mgr.search(
             query,
-            limit=max(max_results, 20),
+            limit=fetch_limit,
             domain_filter=domain_filter,
             query_valence=q_valence,
             query_arousal=q_arousal,
@@ -755,7 +765,7 @@ async def breath(
     # --- 向量相似度通道：找到语义相关的桶 ---
     matched_ids = {b["id"] for b in matches}
     try:
-        vector_results = await embedding_engine.search_similar(query, top_k=max(max_results, 20))
+        vector_results = await embedding_engine.search_similar(query, top_k=fetch_limit)
         for bucket_id, sim_score in vector_results:
             if bucket_id not in matched_ids and sim_score > 0.5:
                 bucket = await bucket_mgr.get(bucket_id)
@@ -767,9 +777,14 @@ async def breath(
     except Exception as e:
         logger.warning(f"Vector search failed, using keyword only / 向量搜索失败: {e}")
 
+    # --- Cap to max_results; track hidden count for end-of-response note ---
+    total_matches = len(matches)
+    display_matches = matches[:max_results]
+    hidden_by_cap = max(0, total_matches - max_results)
+
     results = []
     token_used = 0
-    for bucket in matches:
+    for bucket in display_matches:
         if token_used >= max_tokens:
             break
         try:
@@ -797,7 +812,7 @@ async def breath(
 
     # --- Random surfacing: when search returns < 3, 40% chance to float old memories ---
     # --- 随机浮现：检索结果不足 3 条时，40% 概率从低权重旧桶里漂上来 ---
-    if len(matches) < 3 and random.random() < 0.4:
+    if total_matches < 3 and random.random() < 0.4:
         try:
             all_buckets = await bucket_mgr.list_all(include_archive=False)
             matched_ids = {b["id"] for b in matches}
@@ -821,8 +836,11 @@ async def breath(
         await _fire_webhook("breath", {"mode": "empty", "matches": 0})
         return "未找到相关记忆。"
 
+    if hidden_by_cap > 0:
+        results.append(f"还有 {hidden_by_cap} 个相关桶未显示。")
+
     final_text = "\n---\n".join(results)
-    await _fire_webhook("breath", {"mode": "ok", "matches": len(matches), "chars": len(final_text)})
+    await _fire_webhook("breath", {"mode": "ok", "matches": total_matches, "chars": len(final_text)})
     return final_text
 
 
