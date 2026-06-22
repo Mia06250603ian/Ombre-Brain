@@ -1510,6 +1510,66 @@ async def todos() -> str:
 
 
 # =============================================================
+# Tool 8: archive_session — Archive current conversation summary
+# 工具 8：archive_session — 归档对话摘要
+# =============================================================
+@mcp.tool()
+async def archive_session(
+    summary: str,
+    highlights: str = "",
+    mood: str = "",
+    valence: float = -1,
+    arousal: float = -1,
+) -> str:
+    """将当前对话摘要存入归档。summary(必需)为对话概述；highlights(可选)为逗号分隔要点；mood(可选)为心情描述；valence/arousal 0~1(-1自动推断)。创建permanent桶存入对话归档域，不衰减不参与普通浮现。"""
+    if not summary or not summary.strip():
+        return "summary 不能为空。"
+
+    body_parts = [summary.strip()]
+    if highlights.strip():
+        hl_items = [h.strip() for h in highlights.split(",") if h.strip()]
+        if hl_items:
+            body_parts.append("## 要点\n" + "\n".join(f"- {h}" for h in hl_items))
+        else:
+            body_parts.append("## 要点\n" + highlights.strip())
+    if mood.strip():
+        body_parts.append(f"## 心情\n{mood.strip()}")
+    content = "\n\n".join(body_parts)
+
+    final_valence = valence if 0 <= valence <= 1 else 0.5
+    final_arousal = arousal if 0 <= arousal <= 1 else 0.3
+
+    tags = ["对话归档", "session"]
+    if mood.strip():
+        tags.append(mood.strip()[:20])
+
+    now_str = datetime.now().strftime("%Y-%m-%d")
+    summary_preview = summary.strip()[:30].replace("\n", " ")
+    bucket_name = f"session_{now_str}_{summary_preview}"
+
+    try:
+        bucket_id = await bucket_mgr.create(
+            content=content,
+            tags=tags,
+            importance=5,
+            domain=["对话归档"],
+            valence=final_valence,
+            arousal=final_arousal,
+            name=bucket_name,
+            bucket_type="permanent",
+        )
+    except Exception as e:
+        return f"归档失败: {e}"
+
+    try:
+        await embedding_engine.generate_and_store(bucket_id, content)
+    except Exception:
+        pass
+
+    return f"📁 session归档→{bucket_id}"
+
+
+# =============================================================
 # Dashboard API endpoints (for lightweight Web UI)
 # 仪表板 API（轻量 Web UI 用）
 # =============================================================
