@@ -1122,8 +1122,8 @@ async def trace(
 # 工具 5：pulse — 脉搏，系统状态 + 记忆列表
 # =============================================================
 @mcp.tool()
-async def pulse(include_archive: bool = False) -> str:
-    """系统状态+记忆桶列表。include_archive=True含归档。"""
+async def pulse(include_archive: bool = False, show_all: bool = False) -> str:
+    """系统状态+记忆桶列表。默认显示全部钉选桶+非钉选桶按权重排序前15个，末尾附统计；show_all=True返回全部桶。include_archive=True含归档。"""
     try:
         stats = await bucket_mgr.get_stats()
     except Exception as e:
@@ -1147,8 +1147,7 @@ async def pulse(include_archive: bool = False) -> str:
     if not buckets:
         return status + "\n记忆库为空。"
 
-    lines = []
-    for b in buckets:
+    def _bucket_line(b: dict) -> str:
         meta = b.get("metadata", {})
         if meta.get("pinned") or meta.get("protected"):
             icon = "📌"
@@ -1170,7 +1169,7 @@ async def pulse(include_archive: bool = False) -> str:
         val = meta.get("valence", 0.5)
         aro = meta.get("arousal", 0.3)
         resolved_tag = " [已解决]" if meta.get("resolved", False) else ""
-        lines.append(
+        return (
             f"{icon} [{meta.get('name', b['id'])}]{resolved_tag} "
             f"bucket_id:{b['id']} "
             f"主题:{domains} "
@@ -1180,7 +1179,32 @@ async def pulse(include_archive: bool = False) -> str:
             f"标签:{','.join(meta.get('tags', []))}"
         )
 
-    return status + "\n=== 记忆列表 ===\n" + "\n".join(lines)
+    # --- Separate pinned from the rest and sort non-pinned by weight ---
+    pinned = [b for b in buckets if b.get("metadata", {}).get("pinned") or b.get("metadata", {}).get("protected")]
+    non_pinned = [b for b in buckets if not (b.get("metadata", {}).get("pinned") or b.get("metadata", {}).get("protected"))]
+    non_pinned.sort(
+        key=lambda b: decay_engine.calculate_score(b.get("metadata", {})),
+        reverse=True,
+    )
+
+    total = len(buckets)
+    if show_all:
+        displayed = pinned + non_pinned
+        hidden = 0
+    else:
+        displayed = pinned + non_pinned[:15]
+        hidden = max(0, len(non_pinned) - 15)
+
+    lines = [_bucket_line(b) for b in displayed]
+
+    summary_stat = (
+        f"\n=== 统计 ===\n"
+        f"共 {total} 个桶（钉选:{len(pinned)} 非钉选:{len(non_pinned)}）"
+    )
+    if not show_all and hidden > 0:
+        summary_stat += f"，已显示前 {len(displayed)} 个，另有 {hidden} 个未展示（传 show_all=true 查看全部）"
+
+    return status + "\n=== 记忆列表 ===\n" + "\n".join(lines) + summary_stat
 
 
 # =============================================================
