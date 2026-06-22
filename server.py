@@ -35,6 +35,7 @@
 import os
 import sys
 import random
+from datetime import datetime, date as _date
 import logging
 import asyncio
 import hashlib
@@ -537,12 +538,47 @@ async def breath(
     max_results: int = 5,
     importance_min: int = -1,
     mode: str = "summary",
+    date_from: str = "",
+    date_to: str = "",
 ) -> str:
-    """检索/浮现记忆。不传query或传空=自动浮现,有query=关键词检索。max_tokens控制返回总token上限(默认10000)。domain逗号分隔,valence/arousal 0~1(-1忽略)。max_results控制返回数量上限(默认5,最大50),超出的在末尾附注还有N个相关桶未显示,钉选桶不计入名额。importance_min>=1时按重要度批量拉取(不走语义搜索,按importance降序)。mode=summary(默认)时每个桶仅返回一行摘要(bucket_id+桶名+主题+情感坐标+重要度+更新时间),mode=full时返回完整内容;query非空时忽略mode始终返回full。搜索排名三级权重：精确匹配tags(keywords)字段最高→关键词出现在content次高→语义向量匹配最低;≤4字中文短词强制精确子串匹配防止被拆散。"""
+    """检索/浮现记忆。不传query或传空=自动浮现,有query=关键词检索。max_tokens控制返回总token上限(默认10000)。domain逗号分隔,valence/arousal 0~1(-1忽略)。max_results控制返回数量上限(默认5,最大50),超出的在末尾附注还有N个相关桶未显示,钉选桶不计入名额。importance_min>=1时按重要度批量拉取(不走语义搜索,按importance降序)。mode=summary(默认)时每个桶仅返回一行摘要(bucket_id+桶名+主题+情感坐标+重要度+更新时间),mode=full时返回完整内容;query非空时忽略mode始终返回full。搜索排名三级权重：精确匹配tags(keywords)字段最高→关键词出现在content次高→语义向量匹配最低;≤4字中文短词强制精确子串匹配防止被拆散。date_from/date_to(YYYY-MM-DD)按桶last_active过滤,可与其他参数组合;钉选桶不受日期过滤。"""
     await decay_engine.ensure_started()
     await backup_exporter.ensure_started()
     max_results = min(max_results, 50)
     max_tokens = min(max_tokens, 20000)
+
+    # --- Parse optional date range filters / 解析可选日期范围过滤 ---
+    dt_from: _date | None = None
+    dt_to: _date | None = None
+    if date_from.strip():
+        try:
+            dt_from = datetime.strptime(date_from.strip(), "%Y-%m-%d").date()
+        except ValueError:
+            return "date_from 格式错误，请使用 YYYY-MM-DD（如 2026-01-01）。"
+    if date_to.strip():
+        try:
+            dt_to = datetime.strptime(date_to.strip(), "%Y-%m-%d").date()
+        except ValueError:
+            return "date_to 格式错误，请使用 YYYY-MM-DD（如 2026-12-31）。"
+    if dt_from and dt_to and dt_from > dt_to:
+        return "date_from 不能晚于 date_to。"
+
+    def _date_ok(b: dict) -> bool:
+        """Return True if bucket last_active falls within [dt_from, dt_to]."""
+        if dt_from is None and dt_to is None:
+            return True
+        la = b["metadata"].get("last_active") or b["metadata"].get("created", "")
+        if not la:
+            return True
+        try:
+            la_dt = datetime.fromisoformat(str(la).replace("Z", "+00:00")).date()
+        except (ValueError, TypeError):
+            return True
+        if dt_from and la_dt < dt_from:
+            return False
+        if dt_to and la_dt > dt_to:
+            return False
+        return True
 
     # --- importance_min mode: bulk fetch by importance threshold ---
     # --- 重要度批量拉取模式：跳过语义搜索，按 importance 降序返回 ---
@@ -555,6 +591,7 @@ async def breath(
             b for b in all_buckets
             if int(b["metadata"].get("importance", 0)) >= importance_min
             and b["metadata"].get("type") not in ("feel",)
+            and _date_ok(b)
         ]
         filtered.sort(key=lambda b: int(b["metadata"].get("importance", 0)), reverse=True)
         filtered_total = len(filtered)
@@ -626,6 +663,7 @@ async def breath(
             and b["metadata"].get("type") not in ("permanent", "feel")
             and not b["metadata"].get("pinned", False)
             and not b["metadata"].get("protected", False)
+            and _date_ok(b)
         ]
 
         logger.info(
@@ -722,7 +760,7 @@ async def breath(
     if domain.strip().lower() == "feel":
         try:
             all_buckets = await bucket_mgr.list_all(include_archive=False)
-            feels = [b for b in all_buckets if b["metadata"].get("type") == "feel"]
+            feels = [b for b in all_buckets if b["metadata"].get("type") == "feel" and _date_ok(b)]
             feels.sort(key=lambda b: b["metadata"].get("created", ""), reverse=True)
             if not feels:
                 return "没有留下过 feel。"
@@ -776,6 +814,10 @@ async def breath(
                     matched_ids.add(bucket_id)
     except Exception as e:
         logger.warning(f"Vector search failed, using keyword only / 向量搜索失败: {e}")
+
+    # --- Apply date filter after both channels are collected ---
+    if dt_from or dt_to:
+        matches = [b for b in matches if _date_ok(b)]
 
     # --- Cap to max_results; track hidden count for end-of-response note ---
     total_matches = len(matches)
