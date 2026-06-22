@@ -1130,11 +1130,83 @@ async def trace(
     digested: int = -1,
     content: str = "",
     delete: bool = False,
+    merge: str = "",
 ) -> str:
-    """修改记忆元数据或内容。bucket_id支持逗号分隔多个ID批量操作（批量时content和name忽略）。resolved=1沉底/0激活,pinned=1钉选/0取消,digested=1隐藏(保留但不浮现)/0取消隐藏,content=替换桶正文,delete=True删除。只传需改的,-1或空=不改。"""
+    """修改记忆元数据或内容。bucket_id支持逗号分隔多个ID批量操作（批量时content和name忽略）。merge=另一个bucket_id时将该源桶合并入bucket_id：内容追加、标签去重、importance取大、情感取平均、删除源桶；钉选桶不可作为合并任意一方。resolved=1沉底/0激活,pinned=1钉选/0取消,digested=1隐藏(保留但不浮现)/0取消隐藏,content=替换桶正文,delete=True删除。只传需改的,-1或空=不改。"""
 
     if not bucket_id or not bucket_id.strip():
         return "请提供有效的 bucket_id。"
+
+    # --- Merge mode / 合并模式 ---
+    if merge and merge.strip():
+        src_id = merge.strip()
+        dst_id = bucket_id.strip()
+        if src_id == dst_id:
+            return "源桶与目标桶相同，无需合并。"
+        dst = await bucket_mgr.get(dst_id)
+        if not dst:
+            return f"目标桶未找到: {dst_id}"
+        src = await bucket_mgr.get(src_id)
+        if not src:
+            return f"源桶未找到: {src_id}"
+        dst_meta = dst["metadata"]
+        src_meta = src["metadata"]
+        if dst_meta.get("pinned") or src_meta.get("pinned"):
+            pinned_side = dst_id if dst_meta.get("pinned") else src_id
+            return f"钉选桶 {pinned_side} 不可参与合并操作。"
+
+        # Merge content: append source after target
+        merged_content = (dst.get("content", "") or "").rstrip()
+        src_content = (src.get("content", "") or "").strip()
+        if src_content:
+            merged_content = merged_content + ("\n\n" if merged_content else "") + src_content
+
+        # Merge tags: dedup, preserve order
+        dst_tags = dst_meta.get("tags", [])
+        src_tags = src_meta.get("tags", [])
+        merged_tags = dst_tags + [t for t in src_tags if t not in dst_tags]
+
+        # Merge importance: take max
+        merged_importance = max(
+            dst_meta.get("importance", 5) or 5,
+            src_meta.get("importance", 5) or 5,
+        )
+
+        # Merge emotion: average
+        dst_v = dst_meta.get("valence", 0.5) if dst_meta.get("valence") is not None else 0.5
+        src_v = src_meta.get("valence", 0.5) if src_meta.get("valence") is not None else 0.5
+        dst_a = dst_meta.get("arousal", 0.3) if dst_meta.get("arousal") is not None else 0.3
+        src_a = src_meta.get("arousal", 0.3) if src_meta.get("arousal") is not None else 0.3
+        merged_valence = round((dst_v + src_v) / 2, 4)
+        merged_arousal = round((dst_a + src_a) / 2, 4)
+
+        success = await bucket_mgr.update(
+            dst_id,
+            content=merged_content,
+            tags=merged_tags,
+            importance=merged_importance,
+            valence=merged_valence,
+            arousal=merged_arousal,
+        )
+        if not success:
+            return f"合并写入失败: {dst_id}"
+
+        # Delete source bucket
+        await bucket_mgr.delete(src_id)
+        embedding_engine.delete_embedding(src_id)
+
+        # Regenerate embedding for target
+        try:
+            await embedding_engine.generate_and_store(dst_id, merged_content)
+        except Exception:
+            pass
+
+        return (
+            f"已将 {src_id} 合并入 {dst_id}：\n"
+            f"  内容: 已追加  标签: {len(merged_tags)}个  "
+            f"重要度: {merged_importance}  情感: v={merged_valence} a={merged_arousal}\n"
+            f"  源桶 {src_id} 已删除"
+        )
 
     ids = [bid.strip() for bid in bucket_id.split(",") if bid.strip()]
     batch = len(ids) > 1
