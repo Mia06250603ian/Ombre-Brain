@@ -35,6 +35,7 @@
 import os
 import sys
 import random
+from datetime import datetime, date as _date
 import logging
 import asyncio
 import hashlib
@@ -518,6 +519,41 @@ def _format_bucket_summary_line(b: dict, prefix: str = "") -> str:
     return f"{prefix}{line}" if prefix else line
 
 
+def _is_dormant_candidate(meta: dict) -> bool:
+    """True if bucket meets auto-dormant criteria: >30d untouched, importance<3, not pinned."""
+    if meta.get("pinned") or meta.get("protected"):
+        return False
+    try:
+        importance = int(meta.get("importance", 5) or 5)
+    except (ValueError, TypeError):
+        importance = 5
+    if importance >= 3:
+        return False
+    la = meta.get("last_active") or meta.get("created", "")
+    if not la:
+        return False
+    try:
+        last_active = datetime.fromisoformat(str(la).replace("Z", "+00:00")).replace(tzinfo=None)
+        return (datetime.now() - last_active).total_seconds() / 86400 > 30
+    except (ValueError, TypeError):
+        return False
+
+
+async def _apply_dormant_sweep(buckets: list) -> int:
+    """Mark dormant-eligible buckets. Returns count of newly-marked buckets."""
+    newly_marked = 0
+    for b in buckets:
+        meta = b["metadata"]
+        if not meta.get("dormant") and _is_dormant_candidate(meta):
+            try:
+                await bucket_mgr.update(b["id"], dormant=True)
+                meta["dormant"] = True
+                newly_marked += 1
+            except Exception:
+                pass
+    return newly_marked
+
+
 # =============================================================
 # Tool 1: breath — Breathe
 # 工具 1：breath — 呼吸
@@ -537,12 +573,67 @@ async def breath(
     max_results: int = 5,
     importance_min: int = -1,
     mode: str = "summary",
+    date_from: str = "",
+    date_to: str = "",
+    include_dormant: bool = False,
 ) -> str:
-    """检索/浮现记忆。不传query或传空=自动浮现,有query=关键词检索。max_tokens控制返回总token上限(默认10000)。domain逗号分隔,valence/arousal 0~1(-1忽略)。max_results控制返回数量上限(默认5,最大50),超出的在末尾附注还有N个相关桶未显示,钉选桶不计入名额。importance_min>=1时按重要度批量拉取(不走语义搜索,按importance降序)。mode=summary(默认)时每个桶仅返回一行摘要(bucket_id+桶名+主题+情感坐标+重要度+更新时间),mode=full时返回完整内容;query非空时忽略mode始终返回full。"""
+    """检索/浮现记忆。不传query或传空=自动浮现,有query=关键词检索。max_tokens控制返回总token上限(默认10000)。domain逗号分隔,valence/arousal 0~1(-1忽略)。max_results控制返回数量上限(默认5,最大50),超出的在末尾附注还有N个相关桶未显示,钉选桶不计入名额。importance_min>=1时按重要度批量拉取(不走语义搜索,按importance降序)。mode=summary(默认)时每个桶仅返回一行摘要(bucket_id+桶名+主题+情感坐标+重要度+更新时间),mode=full时返回完整内容;query非空时忽略mode始终返回full。搜索排名三级权重：精确匹配tags(keywords)字段最高→关键词出现在content次高→语义向量匹配最低;≤4字中文短词强制精确子串匹配防止被拆散。date_from/date_to(YYYY-MM-DD)按桶last_active过滤,可与其他参数组合;钉选桶不受日期过滤。命中桶若metadata含related字段(bucket_id列表),在该桶结果下附一行关联提示(id+名称,不展开全文)。include_dormant=false(默认)时休眠桶不出现在结果中;include_dormant=true时包含休眠桶。休眠条件：>30天未访问且importance<3且非钉选桶；被命中后自动解除休眠。"""
     await decay_engine.ensure_started()
     await backup_exporter.ensure_started()
     max_results = min(max_results, 50)
     max_tokens = min(max_tokens, 20000)
+
+    # --- Parse optional date range filters / 解析可选日期范围过滤 ---
+    dt_from: _date | None = None
+    dt_to: _date | None = None
+    if date_from.strip():
+        try:
+            dt_from = datetime.strptime(date_from.strip(), "%Y-%m-%d").date()
+        except ValueError:
+            return "date_from 格式错误，请使用 YYYY-MM-DD（如 2026-01-01）。"
+    if date_to.strip():
+        try:
+            dt_to = datetime.strptime(date_to.strip(), "%Y-%m-%d").date()
+        except ValueError:
+            return "date_to 格式错误，请使用 YYYY-MM-DD（如 2026-12-31）。"
+    if dt_from and dt_to and dt_from > dt_to:
+        return "date_from 不能晚于 date_to。"
+
+    def _date_ok(b: dict) -> bool:
+        """Return True if bucket last_active falls within [dt_from, dt_to]."""
+        if dt_from is None and dt_to is None:
+            return True
+        la = b["metadata"].get("last_active") or b["metadata"].get("created", "")
+        if not la:
+            return True
+        try:
+            la_dt = datetime.fromisoformat(str(la).replace("Z", "+00:00")).date()
+        except (ValueError, TypeError):
+            return True
+        if dt_from and la_dt < dt_from:
+            return False
+        if dt_to and la_dt > dt_to:
+            return False
+        return True
+
+    async def _related_hint(b: dict, name_cache: dict) -> str:
+        """Return a one-line related-buckets hint, or empty string if none."""
+        related = b["metadata"].get("related")
+        if not related or not isinstance(related, list):
+            return ""
+        parts = []
+        for rid in related[:5]:  # cap at 5 to keep output compact
+            if rid in name_cache:
+                name = name_cache[rid]
+            else:
+                try:
+                    rb = await bucket_mgr.get(rid)
+                    name = rb["metadata"].get("name", rid) if rb else rid
+                    name_cache[rid] = name
+                except Exception:
+                    name = rid
+            parts.append(f"[bucket_id:{rid}] {name}")
+        return "→ 关联: " + " | ".join(parts)
 
     # --- importance_min mode: bulk fetch by importance threshold ---
     # --- 重要度批量拉取模式：跳过语义搜索，按 importance 降序返回 ---
@@ -551,16 +642,20 @@ async def breath(
             all_buckets = await bucket_mgr.list_all(include_archive=False)
         except Exception as e:
             return f"记忆系统暂时无法访问: {e}"
+        await _apply_dormant_sweep(all_buckets)
         filtered = [
             b for b in all_buckets
             if int(b["metadata"].get("importance", 0)) >= importance_min
             and b["metadata"].get("type") not in ("feel",)
+            and _date_ok(b)
+            and (include_dormant or not b["metadata"].get("dormant", False))
         ]
         filtered.sort(key=lambda b: int(b["metadata"].get("importance", 0)), reverse=True)
         filtered_total = len(filtered)
         filtered = filtered[:max_results]
         if not filtered:
             return f"没有重要度 >= {importance_min} 的记忆。"
+        name_cache = {b["id"]: b["metadata"].get("name", b["id"]) for b in all_buckets}
         results = []
         token_used = 0
         for b in filtered:
@@ -570,19 +665,18 @@ async def breath(
                 imp = b["metadata"].get("importance", 0)
                 if mode == "summary":
                     line = _format_bucket_summary_line(b, prefix=f"[importance:{imp}] ")
-                    t = count_tokens_approx(line)
-                    if token_used + t > max_tokens:
-                        break
-                    results.append(line)
-                    token_used += t
                 else:
                     clean_meta = {k: v for k, v in b["metadata"].items() if k != "tags"}
                     summary = await dehydrator.dehydrate(strip_wikilinks(b["content"]), clean_meta)
-                    t = count_tokens_approx(summary)
-                    if token_used + t > max_tokens:
-                        break
-                    results.append(f"[importance:{imp}] [bucket_id:{b['id']}] {summary}")
-                    token_used += t
+                    line = f"[importance:{imp}] [bucket_id:{b['id']}] {summary}"
+                hint = await _related_hint(b, name_cache)
+                if hint:
+                    line += "\n" + hint
+                t = count_tokens_approx(line)
+                if token_used + t > max_tokens:
+                    break
+                results.append(line)
+                token_used += t
             except Exception as e:
                 logger.warning(f"importance_min dehydrate failed: {e}")
         hidden_by_cap = max(0, filtered_total - max_results)
@@ -605,18 +699,26 @@ async def breath(
             b for b in all_buckets
             if b["metadata"].get("pinned") or b["metadata"].get("protected")
         ]
+        name_cache = {b["id"]: b["metadata"].get("name", b["id"]) for b in all_buckets}
         pinned_results = []
         for b in pinned_buckets:
             try:
                 if mode == "summary":
-                    pinned_results.append("📌 [核心准则] " + _format_bucket_summary_line(b))
+                    line = "📌 [核心准则] " + _format_bucket_summary_line(b)
                 else:
                     clean_meta = {k: v for k, v in b["metadata"].items() if k != "tags"}
                     summary = await dehydrator.dehydrate(strip_wikilinks(b["content"]), clean_meta)
-                    pinned_results.append(f"📌 [核心准则] [bucket_id:{b['id']}] {summary}")
+                    line = f"📌 [核心准则] [bucket_id:{b['id']}] {summary}"
+                hint = await _related_hint(b, name_cache)
+                if hint:
+                    line += "\n" + hint
+                pinned_results.append(line)
             except Exception as e:
                 logger.warning(f"Failed to dehydrate pinned bucket / 钉选桶脱水失败: {e}")
                 continue
+
+        # --- Auto-mark dormant candidates before surfacing ---
+        await _apply_dormant_sweep(all_buckets)
 
         # --- Unresolved buckets: surface top N by weight ---
         # --- 未解决桶：按权重浮现前 N 条 ---
@@ -626,6 +728,8 @@ async def breath(
             and b["metadata"].get("type") not in ("permanent", "feel")
             and not b["metadata"].get("pinned", False)
             and not b["metadata"].get("protected", False)
+            and _date_ok(b)
+            and (include_dormant or not b["metadata"].get("dormant", False))
         ]
 
         logger.info(
@@ -685,20 +789,19 @@ async def breath(
                 score = decay_engine.calculate_score(b["metadata"])
                 if mode == "summary":
                     line = _format_bucket_summary_line(b, prefix=f"[权重:{score:.2f}] ")
-                    line_tokens = count_tokens_approx(line)
-                    if line_tokens > token_budget:
-                        break
-                    dynamic_results.append(line)
-                    token_budget -= line_tokens
                 else:
                     clean_meta = {k: v for k, v in b["metadata"].items() if k != "tags"}
                     summary = await dehydrator.dehydrate(strip_wikilinks(b["content"]), clean_meta)
-                    summary_tokens = count_tokens_approx(summary)
-                    if summary_tokens > token_budget:
-                        break
                     # NOTE: no touch() here — surfacing should NOT reset decay timer
-                    dynamic_results.append(f"[权重:{score:.2f}] [bucket_id:{b['id']}] {summary}")
-                    token_budget -= summary_tokens
+                    line = f"[权重:{score:.2f}] [bucket_id:{b['id']}] {summary}"
+                hint = await _related_hint(b, name_cache)
+                if hint:
+                    line += "\n" + hint
+                line_tokens = count_tokens_approx(line)
+                if line_tokens > token_budget:
+                    break
+                dynamic_results.append(line)
+                token_budget -= line_tokens
             except Exception as e:
                 logger.warning(f"Failed to dehydrate surfaced bucket / 浮现脱水失败: {e}")
                 continue
@@ -722,7 +825,7 @@ async def breath(
     if domain.strip().lower() == "feel":
         try:
             all_buckets = await bucket_mgr.list_all(include_archive=False)
-            feels = [b for b in all_buckets if b["metadata"].get("type") == "feel"]
+            feels = [b for b in all_buckets if b["metadata"].get("type") == "feel" and _date_ok(b)]
             feels.sort(key=lambda b: b["metadata"].get("created", ""), reverse=True)
             if not feels:
                 return "没有留下过 feel。"
@@ -777,10 +880,20 @@ async def breath(
     except Exception as e:
         logger.warning(f"Vector search failed, using keyword only / 向量搜索失败: {e}")
 
+    # --- Apply date filter after both channels are collected ---
+    if dt_from or dt_to:
+        matches = [b for b in matches if _date_ok(b)]
+
+    # --- Apply dormant sweep + filter ---
+    await _apply_dormant_sweep(matches)
+    if not include_dormant:
+        matches = [b for b in matches if not b["metadata"].get("dormant", False)]
+
     # --- Cap to max_results; track hidden count for end-of-response note ---
     total_matches = len(matches)
     display_matches = matches[:max_results]
     hidden_by_cap = max(0, total_matches - max_results)
+    name_cache = {b["id"]: b["metadata"].get("name", b["id"]) for b in matches}
 
     results = []
     token_used = 0
@@ -801,10 +914,13 @@ async def breath(
                 break
             await bucket_mgr.touch(bucket["id"])
             if bucket.get("vector_match"):
-                summary = f"[语义关联] [bucket_id:{bucket['id']}] {summary}"
+                line = f"[语义关联] [bucket_id:{bucket['id']}] {summary}"
             else:
-                summary = f"[bucket_id:{bucket['id']}] {summary}"
-            results.append(summary)
+                line = f"[bucket_id:{bucket['id']}] {summary}"
+            hint = await _related_hint(bucket, name_cache)
+            if hint:
+                line += "\n" + hint
+            results.append(line)
             token_used += summary_tokens
         except Exception as e:
             logger.warning(f"Failed to dehydrate search result / 检索结果脱水失败: {e}")
@@ -1061,78 +1177,230 @@ async def trace(
     digested: int = -1,
     content: str = "",
     delete: bool = False,
+    merge: str = "",
 ) -> str:
-    """修改记忆元数据或内容。resolved=1沉底/0激活,pinned=1钉选/0取消,digested=1隐藏(保留但不浮现)/0取消隐藏,content=替换桶正文,delete=True删除。只传需改的,-1或空=不改。"""
+    """修改记忆元数据或内容。bucket_id支持逗号分隔多个ID批量操作（批量时content和name忽略）。merge=另一个bucket_id时将该源桶合并入bucket_id：内容追加、标签去重、importance取大、情感取平均、删除源桶；钉选桶不可作为合并任意一方。resolved=1沉底/0激活,pinned=1钉选/0取消,digested=1隐藏(保留但不浮现)/0取消隐藏,content=替换桶正文,delete=True删除。只传需改的,-1或空=不改。"""
 
     if not bucket_id or not bucket_id.strip():
         return "请提供有效的 bucket_id。"
 
-    # --- Delete mode / 删除模式 ---
-    if delete:
-        success = await bucket_mgr.delete(bucket_id)
-        if success:
-            embedding_engine.delete_embedding(bucket_id)
-        return f"已遗忘记忆桶: {bucket_id}" if success else f"未找到记忆桶: {bucket_id}"
+    # --- Merge mode / 合并模式 ---
+    if merge and merge.strip():
+        src_id = merge.strip()
+        dst_id = bucket_id.strip()
+        if src_id == dst_id:
+            return "源桶与目标桶相同，无需合并。"
+        dst = await bucket_mgr.get(dst_id)
+        if not dst:
+            return f"目标桶未找到: {dst_id}"
+        src = await bucket_mgr.get(src_id)
+        if not src:
+            return f"源桶未找到: {src_id}"
+        dst_meta = dst["metadata"]
+        src_meta = src["metadata"]
+        if dst_meta.get("pinned") or src_meta.get("pinned"):
+            pinned_side = dst_id if dst_meta.get("pinned") else src_id
+            return f"钉选桶 {pinned_side} 不可参与合并操作。"
 
-    bucket = await bucket_mgr.get(bucket_id)
-    if not bucket:
-        return f"未找到记忆桶: {bucket_id}"
+        # Merge content: append source after target
+        merged_content = (dst.get("content", "") or "").rstrip()
+        src_content = (src.get("content", "") or "").strip()
+        if src_content:
+            merged_content = merged_content + ("\n\n" if merged_content else "") + src_content
 
-    # --- Collect only fields actually passed / 只收集用户实际传入的字段 ---
-    updates = {}
-    if name:
-        updates["name"] = name
-    if domain:
-        updates["domain"] = [d.strip() for d in domain.split(",") if d.strip()]
-    if 0 <= valence <= 1:
-        updates["valence"] = valence
-    if 0 <= arousal <= 1:
-        updates["arousal"] = arousal
-    if 1 <= importance <= 10:
-        updates["importance"] = importance
-    if tags:
-        updates["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
-    if resolved in (0, 1):
-        updates["resolved"] = bool(resolved)
-    if pinned in (0, 1):
-        updates["pinned"] = bool(pinned)
-        if pinned == 1:
-            updates["importance"] = 10  # pinned → lock importance
-    if digested in (0, 1):
-        updates["digested"] = bool(digested)
-    if content:
-        updates["content"] = content
+        # Merge tags: dedup, preserve order
+        dst_tags = dst_meta.get("tags", [])
+        src_tags = src_meta.get("tags", [])
+        merged_tags = dst_tags + [t for t in src_tags if t not in dst_tags]
 
-    if not updates:
-        return "没有任何字段需要修改。"
+        # Merge importance: take max
+        merged_importance = max(
+            dst_meta.get("importance", 5) or 5,
+            src_meta.get("importance", 5) or 5,
+        )
 
-    success = await bucket_mgr.update(bucket_id, **updates)
-    if not success:
-        return f"修改失败: {bucket_id}"
+        # Merge emotion: average
+        dst_v = dst_meta.get("valence", 0.5) if dst_meta.get("valence") is not None else 0.5
+        src_v = src_meta.get("valence", 0.5) if src_meta.get("valence") is not None else 0.5
+        dst_a = dst_meta.get("arousal", 0.3) if dst_meta.get("arousal") is not None else 0.3
+        src_a = src_meta.get("arousal", 0.3) if src_meta.get("arousal") is not None else 0.3
+        merged_valence = round((dst_v + src_v) / 2, 4)
+        merged_arousal = round((dst_a + src_a) / 2, 4)
 
-    # Re-generate embedding if content changed
-    if "content" in updates:
+        success = await bucket_mgr.update(
+            dst_id,
+            content=merged_content,
+            tags=merged_tags,
+            importance=merged_importance,
+            valence=merged_valence,
+            arousal=merged_arousal,
+        )
+        if not success:
+            return f"合并写入失败: {dst_id}"
+
+        # Delete source bucket
+        await bucket_mgr.delete(src_id)
+        embedding_engine.delete_embedding(src_id)
+
+        # Regenerate embedding for target
         try:
-            await embedding_engine.generate_and_store(bucket_id, updates["content"])
+            await embedding_engine.generate_and_store(dst_id, merged_content)
         except Exception:
             pass
 
-    changed = ", ".join(f"{k}={v}" for k, v in updates.items() if k != "content")
-    if "content" in updates:
-        changed += (", content=已替换" if changed else "content=已替换")
-    # Explicit hint about resolved state change semantics
-    # 特别提示 resolved 状态变化的语义
-    if "resolved" in updates:
-        if updates["resolved"]:
-            changed += " → 已沉底，只在关键词触发时重新浮现"
-        else:
-            changed += " → 已重新激活，将参与浮现排序"
-    if "digested" in updates:
-        if updates["digested"]:
-            changed += " → 已隐藏，保留但不再浮现"
-        else:
-            changed += " → 已取消隐藏，重新参与浮现"
-    return f"已修改记忆桶 {bucket_id}: {changed}"
+        return (
+            f"已将 {src_id} 合并入 {dst_id}：\n"
+            f"  内容: 已追加  标签: {len(merged_tags)}个  "
+            f"重要度: {merged_importance}  情感: v={merged_valence} a={merged_arousal}\n"
+            f"  源桶 {src_id} 已删除"
+        )
+
+    ids = [bid.strip() for bid in bucket_id.split(",") if bid.strip()]
+    batch = len(ids) > 1
+
+    async def _trace_one(bid: str) -> str:
+        # --- Delete mode / 删除模式 ---
+        if delete:
+            success = await bucket_mgr.delete(bid)
+            if success:
+                embedding_engine.delete_embedding(bid)
+            return f"已遗忘: {bid}" if success else f"未找到: {bid}"
+
+        bucket = await bucket_mgr.get(bid)
+        if not bucket:
+            return f"未找到: {bid}"
+
+        # --- Collect only fields actually passed / 只收集用户实际传入的字段 ---
+        updates = {}
+        if name and not batch:
+            updates["name"] = name
+        if domain:
+            updates["domain"] = [d.strip() for d in domain.split(",") if d.strip()]
+        if 0 <= valence <= 1:
+            updates["valence"] = valence
+        if 0 <= arousal <= 1:
+            updates["arousal"] = arousal
+        if 1 <= importance <= 10:
+            updates["importance"] = importance
+        if tags:
+            updates["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
+        if resolved in (0, 1):
+            updates["resolved"] = bool(resolved)
+        if pinned in (0, 1):
+            updates["pinned"] = bool(pinned)
+            if pinned == 1:
+                updates["importance"] = 10  # pinned → lock importance
+        if digested in (0, 1):
+            updates["digested"] = bool(digested)
+        if content and not batch:
+            updates["content"] = content
+        # Auto-undormant on any access
+        if bucket["metadata"].get("dormant"):
+            updates["dormant"] = False
+
+        if not updates:
+            return f"{bid}: 没有任何字段需要修改"
+
+        success = await bucket_mgr.update(bid, **updates)
+        if not success:
+            return f"修改失败: {bid}"
+
+        # Re-generate embedding if content changed
+        if "content" in updates:
+            try:
+                await embedding_engine.generate_and_store(bid, updates["content"])
+            except Exception:
+                pass
+
+        changed = ", ".join(f"{k}={v}" for k, v in updates.items() if k != "content")
+        if "content" in updates:
+            changed += (", content=已替换" if changed else "content=已替换")
+        if "resolved" in updates:
+            if updates["resolved"]:
+                changed += " → 已沉底"
+            else:
+                changed += " → 已重新激活"
+        if "digested" in updates:
+            if updates["digested"]:
+                changed += " → 已隐藏"
+            else:
+                changed += " → 已取消隐藏"
+        return f"{bid}: {changed}"
+
+    if batch:
+        results = []
+        for bid in ids:
+            results.append(await _trace_one(bid))
+        ok = sum(1 for r in results if not r.startswith("未找到") and not r.startswith("修改失败"))
+        header = f"批量操作 {len(ids)} 个桶，成功 {ok} 个：\n"
+        return header + "\n".join(results)
+    else:
+        # Single-ID path: keep original verbose hints
+        bid = ids[0]
+        if delete:
+            success = await bucket_mgr.delete(bid)
+            if success:
+                embedding_engine.delete_embedding(bid)
+            return f"已遗忘记忆桶: {bid}" if success else f"未找到记忆桶: {bid}"
+
+        bucket = await bucket_mgr.get(bid)
+        if not bucket:
+            return f"未找到记忆桶: {bid}"
+
+        updates = {}
+        if name:
+            updates["name"] = name
+        if domain:
+            updates["domain"] = [d.strip() for d in domain.split(",") if d.strip()]
+        if 0 <= valence <= 1:
+            updates["valence"] = valence
+        if 0 <= arousal <= 1:
+            updates["arousal"] = arousal
+        if 1 <= importance <= 10:
+            updates["importance"] = importance
+        if tags:
+            updates["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
+        if resolved in (0, 1):
+            updates["resolved"] = bool(resolved)
+        if pinned in (0, 1):
+            updates["pinned"] = bool(pinned)
+            if pinned == 1:
+                updates["importance"] = 10
+        if digested in (0, 1):
+            updates["digested"] = bool(digested)
+        if content:
+            updates["content"] = content
+        # Auto-undormant on any access
+        if bucket["metadata"].get("dormant"):
+            updates["dormant"] = False
+
+        if not updates:
+            return "没有任何字段需要修改。"
+
+        success = await bucket_mgr.update(bid, **updates)
+        if not success:
+            return f"修改失败: {bid}"
+
+        if "content" in updates:
+            try:
+                await embedding_engine.generate_and_store(bid, updates["content"])
+            except Exception:
+                pass
+
+        changed = ", ".join(f"{k}={v}" for k, v in updates.items() if k != "content")
+        if "content" in updates:
+            changed += (", content=已替换" if changed else "content=已替换")
+        if "resolved" in updates:
+            if updates["resolved"]:
+                changed += " → 已沉底，只在关键词触发时重新浮现"
+            else:
+                changed += " → 已重新激活，将参与浮现排序"
+        if "digested" in updates:
+            if updates["digested"]:
+                changed += " → 已隐藏，保留但不再浮现"
+            else:
+                changed += " → 已取消隐藏，重新参与浮现"
+        return f"已修改记忆桶 {bid}: {changed}"
 
 
 # =============================================================
@@ -1197,9 +1465,18 @@ async def pulse(include_archive: bool = False, show_all: bool = False) -> str:
             f"标签:{','.join(meta.get('tags', []))}"
         )
 
+    # --- Auto-mark dormant candidates ---
+    await _apply_dormant_sweep(buckets)
+
+    dormant_count = sum(1 for b in buckets if b.get("metadata", {}).get("dormant", False))
+
     # --- Separate pinned from the rest and sort non-pinned by weight ---
     pinned = [b for b in buckets if b.get("metadata", {}).get("pinned") or b.get("metadata", {}).get("protected")]
-    non_pinned = [b for b in buckets if not (b.get("metadata", {}).get("pinned") or b.get("metadata", {}).get("protected"))]
+    non_pinned = [
+        b for b in buckets
+        if not (b.get("metadata", {}).get("pinned") or b.get("metadata", {}).get("protected"))
+        and not b.get("metadata", {}).get("dormant", False)
+    ]
     non_pinned.sort(
         key=lambda b: decay_engine.calculate_score(b.get("metadata", {})),
         reverse=True,
@@ -1217,10 +1494,13 @@ async def pulse(include_archive: bool = False, show_all: bool = False) -> str:
 
     summary_stat = (
         f"\n=== 统计 ===\n"
-        f"共 {total} 个桶（钉选:{len(pinned)} 非钉选:{len(non_pinned)}）"
+        f"共 {total} 个桶（钉选:{len(pinned)} 非钉选:{len(non_pinned)}"
+        + (f" 休眠:{dormant_count}" if dormant_count else "") + "）"
     )
+    if dormant_count:
+        summary_stat += f"\n休眠桶 {dormant_count} 个已隐藏（breath include_dormant=true 可见，trace 始终可访问）"
     if not show_all and hidden > 0:
-        summary_stat += f"，已显示前 {len(displayed)} 个，另有 {hidden} 个未展示（传 show_all=true 查看全部）"
+        summary_stat += f"\n已显示前 {len(displayed)} 个，另有 {hidden} 个未展示（传 show_all=true 查看全部）"
 
     return status + "\n=== 记忆列表 ===\n" + "\n".join(lines) + summary_stat
 
@@ -1366,6 +1646,138 @@ async def dream(detail_ids: str = "") -> str:
     final_text = header + "\n---\n".join(parts) + connection_hint + crystal_hint
     await _fire_webhook("dream", {"recent": len(recent), "chars": len(final_text)})
     return final_text
+
+
+# =============================================================
+# Tool 7: todos — List pending to-do items across unresolved buckets
+# 工具 7：todos — 汇总未解决桶的待办事项
+# =============================================================
+@mcp.tool()
+async def todos() -> str:
+    """汇总所有未resolved桶的todos字段，按桶分组返回桶名、bucket_id、重要度和待办列表。todos为metadata列表字段，每项可为字符串或含text/done键的字典。按重要度降序排列，末尾附统计。"""
+    try:
+        all_buckets = await bucket_mgr.list_all(include_archive=False)
+    except Exception as e:
+        return f"记忆系统暂时无法访问: {e}"
+
+    def _todo_item_str(item) -> str:
+        """Render a single todo item regardless of whether it's a str or dict."""
+        if isinstance(item, dict):
+            text = item.get("text") or item.get("title") or str(item)
+            done = item.get("done", False) or item.get("completed", False)
+            return f"[x] {text}" if done else f"[ ] {text}"
+        return f"[ ] {item}"
+
+    # Collect unresolved buckets that have a non-empty todos list
+    with_todos = []
+    for b in all_buckets:
+        meta = b.get("metadata", {})
+        if meta.get("resolved", False):
+            continue
+        todos_val = meta.get("todos")
+        if not todos_val:
+            continue
+        if isinstance(todos_val, list) and len(todos_val) > 0:
+            with_todos.append(b)
+        elif isinstance(todos_val, str) and todos_val.strip():
+            # Single-string fallback: wrap in list so rendering is uniform
+            b["metadata"]["todos"] = [todos_val.strip()]
+            with_todos.append(b)
+
+    if not with_todos:
+        return "没有待办事项。"
+
+    # Sort by importance desc, then decay weight desc
+    with_todos.sort(
+        key=lambda b: (
+            -int(b["metadata"].get("importance", 0)),
+            -decay_engine.calculate_score(b["metadata"]),
+        )
+    )
+
+    parts = []
+    total_items = 0
+    for b in with_todos:
+        meta = b["metadata"]
+        name = meta.get("name", b["id"])
+        importance = meta.get("importance", "?")
+        bid = b["id"]
+        todo_list = meta["todos"]
+        total_items += len(todo_list)
+
+        if meta.get("pinned") or meta.get("protected"):
+            icon = "📌"
+        elif meta.get("type") == "permanent":
+            icon = "📦"
+        else:
+            icon = "💭"
+
+        header_line = f"{icon} [{name}]  bucket_id:{bid}  重要度:{importance}"
+        item_lines = "\n".join(f"  {_todo_item_str(item)}" for item in todo_list)
+        parts.append(header_line + "\n" + item_lines)
+
+    summary = f"\n共 {len(with_todos)} 个桶，{total_items} 条待办。"
+    return "=== 待办事项 ===\n\n" + "\n\n".join(parts) + summary
+
+
+# =============================================================
+# Tool 8: archive_session — Archive current conversation summary
+# 工具 8：archive_session — 归档对话摘要
+# =============================================================
+@mcp.tool()
+async def archive_session(
+    summary: str,
+    highlights: str = "",
+    mood: str = "",
+    valence: float = -1,
+    arousal: float = -1,
+) -> str:
+    """将当前对话摘要存入归档。summary(必需)为对话概述；highlights(可选)为逗号分隔要点；mood(可选)为心情描述；valence/arousal 0~1(-1自动推断)。创建permanent桶存入对话归档域，不衰减不参与普通浮现。"""
+    if not summary or not summary.strip():
+        return "summary 不能为空。"
+
+    body_parts = [summary.strip()]
+    if highlights.strip():
+        hl_items = [h.strip() for h in highlights.split(",") if h.strip()]
+        if hl_items:
+            body_parts.append("## 要点\n" + "\n".join(f"- {h}" for h in hl_items))
+        else:
+            body_parts.append("## 要点\n" + highlights.strip())
+    if mood.strip():
+        body_parts.append(f"## 心情\n{mood.strip()}")
+    content = "\n\n".join(body_parts)
+
+    final_valence = valence if 0 <= valence <= 1 else 0.5
+    final_arousal = arousal if 0 <= arousal <= 1 else 0.3
+
+    tags = ["对话归档", "session"]
+    if mood.strip():
+        tags.append(mood.strip()[:20])
+
+    now_str = datetime.now().strftime("%Y-%m-%d")
+    summary_preview = summary.strip()[:30].replace("\n", " ")
+    bucket_name = f"session_{now_str}_{summary_preview}"
+
+    try:
+        bucket_id = await bucket_mgr.create(
+            content=content,
+            tags=tags,
+            importance=5,
+            domain=["对话归档"],
+            valence=final_valence,
+            arousal=final_arousal,
+            name=bucket_name,
+            bucket_type="permanent",
+        )
+    except Exception as e:
+        return f"归档失败: {e}"
+
+    try:
+        await embedding_engine.generate_and_store(bucket_id, content)
+    except Exception:
+        pass
+
+    return f"📁 session归档→{bucket_id}"
 
 
 # =============================================================
