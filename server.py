@@ -1131,77 +1131,151 @@ async def trace(
     content: str = "",
     delete: bool = False,
 ) -> str:
-    """修改记忆元数据或内容。resolved=1沉底/0激活,pinned=1钉选/0取消,digested=1隐藏(保留但不浮现)/0取消隐藏,content=替换桶正文,delete=True删除。只传需改的,-1或空=不改。"""
+    """修改记忆元数据或内容。bucket_id支持逗号分隔多个ID批量操作（批量时content和name忽略）。resolved=1沉底/0激活,pinned=1钉选/0取消,digested=1隐藏(保留但不浮现)/0取消隐藏,content=替换桶正文,delete=True删除。只传需改的,-1或空=不改。"""
 
     if not bucket_id or not bucket_id.strip():
         return "请提供有效的 bucket_id。"
 
-    # --- Delete mode / 删除模式 ---
-    if delete:
-        success = await bucket_mgr.delete(bucket_id)
-        if success:
-            embedding_engine.delete_embedding(bucket_id)
-        return f"已遗忘记忆桶: {bucket_id}" if success else f"未找到记忆桶: {bucket_id}"
+    ids = [bid.strip() for bid in bucket_id.split(",") if bid.strip()]
+    batch = len(ids) > 1
 
-    bucket = await bucket_mgr.get(bucket_id)
-    if not bucket:
-        return f"未找到记忆桶: {bucket_id}"
+    async def _trace_one(bid: str) -> str:
+        # --- Delete mode / 删除模式 ---
+        if delete:
+            success = await bucket_mgr.delete(bid)
+            if success:
+                embedding_engine.delete_embedding(bid)
+            return f"已遗忘: {bid}" if success else f"未找到: {bid}"
 
-    # --- Collect only fields actually passed / 只收集用户实际传入的字段 ---
-    updates = {}
-    if name:
-        updates["name"] = name
-    if domain:
-        updates["domain"] = [d.strip() for d in domain.split(",") if d.strip()]
-    if 0 <= valence <= 1:
-        updates["valence"] = valence
-    if 0 <= arousal <= 1:
-        updates["arousal"] = arousal
-    if 1 <= importance <= 10:
-        updates["importance"] = importance
-    if tags:
-        updates["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
-    if resolved in (0, 1):
-        updates["resolved"] = bool(resolved)
-    if pinned in (0, 1):
-        updates["pinned"] = bool(pinned)
-        if pinned == 1:
-            updates["importance"] = 10  # pinned → lock importance
-    if digested in (0, 1):
-        updates["digested"] = bool(digested)
-    if content:
-        updates["content"] = content
+        bucket = await bucket_mgr.get(bid)
+        if not bucket:
+            return f"未找到: {bid}"
 
-    if not updates:
-        return "没有任何字段需要修改。"
+        # --- Collect only fields actually passed / 只收集用户实际传入的字段 ---
+        updates = {}
+        if name and not batch:
+            updates["name"] = name
+        if domain:
+            updates["domain"] = [d.strip() for d in domain.split(",") if d.strip()]
+        if 0 <= valence <= 1:
+            updates["valence"] = valence
+        if 0 <= arousal <= 1:
+            updates["arousal"] = arousal
+        if 1 <= importance <= 10:
+            updates["importance"] = importance
+        if tags:
+            updates["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
+        if resolved in (0, 1):
+            updates["resolved"] = bool(resolved)
+        if pinned in (0, 1):
+            updates["pinned"] = bool(pinned)
+            if pinned == 1:
+                updates["importance"] = 10  # pinned → lock importance
+        if digested in (0, 1):
+            updates["digested"] = bool(digested)
+        if content and not batch:
+            updates["content"] = content
 
-    success = await bucket_mgr.update(bucket_id, **updates)
-    if not success:
-        return f"修改失败: {bucket_id}"
+        if not updates:
+            return f"{bid}: 没有任何字段需要修改"
 
-    # Re-generate embedding if content changed
-    if "content" in updates:
-        try:
-            await embedding_engine.generate_and_store(bucket_id, updates["content"])
-        except Exception:
-            pass
+        success = await bucket_mgr.update(bid, **updates)
+        if not success:
+            return f"修改失败: {bid}"
 
-    changed = ", ".join(f"{k}={v}" for k, v in updates.items() if k != "content")
-    if "content" in updates:
-        changed += (", content=已替换" if changed else "content=已替换")
-    # Explicit hint about resolved state change semantics
-    # 特别提示 resolved 状态变化的语义
-    if "resolved" in updates:
-        if updates["resolved"]:
-            changed += " → 已沉底，只在关键词触发时重新浮现"
-        else:
-            changed += " → 已重新激活，将参与浮现排序"
-    if "digested" in updates:
-        if updates["digested"]:
-            changed += " → 已隐藏，保留但不再浮现"
-        else:
-            changed += " → 已取消隐藏，重新参与浮现"
-    return f"已修改记忆桶 {bucket_id}: {changed}"
+        # Re-generate embedding if content changed
+        if "content" in updates:
+            try:
+                await embedding_engine.generate_and_store(bid, updates["content"])
+            except Exception:
+                pass
+
+        changed = ", ".join(f"{k}={v}" for k, v in updates.items() if k != "content")
+        if "content" in updates:
+            changed += (", content=已替换" if changed else "content=已替换")
+        if "resolved" in updates:
+            if updates["resolved"]:
+                changed += " → 已沉底"
+            else:
+                changed += " → 已重新激活"
+        if "digested" in updates:
+            if updates["digested"]:
+                changed += " → 已隐藏"
+            else:
+                changed += " → 已取消隐藏"
+        return f"{bid}: {changed}"
+
+    if batch:
+        results = []
+        for bid in ids:
+            results.append(await _trace_one(bid))
+        ok = sum(1 for r in results if not r.startswith("未找到") and not r.startswith("修改失败"))
+        header = f"批量操作 {len(ids)} 个桶，成功 {ok} 个：\n"
+        return header + "\n".join(results)
+    else:
+        # Single-ID path: keep original verbose hints
+        bid = ids[0]
+        if delete:
+            success = await bucket_mgr.delete(bid)
+            if success:
+                embedding_engine.delete_embedding(bid)
+            return f"已遗忘记忆桶: {bid}" if success else f"未找到记忆桶: {bid}"
+
+        bucket = await bucket_mgr.get(bid)
+        if not bucket:
+            return f"未找到记忆桶: {bid}"
+
+        updates = {}
+        if name:
+            updates["name"] = name
+        if domain:
+            updates["domain"] = [d.strip() for d in domain.split(",") if d.strip()]
+        if 0 <= valence <= 1:
+            updates["valence"] = valence
+        if 0 <= arousal <= 1:
+            updates["arousal"] = arousal
+        if 1 <= importance <= 10:
+            updates["importance"] = importance
+        if tags:
+            updates["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
+        if resolved in (0, 1):
+            updates["resolved"] = bool(resolved)
+        if pinned in (0, 1):
+            updates["pinned"] = bool(pinned)
+            if pinned == 1:
+                updates["importance"] = 10
+        if digested in (0, 1):
+            updates["digested"] = bool(digested)
+        if content:
+            updates["content"] = content
+
+        if not updates:
+            return "没有任何字段需要修改。"
+
+        success = await bucket_mgr.update(bid, **updates)
+        if not success:
+            return f"修改失败: {bid}"
+
+        if "content" in updates:
+            try:
+                await embedding_engine.generate_and_store(bid, updates["content"])
+            except Exception:
+                pass
+
+        changed = ", ".join(f"{k}={v}" for k, v in updates.items() if k != "content")
+        if "content" in updates:
+            changed += (", content=已替换" if changed else "content=已替换")
+        if "resolved" in updates:
+            if updates["resolved"]:
+                changed += " → 已沉底，只在关键词触发时重新浮现"
+            else:
+                changed += " → 已重新激活，将参与浮现排序"
+        if "digested" in updates:
+            if updates["digested"]:
+                changed += " → 已隐藏，保留但不再浮现"
+            else:
+                changed += " → 已取消隐藏，重新参与浮现"
+        return f"已修改记忆桶 {bid}: {changed}"
 
 
 # =============================================================
