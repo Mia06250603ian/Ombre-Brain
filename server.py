@@ -1217,8 +1217,8 @@ async def pulse(include_archive: bool = False, show_all: bool = False) -> str:
 # Claude then decides: resolve some, write feels, or do nothing.
 # =============================================================
 @mcp.tool()
-async def dream() -> str:
-    """做梦——读取最近新增的记忆桶,供你自省。读完后可以trace(resolved=1)放下,或hold(feel=True)写感受。"""
+async def dream(detail_ids: str = "") -> str:
+    """做梦——读取最近5个记忆桶摘要,供你自省。detail_ids传逗号分隔的bucket_id,指定桶返回全文,其余返回摘要。读完后可以trace(resolved=1)放下,或hold(feel=True)写感受。"""
     await decay_engine.ensure_started()
 
     try:
@@ -1235,28 +1235,41 @@ async def dream() -> str:
         and not b["metadata"].get("protected", False)
     ]
 
-    # --- Sort by creation time desc, take top 10 ---
+    # --- Sort by creation time desc, take top 5 ---
     candidates.sort(key=lambda b: b["metadata"].get("created", ""), reverse=True)
-    recent = candidates[:10]
+    recent = candidates[:5]
 
-    if not recent:
+    # --- Parse detail_ids and attach any explicitly requested buckets not in recent ---
+    detail_id_set: set[str] = {x.strip() for x in detail_ids.split(",") if x.strip()} if detail_ids.strip() else set()
+    recent_ids = {b["id"] for b in recent}
+    bucket_index = {b["id"]: b for b in all_buckets}
+    extra = [bucket_index[bid] for bid in detail_id_set if bid not in recent_ids and bid in bucket_index]
+    display_buckets = recent + extra
+
+    if not display_buckets:
         return "没有需要消化的新记忆。"
 
-    parts = []
-    for b in recent:
+    def _dream_full_entry(b: dict) -> str:
         meta = b["metadata"]
         resolved_tag = " [已解决]" if meta.get("resolved", False) else " [未解决]"
         domains = ",".join(meta.get("domain", []))
         val = meta.get("valence", 0.5)
         aro = meta.get("arousal", 0.3)
         created = meta.get("created", "")
-        parts.append(
+        return (
             f"[{meta.get('name', b['id'])}]{resolved_tag} "
             f"主题:{domains} V{val:.1f}/A{aro:.1f} "
             f"创建:{created}\n"
             f"ID: {b['id']}\n"
-            f"{strip_wikilinks(b['content'][:500])}"
+            f"{strip_wikilinks(b['content'])}"
         )
+
+    parts = []
+    for b in display_buckets:
+        if b["id"] in detail_id_set:
+            parts.append(_dream_full_entry(b))
+        else:
+            parts.append(_format_bucket_summary_line(b))
 
     header = (
         "=== Dreaming ===\n"
