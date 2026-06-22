@@ -1438,6 +1438,78 @@ async def dream(detail_ids: str = "") -> str:
 
 
 # =============================================================
+# Tool 7: todos — List pending to-do items across unresolved buckets
+# 工具 7：todos — 汇总未解决桶的待办事项
+# =============================================================
+@mcp.tool()
+async def todos() -> str:
+    """汇总所有未resolved桶的todos字段，按桶分组返回桶名、bucket_id、重要度和待办列表。todos为metadata列表字段，每项可为字符串或含text/done键的字典。按重要度降序排列，末尾附统计。"""
+    try:
+        all_buckets = await bucket_mgr.list_all(include_archive=False)
+    except Exception as e:
+        return f"记忆系统暂时无法访问: {e}"
+
+    def _todo_item_str(item) -> str:
+        """Render a single todo item regardless of whether it's a str or dict."""
+        if isinstance(item, dict):
+            text = item.get("text") or item.get("title") or str(item)
+            done = item.get("done", False) or item.get("completed", False)
+            return f"[x] {text}" if done else f"[ ] {text}"
+        return f"[ ] {item}"
+
+    # Collect unresolved buckets that have a non-empty todos list
+    with_todos = []
+    for b in all_buckets:
+        meta = b.get("metadata", {})
+        if meta.get("resolved", False):
+            continue
+        todos_val = meta.get("todos")
+        if not todos_val:
+            continue
+        if isinstance(todos_val, list) and len(todos_val) > 0:
+            with_todos.append(b)
+        elif isinstance(todos_val, str) and todos_val.strip():
+            # Single-string fallback: wrap in list so rendering is uniform
+            b["metadata"]["todos"] = [todos_val.strip()]
+            with_todos.append(b)
+
+    if not with_todos:
+        return "没有待办事项。"
+
+    # Sort by importance desc, then decay weight desc
+    with_todos.sort(
+        key=lambda b: (
+            -int(b["metadata"].get("importance", 0)),
+            -decay_engine.calculate_score(b["metadata"]),
+        )
+    )
+
+    parts = []
+    total_items = 0
+    for b in with_todos:
+        meta = b["metadata"]
+        name = meta.get("name", b["id"])
+        importance = meta.get("importance", "?")
+        bid = b["id"]
+        todo_list = meta["todos"]
+        total_items += len(todo_list)
+
+        if meta.get("pinned") or meta.get("protected"):
+            icon = "📌"
+        elif meta.get("type") == "permanent":
+            icon = "📦"
+        else:
+            icon = "💭"
+
+        header_line = f"{icon} [{name}]  bucket_id:{bid}  重要度:{importance}"
+        item_lines = "\n".join(f"  {_todo_item_str(item)}" for item in todo_list)
+        parts.append(header_line + "\n" + item_lines)
+
+    summary = f"\n共 {len(with_todos)} 个桶，{total_items} 条待办。"
+    return "=== 待办事项 ===\n\n" + "\n\n".join(parts) + summary
+
+
+# =============================================================
 # Dashboard API endpoints (for lightweight Web UI)
 # 仪表板 API（轻量 Web UI 用）
 # =============================================================
