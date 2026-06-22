@@ -87,7 +87,7 @@ class BucketManager:
         self.w_emotion = scoring.get("emotion_resonance", 2.0)
         self.w_time = scoring.get("time_proximity", 1.5)
         self.w_importance = scoring.get("importance", 1.0)
-        self.content_weight = scoring.get("content_weight", 1.0)  # body×1, per spec
+        self.content_weight = scoring.get("content_weight", 2.0)  # body×2 > domain×1.5 (tier-2 per D1 spec)
 
         # --- Optional embedding engine for pre-filtering / 可选 embedding 引擎，用于预筛候选集 ---
         self.embedding_engine = embedding_engine
@@ -542,35 +542,73 @@ class BucketManager:
         return scored[:limit]
 
     # ---------------------------------------------------------
-    # Topic relevance sub-score:
-    # name(×3) + domain(×2.5) + tags(×2) + body(×1)
-    # 文本相关性子分：桶名(×3) + 主题域(×2.5) + 标签(×2) + 正文(×1)
+    # Topic relevance sub-score — three-tier ranking:
+    # Tier 1 (highest): exact/substring match in tags (keywords field) ×6/×2.5
+    # Tier 2 (medium):  keyword in content ×content_weight, name ×3
+    # Tier 3 (lowest):  fuzzy domain ×1.5
+    # (vector/semantic matches are a separate, lower-priority channel in server.py)
+    #
+    # Short CJK query protection (len≤4): use exact substring matching
+    # instead of fuzz.partial_ratio to prevent 2-char names from being split.
+    # 短中文关键词保护：≤4字的纯中文查询改用精确子串匹配，避免被模糊算法拆散。
     # ---------------------------------------------------------
     def _calc_topic_score(self, query: str, bucket: dict) -> float:
         """
         Calculate text dimension relevance score (0~1).
-        计算文本维度的相关性得分。
+        Three-tier: tags-exact > content/name > domain-fuzzy.
+        计算文本维度相关性（三级权重）。
         """
         meta = bucket.get("metadata", {})
+        q = query.strip()
+        q_lower = q.lower()
 
-        name_score = fuzz.partial_ratio(query, meta.get("name", "")) * 3
-        domain_score = (
-            max(
-                (fuzz.partial_ratio(query, d) for d in meta.get("domain", [])),
-                default=0,
-            )
-            * 2.5
-        )
-        tag_score = (
-            max(
-                (fuzz.partial_ratio(query, tag) for tag in meta.get("tags", [])),
-                default=0,
-            )
-            * 2
-        )
-        content_score = fuzz.partial_ratio(query, bucket.get("content", "")[:1000]) * self.content_weight
+        # Detect short CJK queries (e.g. 2-char person names) that must not be split
+        is_short_cjk = len(q) <= 4 and any('一' <= c <= '鿿' for c in q)
 
-        return (name_score + domain_score + tag_score + content_score) / (100 * (3 + 2.5 + 2 + self.content_weight))
+        def _match(text: str) -> float:
+            """Return 0~100 relevance. Exact substring for short CJK, fuzzy otherwise."""
+            if not text:
+                return 0.0
+            if is_short_cjk:
+                return 100.0 if q_lower in text.lower() else 0.0
+            return float(fuzz.partial_ratio(q_lower, text))
+
+        # --- Tier 1: tags (keywords field) ---
+        tags = meta.get("tags", [])
+        tag_exact = 0.0   # exact full-field or substring match → ×6
+        tag_fuzzy = 0.0   # fuzzy match → ×2.5
+        for tag in tags:
+            tag_l = tag.lower()
+            if q_lower == tag_l or q_lower in tag_l or tag_l in q_lower:
+                tag_exact = 100.0
+                break
+            tag_fuzzy = max(tag_fuzzy, fuzz.partial_ratio(q_lower, tag))
+
+        # --- Tier 2: name (structural) + content body ---
+        name_score   = _match(meta.get("name", ""))
+        content_score = _match(bucket.get("content", "")[:2000])
+
+        # --- Tier 3: domain fuzzy ---
+        domain_score = max(
+            (_match(d) for d in meta.get("domain", [])),
+            default=0.0,
+        )
+
+        W_TAG_EXACT   = 6.0
+        W_TAG_FUZZY   = 2.5
+        W_NAME        = 3.0
+        W_CONTENT     = self.content_weight   # default 1.0
+        W_DOMAIN      = 1.5
+
+        final = (
+            tag_exact    * W_TAG_EXACT
+            + tag_fuzzy  * W_TAG_FUZZY
+            + name_score * W_NAME
+            + content_score * W_CONTENT
+            + domain_score  * W_DOMAIN
+        )
+        max_possible = (W_TAG_EXACT + W_TAG_FUZZY + W_NAME + W_CONTENT + W_DOMAIN) * 100.0
+        return final / max_possible
 
     # ---------------------------------------------------------
     # Emotion resonance sub-score:
