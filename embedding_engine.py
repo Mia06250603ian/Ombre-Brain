@@ -298,4 +298,3 @@ class EmbeddingEngine:
         if norm_a == 0 or norm_b == 0:
             return 0.0
         return dot / (norm_a * norm_b)
-替换并编译通过后，请提交并推送这个改动。
