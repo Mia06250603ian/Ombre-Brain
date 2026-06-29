@@ -2498,7 +2498,10 @@ async def api_rebuild_embeddings(request):
         "failed": failed,
         "force": force,
         "embedding_model": embedding_engine.model,
+        "embedding_mode": embedding_engine.mode,
+        "embedding_base_url": embedding_engine.base_url,
         "last_error": embedding_engine.last_error or None,
+        "last_error_details": embedding_engine.last_error_details or None,
     })
 
 
