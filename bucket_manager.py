@@ -537,10 +537,23 @@ class BucketManager:
                 weight_sum = self.w_topic + self.w_emotion + self.w_time + self.w_importance
                 normalized = (total / weight_sum) * 100 if weight_sum > 0 else 0
 
+                # Tag-exact matches always pass threshold regardless of score.
+                # A bucket tagged "汤唯" must surface when queried "汤唯" even if
+                # its content score is low (old bucket, thin content, etc.).
+                q_lower_check = query.strip().lower()
+                has_tag_exact = any(
+                    q_lower_check == t.lower()
+                    or q_lower_check in t.lower()
+                    or t.lower() in q_lower_check
+                    for t in meta.get("tags", [])
+                )
+
                 # Threshold check uses raw (pre-penalty) score so resolved buckets
                 # 阈值用原始分数判定，确保 resolved 桶在关键词命中时仍可被搜出
                 # remain reachable by keyword (penalty applied only to ranking).
-                if normalized >= self.fuzzy_threshold:
+                if normalized >= self.fuzzy_threshold or has_tag_exact:
+                    if has_tag_exact and normalized < self.fuzzy_threshold:
+                        normalized = float(self.fuzzy_threshold)
                     # Resolved buckets get ranking penalty (but still reachable by keyword)
                     # 已解决的桶仅在排序时降权
                     if meta.get("resolved", False):
