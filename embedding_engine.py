@@ -49,7 +49,18 @@ class EmbeddingEngine:
             self.base_url = user_base_url
         else:
             self.mode = "google_native"
-            self.base_url = _GOOGLE_NATIVE_BASE
+            if user_base_url:
+                # Respect the user-supplied Google URL (e.g. v1 vs v1beta).
+                self.base_url = user_base_url.rstrip("/")
+            else:
+                # Auto-select API version by model family:
+                # text-embedding-* (gecko era) → stable v1
+                # gemini-embedding-* and others → v1beta
+                model_hint = embed_cfg.get("model", "gemini-embedding-001")
+                if model_hint.startswith("text-embedding"):
+                    self.base_url = "https://generativelanguage.googleapis.com/v1"
+                else:
+                    self.base_url = _GOOGLE_NATIVE_BASE
 
         self.model = embed_cfg.get("model", "gemini-embedding-001")
         self.enabled = bool(self.api_key) and embed_cfg.get("enabled", True)
