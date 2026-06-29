@@ -2430,6 +2430,79 @@ async def api_system_status(request):
 
 
 # =============================================================
+# /api/rebuild-embeddings — bulk-rebuild vectors for all buckets
+# /api/rebuild-embeddings — 批量重建所有桶的向量
+# =============================================================
+@mcp.custom_route("/api/rebuild-embeddings", methods=["POST"])
+async def api_rebuild_embeddings(request):
+    """Rebuild embeddings for buckets missing vectors (or all if force=true)."""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+
+    if not embedding_engine.enabled:
+        return JSONResponse(
+            {"error": "Embedding engine not enabled — check OMBRE_EMBEDDING_API_KEY"},
+            status_code=503,
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    force = bool(body.get("force", False))
+    batch_size = max(1, min(int(body.get("batch_size", 20)), 50))
+
+    all_buckets = await bucket_mgr.list_all(include_archive=True)
+
+    to_process = []
+    skipped_empty = 0
+    already_have = 0
+    for b in all_buckets:
+        content = b.get("content", "")
+        if not content or not content.strip():
+            skipped_empty += 1
+            continue
+        if not force:
+            existing = await embedding_engine.get_embedding(b["id"])
+            if existing is not None:
+                already_have += 1
+                continue
+        to_process.append(b)
+
+    total = len(to_process)
+    success = 0
+    failed = 0
+
+    for i in range(0, total, batch_size):
+        batch = to_process[i : i + batch_size]
+        for b in batch:
+            try:
+                ok = await embedding_engine.generate_and_store(b["id"], b.get("content", ""))
+                if ok:
+                    success += 1
+                else:
+                    failed += 1
+            except Exception:
+                failed += 1
+        if i + batch_size < total:
+            await asyncio.sleep(2)
+
+    return JSONResponse({
+        "total_buckets": len(all_buckets),
+        "already_have_embedding": already_have,
+        "skipped_empty_content": skipped_empty,
+        "processed": total,
+        "success": success,
+        "failed": failed,
+        "force": force,
+        "embedding_model": embedding_engine.model,
+        "last_error": embedding_engine.last_error or None,
+    })
+
+
+# =============================================================
 # /api/export-backup — manual or scheduled backup trigger
 # /api/export-backup — 手动或定时触发备份
 #
