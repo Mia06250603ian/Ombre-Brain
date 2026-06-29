@@ -487,8 +487,20 @@ class BucketManager:
                 if vector_results:
                     vector_ids = {bid for bid, _ in vector_results}
                     emb_candidates = [b for b in candidates if b["id"] in vector_ids]
-                    if emb_candidates:  # only replace if there's non-empty overlap
-                        candidates = emb_candidates
+                    if emb_candidates:
+                        # Always keep buckets where query exactly matches a tag,
+                        # even if embedding didn't rank them in top-50.
+                        # This prevents embedding from silently dropping tag-exact hits.
+                        q_lower = query.strip().lower()
+                        tag_exact = [
+                            b for b in candidates
+                            if b["id"] not in vector_ids
+                            and any(
+                                q_lower == t.lower() or q_lower in t.lower() or t.lower() in q_lower
+                                for t in b["metadata"].get("tags", [])
+                            )
+                        ]
+                        candidates = emb_candidates + tag_exact
                     # else: keep original candidates as fallback
             except Exception as e:
                 logger.warning(f"Embedding pre-filter failed, using fuzzy only / embedding 预筛失败: {e}")
