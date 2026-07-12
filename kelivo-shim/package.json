@@ -1,0 +1,10 @@
+{
+  "name": "kelivo-shim",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": { "start": "bash entrypoint.sh" },
+  "dependencies": {
+    "express": "^4.19.2",
+    "@anthropic-ai/claude-code": "^2.1.206"
+  }
+}

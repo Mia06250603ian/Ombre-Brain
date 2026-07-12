@@ -1,0 +1,77 @@
+# kelivo-shim 维护手册
+
+> 这是佳佳的「Kelivo × Claude Code 订阅直连」后端的部署源码备份。
+> 2026-07-12 由 Claude Code 会话搭建并跑通。本文档写给**未来接手维护的 AI**（和好奇的人类）。
+
+## 架构
+
+```
+手机 Kelivo (供应商类型=Claude)
+   │  Anthropic /v1/messages
+   ▼
+kelivo-shim(本目录, Zeabur 服务名 kelivo-shim)
+   │  维护一个常驻 claude -p 进程(人设 CLAUDE.md + 记忆 MCP)
+   ▼
+CLIProxyAPI(Zeabur 服务名 CLIProxyAPI, 持有订阅 OAuth)──→ Anthropic
+   +
+Ombre Brain 记忆库(Zeabur 另一项目, streamable-http MCP)
+```
+
+## Zeabur 位置(IDs 供 CLI 用)
+
+- 项目 `cli-proxy-api--cpa`: id `6a53a9fc22dd6ef375eb7484`, env `6a53a9fcb6ce8edcb0163f97`
+  - 服务 `kelivo-shim`: id `6a53b806f6d4beebf0c5373d`, 域名 `yan-shim.zeabur.app`
+  - 服务 `CLIProxyAPI`: id `6a53a9fd22dd6ef375eb7485`, 域名 `miaianhome.zeabur.app`
+- Ombre Brain 在另一个项目(untitled-1),域名问所有者
+
+## 本目录刻意缺的两个文件(部署前必须补)
+
+1. **`ian.md`** — 晏的人设本体。私密,不入库。**原稿在所有者手里**,部署时让她发给你,
+   原样放进构建目录即可(CLAUDE.md 里 `@./ian.md` 引用它)。
+2. **`mcp-servers.json`** — 记忆库 MCP 配置。格式:
+   ```json
+   { "mcpServers": { "ombre-brain": { "type": "http", "url": "https://<OB域名>/mcp" } } }
+   ```
+   OB 域名问所有者(不入库是因为该 /mcp 端点当前无鉴权)。
+   ⚠️ 文件名不要叫 `.mcp.json`——zeabur CLI 上传会**丢弃点开头的文件**(踩过的坑),
+   环境变量 `MCP_CONFIG=mcp-servers.json` 已配好。
+
+## 重新部署的完整流程
+
+```bash
+cd kelivo-shim   # 确保 ian.md 和 mcp-servers.json 已放入
+npx -y zeabur@latest auth login --token <API_KEY>   # 让所有者在 Zeabur 后台"API 密钥"页生成并发给你
+npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-id 6a53a9fcb6ce8edcb0163f97 -i=false
+```
+
+部署前让所有者对晏说「归档」(重启会清当前窗口上下文)。
+
+## 环境变量(已在 Zeabur 配好,值不入库;改值后要 service restart)
+
+| 变量 | 说明 |
+|---|---|
+| ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN | 指向 CLIProxyAPI 的域名和它的 API_KEY |
+| SHIM_KEY | Kelivo 端填的 key |
+| BRAIN_MODEL / THINK_EFFORT | claude-opus-4-6 / low |
+| FORWARD_THINKING / ENABLE_PROMPT_CACHING_1H | 1 / 1 |
+| USER_NAME / AI_NAME | 佳佳 / 晏 |
+| MCP_CONFIG | mcp-servers.json |
+| MCP_WARMUP_MS | 25000。新进程第一条消息延迟写入,等 MCP 握手;消息抢跑会整轮卡死(实测坑) |
+| BARK_KEY | Bark 推送 key(主动心跳) |
+
+## 踩过的坑(别再踩)
+
+1. **消息抢跑 MCP 握手 → 永久卡死**:新 claude 进程 spawn 后立刻写 stdin,该轮会卡住不返回。
+   server.js 已内置 MCP_WARMUP_MS 延迟,别删。
+2. **zeabur upload 丢弃 dotfiles**:`.mcp.json` 传不上去,故用 `mcp-servers.json`。
+3. **本会话沙盒里测 claude 会卡死**:沙盒继承的 CLAUDECODE/CLAUDE_CODE_* 环境变量会干扰嵌套运行,
+   本地测试要 `env -i` 清环境。
+4. **订阅 OAuth 登录**:CLIProxyAPI 的管理接口可远程完成(不用下载二进制):
+   `GET /v0/management/anthropic-auth-url` 拿链接 → 用户浏览器授权 → 把回调 URL
+   `POST /v0/management/oauth-callback` (body: `{"provider":"anthropic","redirect_url":"..."}`),
+   Authorization: Bearer <管理密码>。
+5. 同一份订阅 OAuth 令牌只能在一处跑,别在本地再登录。
+
+## 建议(未做)
+
+- Ombre Brain 的 /mcp 端点无鉴权,域名等于钥匙;上游新版已支持 OAuth,有空建议升级。
