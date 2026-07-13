@@ -249,6 +249,28 @@ app.get("/aw", (req, res) => {
   res.json({ now: new Date().toISOString(), count: cleaned.length, entries: cleaned.slice(-12) });
 });
 
+// ---- Kelivo 后台注入拦截 ----
+// Kelivo 的「自动生成对话标题」会往 /v1/messages 发固定英文模板
+// ("I will give you some dialogue content in the <content> block...")。
+// 不拦的话它会以"佳佳的消息"身份进常驻进程:污染窗口、占轮次,
+// 且请求不带世界书(sysLen 不一致)会触发杀进程重开,当前窗口直接丢。
+// 这里由 shim 自己抽个标题直接回,不碰 claude 进程。
+function isTitleGenReq(t) {
+  if (/^\s*I will give you some dialogue content/i.test(t)) return true;
+  return /<content>[\s\S]*<\/content>/i.test(t) && /summariz\w* the conversation[\s\S]{0,120}?(short\s+)?title/i.test(t);
+}
+function localTitle(raw) {
+  // 模板正文里也会提到 "<content>" 这个词,所以取最后一个 <content> 开始的真实内容段
+  const i = raw.toLowerCase().lastIndexOf("<content>");
+  const j = i >= 0 ? raw.toLowerCase().indexOf("</content>", i) : -1;
+  let src = (i >= 0 ? raw.slice(i + "<content>".length, j >= 0 ? j : raw.length) : raw).replace(/<[^>]+>/g, " ");
+  const lines = src.split("\n").map((s) => s.trim()).filter(Boolean)
+    .map((s) => s.replace(/^["'「『]?(user|assistant|human|ai|用户|助手)["'」』]?\s*[::]\s*/i, "").trim())
+    .filter((s) => s && !/^I will give you/i.test(s));
+  const line = lines.find((s) => /[一-鿿]/.test(s)) || lines[0] || "";
+  return line.replace(/\s+/g, " ").slice(0, 10) || "聊天";
+}
+
 // ---- 重置词 ----
 const GOODNIGHT_WORDS = ["晚安"];
 const ARCHIVE_WORDS = ["归档", "换窗口", "开新窗口", "新窗口"];
@@ -273,6 +295,16 @@ function handleMessages(req, res) {
   const images = extractImages(messages);
   const system = systemToText(body.system);
   const stream = body.stream !== false;
+
+  // 标题生成等后台注入:shim 直接回,不进晏的进程,也不重置心跳计时
+  if (!images.length && isTitleGenReq(text)) {
+    const title = localTitle(text);
+    log("[intercept] title-gen ->", title);
+    const sse = stream ? makeSSE(res) : makeCollector(res);
+    sse.text(title);
+    sse.finish({ output_tokens: 0 }, title);
+    return;
+  }
 
   const reset = images.length ? null : detectReset(text);
   let newWindow = false;
