@@ -3,6 +3,24 @@
 > 这是佳佳的「Kelivo × Claude Code 订阅直连」后端的部署源码备份。
 > 2026-07-12 由 Claude Code 会话搭建并跑通。本文档写给**未来接手维护的 AI**（和好奇的人类）。
 
+## ⚠️ 部署前必读(2026-07-13 事故教训)
+
+**仓库最新代码才是唯一可信源。部署前必须先 `git pull` 拿最新的 server.js,
+严禁用你会话里残留的旧目录副本直接 `zeabur deploy`。**
+2026-07-13 就发生过:一个会话刚上线了新人设(v10)+标题拦截补丁,另一个会话
+拿着 7-12 的旧副本重新部署,把两者全部滚回旧版,排查花了一整晚(踩坑 10)。
+多个 AI 会话都能部署这个服务——动手前先看「部署记录」确认线上应该是什么版本,
+部署后按「踩过的坑 8」验证容器内容,别只看 /health。
+
+## 当前 server.js 相对 7-12 初版的改动(部署时别丢)
+
+1. **进程误杀死循环补丁**(踩坑 6):close 回调里 `if (proc !== p) return`,
+   复活时 `ensureProc(spawnedSystem)` 带上原世界书。
+2. **Kelivo 自动标题请求拦截**(踩坑 7):`isTitleGenReq()` 识别 Kelivo 注入的标题模板
+   (开头锚定 "I will give you some dialogue content",或「`<content>` 块 + summarize…title 指令」双条件);
+   `localTitle()` 从最后一个 `<content>` 段抽真实对话第一句、截 10 字,直接回给 Kelivo。
+   整段在 handleMessages 入口、detectReset 之前,完全不进 claude 进程,也不重置心跳计时。
+
 ## 架构
 
 ```
