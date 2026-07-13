@@ -77,6 +77,17 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
    旧进程 close 事件会误杀新回合、自动复活又丢世界书,形成死循环。server.js 已打补丁
    (close 里 `if (proc !== p) return` + 复活时 `ensureProc(spawnedSystem)`)。
    **2026-07-13 随人设 v10 更新重新部署,补丁已上线。**
+7. **OB 域名拼错一个字母 → MCP 静默握手失败,晏"失去"记忆工具**:正确域名是
+   `ianmian.zeabur.app`(注意结尾是 ian**mian**,不是 ianmia)。仓库 `.claude/settings.json`
+   曾少写一个 n,v10 部署照抄后 shim 握手对象变成不存在的服务,claude 进程 spawn 起就没有
+   `mcp__ombre-brain__` 工具,且**没有任何报警**。症状:叫他 breath,他思考里说"我只有
+   WebFetch 和 WebSearch"。部署前务必核对 mcp-servers.json 的 URL 能 POST 通 `/mcp`
+   (返回 200 才算活):
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}" -X POST https://ianmian.zeabur.app/mcp \
+     -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
+     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"check","version":"0"}}}'
+   ```
 
 ## 建议(未做)
 
@@ -86,3 +97,5 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 
 - 2026-07-12 首次搭建并跑通。
 - 2026-07-13 人设更新为 Ian_self_v10,同时带上 server.js 进程误杀补丁(踩坑 6)。部署后 /health 正常。
+  **但该次部署的 mcp-servers.json 抄了 settings.json 里的错域名(踩坑 7),记忆工具全程静默缺失,
+  需用正确域名重新部署。**
