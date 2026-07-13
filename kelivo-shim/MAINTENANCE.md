@@ -32,7 +32,8 @@ Ombre Brain 记忆库(Zeabur 另一项目, streamable-http MCP)
    ```json
    { "mcpServers": { "ombre-brain": { "type": "http", "url": "https://<OB域名>/mcp" } } }
    ```
-   OB 域名问所有者(不入库是因为该 /mcp 端点当前无鉴权)。
+   OB 域名问所有者(不入库是因为该 /mcp 端点当前无鉴权;实际上仓库根目录
+   `.claude/settings.json` 的 mcpServers 里就有,可直接取用)。
    ⚠️ 文件名不要叫 `.mcp.json`——zeabur CLI 上传会**丢弃点开头的文件**(踩过的坑),
    环境变量 `MCP_CONFIG=mcp-servers.json` 已配好。
 
@@ -74,9 +75,14 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 6. **Kelivo 的「网络搜索」等开关会往 system 注入几百字提示词** → 触发"世界书变了就杀进程重开"逻辑。
    2026-07-13 曾因此全线空回(日志特征:`[claude] exited 143` 后 `spawned sysLen 0`,与请求的 sysLen 不一致,每条消息循环一次):
    旧进程 close 事件会误杀新回合、自动复活又丢世界书,形成死循环。server.js 已打补丁
-   (close 里 `if (proc !== p) return` + 复活时 `ensureProc(spawnedSystem)`),补丁已入库但**截至当日未部署**——
-   线上靠"Kelivo 不开注入类开关"绕过。下次重新部署时自然带上。
+   (close 里 `if (proc !== p) return` + 复活时 `ensureProc(spawnedSystem)`)。
+   **2026-07-13 随人设 v10 更新重新部署,补丁已上线。**
 
 ## 建议(未做)
 
 - Ombre Brain 的 /mcp 端点无鉴权,域名等于钥匙;上游新版已支持 OAuth,有空建议升级。
+
+## 部署记录
+
+- 2026-07-12 首次搭建并跑通。
+- 2026-07-13 人设更新为 Ian_self_v10,同时带上 server.js 进程误杀补丁(踩坑 6)。部署后 /health 正常。
