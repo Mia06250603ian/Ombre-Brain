@@ -89,6 +89,11 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
      -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
      -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"check","version":"0"}}}'
    ```
+8. **Kelivo「自动生成对话标题」也是注入源**:它往 /v1/messages 发固定英文模板
+   ("I will give you some dialogue content in the <content> block..."),会以用户消息身份
+   进常驻进程——污染窗口、白占一轮、重置心跳计时,还可能因 sysLen 不一致触发杀进程。
+   App 设置里找不到关闭开关,故 server.js 已内置拦截(isTitleGenReq/localTitle):
+   shim 自己从对话内容抽标题直接回,不进 claude 进程。2026-07-13 已部署上线。
 
 ## 建议(未做)
 
@@ -100,3 +105,4 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 - 2026-07-13 人设更新为 Ian_self_v10,同时带上 server.js 进程误杀补丁(踩坑 6)。部署后 /health 正常。
   **但该次部署的 mcp-servers.json 抄了 settings.json 里已失效的旧 OB 域名(踩坑 7),
   记忆工具全程静默缺失,需用新域名重新部署。**
+- 2026-07-13(晚) 加 Kelivo 自动标题请求拦截(踩坑 8)再部署。部署后 /health 正常。
