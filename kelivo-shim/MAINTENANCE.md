@@ -94,6 +94,15 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
    进常驻进程——污染窗口、白占一轮、重置心跳计时,还可能因 sysLen 不一致触发杀进程。
    App 设置里找不到关闭开关,故 server.js 已内置拦截(isTitleGenReq/localTitle):
    shim 自己从对话内容抽标题直接回,不进 claude 进程。2026-07-13 已部署上线。
+9. **`zeabur deploy` 返回 success ≠ 上线**:CLI 的 "Service deployed successfully" 只代表上传成功,
+   构建还要 ~7 分钟,期间 /health 由旧容器应答(会骗人)。确认上线必须:
+   `deployment list` 等最新 deployment 变 RUNNING,再 `service exec` 进容器
+   `grep` 关键代码/文件确认内容对(如 `grep isTitleGenReq server.js`)。
+10. **连续两次 deploy,前一次会被 CANCELED**:还在构建的部署会被后一次取消。别连发。
+11. **2026-07-13 23:39(北京)出现过一次非本会话发起的部署,把服务滚回了 7-12 旧快照**
+    (旧人设+无补丁),导致"补丁没生效"的误判。来源疑似 Zeabur 控制台 Redeploy 用了旧构建源,
+    或另一个持旧密钥的会话。教训:每次部署后按踩坑 9 验证容器内容;发现行为回退先查
+    `deployment list` 的时间线,别急着改代码。
 
 ## 建议(未做)
 
@@ -105,4 +114,6 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 - 2026-07-13 人设更新为 Ian_self_v10,同时带上 server.js 进程误杀补丁(踩坑 6)。部署后 /health 正常。
   **但该次部署的 mcp-servers.json 抄了 settings.json 里已失效的旧 OB 域名(踩坑 7),
   记忆工具全程静默缺失,需用新域名重新部署。**
-- 2026-07-13(晚) 加 Kelivo 自动标题请求拦截(踩坑 8)再部署。部署后 /health 正常。
+- 2026-07-13(晚) 加 Kelivo 自动标题请求拦截(踩坑 8)再部署。
+  实际时间线(UTC):12:15 部署 v10 被 12:26 的部署取消(踩坑 10);12:26 部署(v10+拦截)12:33 上线;
+  15:39 被一次非本会话的部署回滚到 7-12 旧快照(踩坑 11);20:2x 重新部署 v10+拦截并按踩坑 9 验证。
