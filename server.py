@@ -577,7 +577,7 @@ async def breath(
     date_to: str = "",
     include_dormant: bool = False,
 ) -> str:
-    """检索/浮现记忆。不传query或传空=自动浮现,有query=关键词检索。max_tokens控制返回总token上限(默认10000)。domain逗号分隔,valence/arousal 0~1(-1忽略)。max_results控制返回数量上限(默认5,最大50),超出的在末尾附注还有N个相关桶未显示,钉选桶不计入名额。importance_min>=1时按重要度批量拉取(不走语义搜索,按importance降序)。mode=summary(默认)时每个桶仅返回一行摘要(bucket_id+桶名+主题+情感坐标+重要度+更新时间),mode=full时返回完整内容;query非空时忽略mode始终返回full。搜索排名三级权重：精确匹配tags(keywords)字段最高→关键词出现在content次高→语义向量匹配最低;≤4字中文短词强制精确子串匹配防止被拆散。date_from/date_to(YYYY-MM-DD)按桶last_active过滤,可与其他参数组合;钉选桶不受日期过滤。命中桶若metadata含related字段(bucket_id列表),在该桶结果下附一行关联提示(id+名称,不展开全文)。include_dormant=false(默认)时休眠桶不出现在结果中;include_dormant=true时包含休眠桶。休眠条件：>30天未访问且importance<3且非钉选桶；被命中后自动解除休眠。"""
+    """检索/浮现记忆。不传query或传空=自动浮现,有query=关键词检索。max_tokens控制返回总token上限(默认10000)。domain逗号分隔,valence/arousal 0~1(-1忽略)。max_results控制返回数量上限(默认5,最大50),超出的在末尾附注还有N个相关桶未显示,钉选桶不计入名额。importance_min>=1时按重要度批量拉取(不走语义搜索,按importance降序)。mode=summary(默认)时每个桶仅返回一行摘要(bucket_id+桶名+主题+情感坐标+重要度+更新时间),mode=full时返回完整内容;query非空时忽略mode始终返回full。搜索排名三级权重：精确匹配tags(keywords)字段最高→关键词出现在content次高→语义向量匹配最低;≤4字中文短词强制精确子串匹配防止被拆散。date_from/date_to(YYYY-MM-DD)按桶last_active过滤,可与其他参数组合;钉选桶不受日期过滤;带日期过滤时结果按created降序排列(最新在前)。命中桶若metadata含related字段(bucket_id列表),在该桶结果下附一行关联提示(id+名称,不展开全文)。include_dormant=false(默认)时休眠桶不出现在结果中;include_dormant=true时包含休眠桶。休眠条件：>30天未访问且importance<3且非钉选桶；被命中后自动解除休眠。"""
     await decay_engine.ensure_started()
     await backup_exporter.ensure_started()
     max_results = min(max_results, 50)
@@ -881,8 +881,15 @@ async def breath(
         logger.warning(f"Vector search failed, using keyword only / 向量搜索失败: {e}")
 
     # --- Apply date filter after both channels are collected ---
+    # Date-scoped queries are asking "what happened recently", so order by
+    # creation time (immutable) newest-first instead of relevance score —
+    # relevance is a near-tie for uniformly-tagged buckets (e.g. session
+    # archives) and last_active gets polluted by touch-on-display.
+    # 带日期过滤的查询按 created 降序返回：相关性分在同标签桶间几乎并列,
+    # last_active 又会被"显示即touch"污染,只有 created 能稳定给出"最新"。
     if dt_from or dt_to:
         matches = [b for b in matches if _date_ok(b)]
+        matches.sort(key=lambda b: str(b["metadata"].get("created") or b["metadata"].get("last_active", "")), reverse=True)
 
     # --- Apply dormant sweep + filter ---
     await _apply_dormant_sweep(matches)
