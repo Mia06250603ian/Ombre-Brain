@@ -59,9 +59,10 @@ function spawnClaude(kelivoSystem) {
   p.stderr.on("data", (d) => log("[claude]", d.toString().slice(0, 300)));
   p.on("close", (code) => {
     log("[claude] exited", code);
+    if (proc !== p) return; // 被 pump/世界书切换主动换掉的旧进程,不许动新回合的现场
     proc = null; busy = false;
     if (turn && !turn.done) { try { turn.sse?.finish(); } catch {} turn = null; }
-    setTimeout(ensureProc, 1500);
+    setTimeout(() => ensureProc(spawnedSystem), 1500); // 复活时带上原世界书,否则下一条消息必触发杀进程重开
   });
   procReadyAt = Date.now() + MCP_WARMUP_MS;
   log("[claude] spawned", MODEL, "sysLen", spawnedSystem.length);

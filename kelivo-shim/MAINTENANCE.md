@@ -71,6 +71,11 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
    `POST /v0/management/oauth-callback` (body: `{"provider":"anthropic","redirect_url":"..."}`),
    Authorization: Bearer <管理密码>。
 5. 同一份订阅 OAuth 令牌只能在一处跑,别在本地再登录。
+6. **Kelivo 的「网络搜索」等开关会往 system 注入几百字提示词** → 触发"世界书变了就杀进程重开"逻辑。
+   2026-07-13 曾因此全线空回(日志特征:`[claude] exited 143` 后 `spawned sysLen 0`,与请求的 sysLen 不一致,每条消息循环一次):
+   旧进程 close 事件会误杀新回合、自动复活又丢世界书,形成死循环。server.js 已打补丁
+   (close 里 `if (proc !== p) return` + 复活时 `ensureProc(spawnedSystem)`),补丁已入库但**截至当日未部署**——
+   线上靠"Kelivo 不开注入类开关"绕过。下次重新部署时自然带上。
 
 ## 建议(未做)
 
