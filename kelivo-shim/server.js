@@ -32,6 +32,7 @@ let proc = null, outBuf = "", busy = false, spawnedSystem = "";
 const queue = [];
 let turn = null;
 let lastUsage = null;
+const recentReqs = []; // 诊断用环形缓冲:排查"标题总结请求"混入正常对话的问题,不影响行为
 
 function spawnClaude(kelivoSystem) {
   spawnedSystem = kelivoSystem || "";
@@ -185,7 +186,7 @@ function extractImages(messages) {
 const app = express();
 app.use(express.json({ limit: "12mb" }));
 app.get("/health", (_q, r) => r.json({ ok: true, model: MODEL, busy, queued: queue.length }));
-app.get("/debug", (_q, r) => r.json({ lastUsage }));
+app.get("/debug", (_q, r) => r.json({ lastUsage, recentReqs }));
 
 // Kelivo「模型」页拉这个列表,没有它选不了模型
 function listModels(_req, res) {
@@ -286,6 +287,17 @@ function handleMessages(req, res) {
 
   lastUserAt = Date.now();
   log("[req]", { len: text.length, imgs: images.length, sysLen: system.length, stream, reset: reset || "-" });
+  recentReqs.push({
+    ts: new Date().toISOString(),
+    len: text.length,
+    sysLen: system.length,
+    sysPreview: system.slice(0, 200),
+    textPreview: text.slice(0, 80),
+    max_tokens: body.max_tokens ?? null,
+    stream,
+    msgCount: messages.length,
+  });
+  if (recentReqs.length > 15) recentReqs.shift();
   const sse = stream ? makeSSE(res) : makeCollector(res);
   enqueue({ text, images, system, sse, newWindow });
 }
