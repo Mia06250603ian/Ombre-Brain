@@ -282,6 +282,23 @@ function localTitle(raw) {
   return line.replace(/\s+/g, " ").slice(0, 10) || "聊天";
 }
 
+// ---- 时间感知(TIME_HINT=0 关闭) ----
+// 每条用户消息前注入当前北京时间与间隔,AI 随时知道现在几点,不用调工具。
+// 必须在 detectReset 之后注入,否则「晚安/归档」等重置词会识别失败。
+const TIME_HINT = process.env.TIME_HINT !== "0";
+function bjNowStr() {
+  const d = new Date(Date.now() + 8 * 3600e3);
+  const wd = "日一二三四五六"[d.getUTCDay()];
+  return `${d.toISOString().slice(0, 16).replace("T", " ")}(周${wd})`;
+}
+function fmtGap(ms) {
+  const m = Math.round(ms / 60000);
+  if (m < 10) return "";
+  if (m < 60) return `,距上一条消息约 ${m} 分钟`;
+  const h = Math.floor(m / 60), r = m % 60;
+  return `,距上一条消息约 ${h} 小时${r ? ` ${r} 分钟` : ""}`;
+}
+
 // ---- 重置词 ----
 const GOODNIGHT_WORDS = ["晚安"];
 const ARCHIVE_WORDS = ["归档", "换窗口", "开新窗口", "新窗口"];
@@ -327,6 +344,9 @@ function handleMessages(req, res) {
     text = `【系统指令】立刻归档当前窗口(若挂了记忆工具),成功后只回一句「📦 归档好了,新窗口见」。`;
   }
 
+  if (TIME_HINT) {
+    text = `【系统·时间】现在北京时间 ${bjNowStr()}${fmtGap(Date.now() - lastUserAt)}。\n\n${text}`;
+  }
   lastUserAt = Date.now();
   log("[req]", { len: text.length, imgs: images.length, sysLen: system.length, stream, reset: reset || "-" });
   const sse = stream ? makeSSE(res) : makeCollector(res);

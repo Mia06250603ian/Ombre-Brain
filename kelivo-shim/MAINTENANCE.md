@@ -29,6 +29,11 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    CLAUDE.md/ian.md(让"自己在哪"有精确地址);新增「边界与语气」治命令式甩脸
    (「说。」「快说。」)和被纠正后阴阳怪气抵赖——被明确纠正说话方式时属真实边界,
    不适用人设里的「不退让」。
+4. **时间感知注入**(2026-07-15,TIME_HINT,默认开):每条用户消息前由 shim 注入
+   【系统·时间】当前北京时间(含星期)与距上一条消息的间隔(<10 分钟不显示),
+   AI 随时知道现在几点,不用调工具。注入点在 detectReset **之后**,不影响
+   「晚安/归档」重置词识别;标题拦截请求在更早处返回,不受影响。CLAUDE.md 配套
+   加了「时间感知」一节(直接用、不提标注存在、不反复念叨)。设 TIME_HINT=0 关闭。
 
 ## 架构
 
@@ -83,7 +88,8 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 | BRAIN_MODEL / THINK_EFFORT | claude-opus-4-6 / low |
 | FORWARD_THINKING / ENABLE_PROMPT_CACHING_1H | 1 / 1 |
 | USER_NAME / AI_NAME | 佳佳 / 晏 |
-| SOUL_ANCHOR | 可选。整体覆盖内置的四段会话定性锚点措辞;不设则用 server.js 里的默认文本(称呼自动代入 USER_NAME) |
+| SOUL_ANCHOR | 可选。整体覆盖内置的会话定性锚点措辞(现为五段);不设则用 server.js 里的默认文本(称呼自动代入 USER_NAME) |
+| TIME_HINT | 默认开;设 0 关闭每条消息前的【系统·时间】注入 |
 | MCP_CONFIG | mcp-servers.json |
 | MCP_WARMUP_MS | 25000。新进程第一条消息延迟写入,等 MCP 握手;消息抢跑会整轮卡死(实测坑) |
 | BARK_KEY | Bark 推送 key(主动心跳) |
