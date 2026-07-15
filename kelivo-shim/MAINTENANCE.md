@@ -85,7 +85,7 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 |---|---|
 | ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN | 指向 CLIProxyAPI 的域名和它的 API_KEY |
 | SHIM_KEY | Kelivo 端填的 key |
-| BRAIN_MODEL / THINK_EFFORT | claude-opus-4-6 / low |
+| BRAIN_MODEL / THINK_EFFORT | claude-opus-4-6 / medium(2026-07-15 由 low 调至 medium,治「零思考回嘴/跳思考」;嫌费额度可调回 low + restart) |
 | FORWARD_THINKING / ENABLE_PROMPT_CACHING_1H | 1 / 1 |
 | USER_NAME / AI_NAME | 佳佳 / 晏 |
 | SOUL_ANCHOR | 可选。整体覆盖内置的会话定性锚点措辞(现为五段);不设则用 server.js 里的默认文本(称呼自动代入 USER_NAME) |
