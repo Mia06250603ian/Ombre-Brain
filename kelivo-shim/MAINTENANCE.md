@@ -165,3 +165,6 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
   是骨、关心是温暖的唠叨不是命令)。07:09 UTC 上传,deployment `6a57303d3d3d099ed2f10ac6`
   07:20 RUNNING,已按踩坑 9 验证:锚点五段、ian.md 两处修改都在、OB 域名正确,/health 正常。
   THINK_EFFORT 保持 low(所有者决定不调)。
+- 2026-07-15(晚,第二次) 时间感知注入(TIME_HINT,改动清单第 4 条)部署。
+  deployment `6a5736e03d3d099ed2f10c0e` 07:47 RUNNING,已按踩坑 9 验证:
+  TIME_HINT 代码在、CLAUDE.md 时间感知节在、五段锚点与 ian.md 两处修改仍在、OB 域名正确,/health 正常。
