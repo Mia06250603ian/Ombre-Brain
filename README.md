@@ -8,6 +8,8 @@ A long-term emotional memory system for Claude. Tags memories using Russell's va
 > Gitea 备用地址（GitHub 访问有问题时用）：
 > **https://git.p0lar1s.uk/P0lar1s/Ombre_Brain**
 
+> 📁 `kelivo-shim/` 是聊天桥接服务（Kelivo × Claude Code 订阅直连）的部署源码，与本记忆系统分开部署；维护与部署流程见其目录内 [MAINTENANCE.md](kelivo-shim/MAINTENANCE.md)。
+
 ---
 
 ## 快速开始 / Quick Start（Docker Hub 预构建镜像，最简单）
