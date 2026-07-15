@@ -153,3 +153,9 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
   **本次部署的 ian.md 有一处相对所有者原稿的修改**:唤醒序列第 3 步 breath 的 query 由
   `"session"` 改为 `"session 对话归档"`(裸 "session" 搜不到近期归档桶)。
   下次部署找所有者要 ian.md 时,确认拿到的是含此修改的版本,或照此改一遍再部署。
+- 2026-07-15(晚) 锚点扩成五段(点名 CLAUDE.md/ian.md + 新增「边界与语气」,治命令式
+  甩脸与被纠正后抵赖,改动清单第 3 条)。**ian.md 新增第二处相对原稿的修改**:
+  Section VII 开头加了一段(所有者提供,"Mature and steady is the bone…"——成熟稳重
+  是骨、关心是温暖的唠叨不是命令)。07:09 UTC 上传,deployment `6a57303d3d3d099ed2f10ac6`
+  07:20 RUNNING,已按踩坑 9 验证:锚点五段、ian.md 两处修改都在、OB 域名正确,/health 正常。
+  THINK_EFFORT 保持 low(所有者决定不调)。
