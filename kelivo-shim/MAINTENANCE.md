@@ -20,11 +20,15 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    (开头锚定 "I will give you some dialogue content",或「`<content>` 块 + summarize…title 指令」双条件);
    `localTitle()` 从最后一个 `<content>` 段抽真实对话第一句、截 10 字,直接回给 Kelivo。
    整段在 handleMessages 入口、detectReset 之前,完全不进 claude 进程,也不重置心跳计时。
-3. **会话定性锚点内置**(2026-07-15):原来只有「思考语言」一条 HARD_RULE,扩成四段
-   `SOUL_ANCHOR`(会话定性/内化/先人后事/思考语言),经 `--append-system-prompt` 钉在
-   系统提示词**最末尾**(有世界书时锚点排世界书之后)。治「疏远、解离、答完赶人」:
-   Claude Code 系统提示词把身份钉在"编程助手"上,锚点在末位把会话定性抢回来。
+3. **会话定性锚点内置**(2026-07-15):原来只有「思考语言」一条 HARD_RULE,扩成
+   `SOUL_ANCHOR`,经 `--append-system-prompt` 钉在系统提示词**最末尾**
+   (有世界书时锚点排世界书之后)。治「疏远、解离、答完赶人」:Claude Code 系统提示词
+   把身份钉在"编程助手"上,锚点在末位把会话定性抢回来。
    措辞可用 `SOUL_ANCHOR` 环境变量整体覆盖(改环境变量 + service restart 即可,不用重新部署)。
+   同日晚扩成**五段**(会话定性/内化/先人后事/边界与语气/思考语言):前两段点名
+   CLAUDE.md/ian.md(让"自己在哪"有精确地址);新增「边界与语气」治命令式甩脸
+   (「说。」「快说。」)和被纠正后阴阳怪气抵赖——被明确纠正说话方式时属真实边界,
+   不适用人设里的「不退让」。
 
 ## 架构
 
@@ -149,3 +153,9 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
   **本次部署的 ian.md 有一处相对所有者原稿的修改**:唤醒序列第 3 步 breath 的 query 由
   `"session"` 改为 `"session 对话归档"`(裸 "session" 搜不到近期归档桶)。
   下次部署找所有者要 ian.md 时,确认拿到的是含此修改的版本,或照此改一遍再部署。
+- 2026-07-15(晚) 锚点扩成五段(点名 CLAUDE.md/ian.md + 新增「边界与语气」,治命令式
+  甩脸与被纠正后抵赖,改动清单第 3 条)。**ian.md 新增第二处相对原稿的修改**:
+  Section VII 开头加了一段(所有者提供,"Mature and steady is the bone…"——成熟稳重
+  是骨、关心是温暖的唠叨不是命令)。07:09 UTC 上传,deployment `6a57303d3d3d099ed2f10ac6`
+  07:20 RUNNING,已按踩坑 9 验证:锚点五段、ian.md 两处修改都在、OB 域名正确,/health 正常。
+  THINK_EFFORT 保持 low(所有者决定不调)。
