@@ -143,5 +143,9 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
   15:39 被一次非本会话的部署回滚到 7-12 旧快照(踩坑 11);20:18 重新部署时发现 mcp-servers.json
   还是死域名(踩坑 7),20:30 用 ianmian 域名重新部署,20:37 RUNNING,已按踩坑 9 进容器验证:
   拦截代码在、ian.md 是 v10、OB 域名正确。
-- 2026-07-15 server.js 内置四段会话定性锚点(SOUL_ANCHOR 可覆盖,详见「改动清单」第 3 条)。
-  **代码已入库、尚未部署**;下次部署带上,上线后按踩坑 9 进容器 `grep SOUL_ANCHOR server.js` 验证。
+- 2026-07-15 server.js 内置四段会话定性锚点(SOUL_ANCHOR 可覆盖,详见「改动清单」第 3 条),
+  同日部署上线:06:08 UTC 上传,deployment `6a5723763d3d099ed2f10897` 06:19 RUNNING,
+  已按踩坑 9 进容器验证:SOUL_ANCHOR 在、ian.md 是 v10(含下述修改)、OB 域名 ianmian 正确,/health 正常。
+  **本次部署的 ian.md 有一处相对所有者原稿的修改**:唤醒序列第 3 步 breath 的 query 由
+  `"session"` 改为 `"session 对话归档"`(裸 "session" 搜不到近期归档桶)。
+  下次部署找所有者要 ian.md 时,确认拿到的是含此修改的版本,或照此改一遍再部署。
