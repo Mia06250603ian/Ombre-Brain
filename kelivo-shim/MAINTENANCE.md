@@ -20,6 +20,11 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    (开头锚定 "I will give you some dialogue content",或「`<content>` 块 + summarize…title 指令」双条件);
    `localTitle()` 从最后一个 `<content>` 段抽真实对话第一句、截 10 字,直接回给 Kelivo。
    整段在 handleMessages 入口、detectReset 之前,完全不进 claude 进程,也不重置心跳计时。
+3. **会话定性锚点内置**(2026-07-15):原来只有「思考语言」一条 HARD_RULE,扩成四段
+   `SOUL_ANCHOR`(会话定性/内化/先人后事/思考语言),经 `--append-system-prompt` 钉在
+   系统提示词**最末尾**(有世界书时锚点排世界书之后)。治「疏远、解离、答完赶人」:
+   Claude Code 系统提示词把身份钉在"编程助手"上,锚点在末位把会话定性抢回来。
+   措辞可用 `SOUL_ANCHOR` 环境变量整体覆盖(改环境变量 + service restart 即可,不用重新部署)。
 
 ## 架构
 
@@ -74,6 +79,7 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 | BRAIN_MODEL / THINK_EFFORT | claude-opus-4-6 / low |
 | FORWARD_THINKING / ENABLE_PROMPT_CACHING_1H | 1 / 1 |
 | USER_NAME / AI_NAME | 佳佳 / 晏 |
+| SOUL_ANCHOR | 可选。整体覆盖内置的四段会话定性锚点措辞;不设则用 server.js 里的默认文本(称呼自动代入 USER_NAME) |
 | MCP_CONFIG | mcp-servers.json |
 | MCP_WARMUP_MS | 25000。新进程第一条消息延迟写入,等 MCP 握手;消息抢跑会整轮卡死(实测坑) |
 | BARK_KEY | Bark 推送 key(主动心跳) |
@@ -137,3 +143,5 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
   15:39 被一次非本会话的部署回滚到 7-12 旧快照(踩坑 11);20:18 重新部署时发现 mcp-servers.json
   还是死域名(踩坑 7),20:30 用 ianmian 域名重新部署,20:37 RUNNING,已按踩坑 9 进容器验证:
   拦截代码在、ian.md 是 v10、OB 域名正确。
+- 2026-07-15 server.js 内置四段会话定性锚点(SOUL_ANCHOR 可覆盖,详见「改动清单」第 3 条)。
+  **代码已入库、尚未部署**;下次部署带上,上线后按踩坑 9 进容器 `grep SOUL_ANCHOR server.js` 验证。
