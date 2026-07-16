@@ -188,10 +188,14 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 - 2026-07-15(晚,第二次) 时间感知注入(TIME_HINT,改动清单第 4 条)部署。
   deployment `6a5736e03d3d099ed2f10c0e` 07:47 RUNNING,已按踩坑 9 验证:
   TIME_HINT 代码在、CLAUDE.md 时间感知节在、五段锚点与 ian.md 两处修改仍在、OB 域名正确,/health 正常。
-- 2026-07-16 感官模块(天气+经期,改动清单第 5 条)代码合入仓库,**尚未部署**。
-  沙盒里已验证:`node test-senses.mjs` 50 项全过;并用假 claude 替身整跑过一遍服务
-  (真实拉到济南天气、注入格式正确、标题拦截/重置词/自动记录/守卫都正常)。
-  部署前:①先在 Zeabur 给 kelivo-shim 配 `WEATHER_CITY` 和 `PERIOD_CONFIG`(值问所有者);
-  ②`node test-senses.mjs` 全绿;③照常补 ian.md 和 mcp-servers.json。
-  部署后:按踩坑 9 进容器 `grep senses server.js` 确认注入点在、`ls senses.mjs` 在,
-  并 `GET /period?key=<SHIM_KEY>` 核对 `on:true` 且 effective 与所有者给的基线一致。
+- 2026-07-16 感官模块(天气+经期,改动清单第 5 条)**已部署上线**。
+  部署前:`node test-senses.mjs` 50 项全过;沙盒用假 claude 替身整跑过服务(注入格式、
+  标题拦截、重置词、自动记录、守卫全部正常);ian.md 和 mcp-servers.json **直接从上一个
+  运行中容器 base64 原样拷出**(16110 字节,两处修改都在,OB 域名 ianmian——这个取法比
+  找所有者要原稿更稳,推荐后续沿用);OB /mcp 按踩坑 7 验证 200;Zeabur 环境变量新增
+  `WEATHER_CITY` 与 `PERIOD_CONFIG`(CLI `variable create/update` 可用,JSON 值直接传,
+  **不要**按 CSV 加引号转义,会被原样存进去);部署前通过 API 发「归档」让晏收好窗口。
+  部署:07:31 UTC 上传,deployment `6a588901e7982a17f4f40b1f` 07:42 RUNNING。
+  已按踩坑 9 验证:注入点与 senses.mjs 在容器里、ian.md 16110 字节两处修改在、OB 域名正确、
+  CLAUDE.md 新两节在、容器内两个新环境变量在、/health 正常、GET /period 返回 on:true
+  且基线与所有者提供一致。
