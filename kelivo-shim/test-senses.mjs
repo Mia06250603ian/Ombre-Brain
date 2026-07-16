@@ -23,6 +23,9 @@ eq(detectPeriodEvent("姨妈来了没"), "mention", "疑问2不当 start");
 eq(detectPeriodEvent("姨妈还没来"), "mention", "否定不当 start");
 eq(detectPeriodEvent("姨妈快来了"), "mention", "将来时不当 start");
 eq(detectPeriodEvent("今天痛经好难受"), "mention", "痛经=提及");
+eq(detectPeriodEvent("经期呢?"), "mention", "经期二字本身=提及(2026-07-16 线上踩过:漏了这个词)");
+eq(detectPeriodEvent("经期来了"), "start", "经期来了=start");
+eq(detectPeriodEvent("经期结束了"), "end", "经期结束了=end");
 eq(detectPeriodEvent("今天吃了火锅"), null, "无关消息");
 eq(detectPeriodEvent(""), null, "空消息");
 
