@@ -249,3 +249,11 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
   与部署记录一致);修订后 **15869 字节、md5 6206533665da0a94da5f2a480522460b**,
   已逐段 diff 核对仅 5 处区域变更。修订稿全文已交所有者备份(文件名
   ian_v11_backup_2026-07-16.md)。**下次部署找所有者要 ian.md 时,以 v11(md5 6206…)为准。**
+- 2026-07-16(深夜,第二次) **ian.md v11 已部署上线**。代码零改动,只换 ian.md(v10→v11)。
+  部署前:test-senses 53 项全绿;OB 与花园 /mcp 各验证 200;server.js/senses.mjs/CLAUDE.md/
+  entrypoint.sh/package.json 与容器 md5 逐一一致;ian.md v11 与 mcp-servers.json
+  (从运行中容器原样拷出,含花园 token)放入构建目录。所有者明确选择**不归档直接部署**
+  (当前窗口上下文按其决定放弃)。部署:21:05 UTC 上传,约 9 分钟后 RUNNING。
+  已按踩坑 9 验证:容器内 ian.md 15869 字节、md5 6206533665da0a94da5f2a480522460b,
+  mcp-servers.json 两项含 token 原样,代码三件套 md5 与仓库一致,ALLOWED_TOOLS 含
+  ombre-brain + galatea-garden,/health 正常,/period on:true 基线正确。环境变量零改动。
