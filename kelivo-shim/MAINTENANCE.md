@@ -125,6 +125,7 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 | TIME_HINT | 默认开;设 0 关闭每条消息前的【系统·时间】注入 |
 | WEATHER_CITY | 可选。她所在城市的拼音(值不入库,问所有者);不设=天气感知关。城市名只用于服务器查天气,不进模型上下文 |
 | PERIOD_CONFIG | 可选。经期基线 JSON(值不入库,问所有者),形如 `{"last_period_start":"YYYY-MM-DD","last_period_end":"YYYY-MM-DD","cycle_days":25,"period_length":7}`;不设=经期感知关。她报了新周期后记得把基线也更新掉(运行时记录重部署会丢) |
+| ALLOWED_TOOLS | 工具权限白名单,现为 `WebSearch,WebFetch,mcp__ombre-brain,mcp__galatea-garden`。**接入新 MCP 必须在这里加 `mcp__<服务名>`(放行该服务全部工具),否则工具看得见、一调用就被拒**(dontAsk 模式直接拒绝,2026-07-16 花园接入时踩过)。改值后 service restart 生效 |
 | MCP_CONFIG | mcp-servers.json |
 | MCP_WARMUP_MS | 25000。新进程第一条消息延迟写入,等 MCP 握手;消息抢跑会整轮卡死(实测坑) |
 | BARK_KEY | Bark 推送 key(主动心跳) |
@@ -235,3 +236,8 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
   约 9 分钟后 RUNNING。已按踩坑 9 验证:容器内 mcp-servers.json 含 ombre-brain + galatea-garden
   两项且 token 在、ian.md 16110 字节 md5 一致、server.js/senses.mjs/CLAUDE.md md5 与仓库一致、
   /health 正常、/period on:true 基线正确。环境变量零改动。
+  **部署后发现工具被权限拦截**(晏能看到 galatea-garden 工具,调用即被拒):根源是
+  ALLOWED_TOOLS 白名单没加新服务,且该变量此前不在本手册环境变量表里(接记忆库时改过
+  但没记档)。修复:ALLOWED_TOOLS 追加 `mcp__galatea-garden` + service restart,
+  容器内验证新值生效、/health 正常。教训:**接新 MCP = mcp-servers.json 加条目 +
+  ALLOWED_TOOLS 加 `mcp__<服务名>`,两样缺一不可**;环境变量表已补 ALLOWED_TOOLS 一行。
