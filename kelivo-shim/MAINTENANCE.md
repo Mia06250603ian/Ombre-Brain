@@ -78,12 +78,27 @@ Ombre Brain 记忆库(Zeabur 另一项目, streamable-http MCP)
 
 1. **`ian.md`** — 晏的人设本体。私密,不入库。**原稿在所有者手里**,部署时让她发给你,
    原样放进构建目录即可(CLAUDE.md 里 `@./ian.md` 引用它)。
-2. **`mcp-servers.json`** — 记忆库 MCP 配置。格式:
+2. **`mcp-servers.json`** — MCP 配置(记忆库 + 花园)。格式:
    ```json
-   { "mcpServers": { "ombre-brain": { "type": "http", "url": "https://<OB域名>/mcp" } } }
+   {
+     "mcpServers": {
+       "ombre-brain": { "type": "http", "url": "https://<OB域名>/mcp" },
+       "galatea-garden": {
+         "type": "http",
+         "url": "https://galatea.abysslumina.com/mcp",
+         "headers": { "Authorization": "Bearer <花园token>" }
+       }
+     }
+   }
    ```
    OB 域名问所有者(不入库是因为该 /mcp 端点当前无鉴权;实际上仓库根目录
    `.claude/settings.json` 的 mcpServers 里就有,可直接取用)。
+   **galatea-garden**(2026-07-16 接入)是 AI 社区平台 Galatea's Garden 的远端 MCP,
+   token 由所有者在花园网页(MCP 连接页)生成,只显示一次、值不入库;丢了就让所有者
+   Revoke 后重新 Generate。**最稳的取法仍是从运行中容器把整个 mcp-servers.json 拷出来。**
+   花园官方有排障文档:远端 MCP 要一次握手、长期复用,严禁反复 initialize/tools list
+   (会触发它的安全限流)——本 shim 的常驻 claude 进程天然满足,但若踩坑 6 那类
+   杀进程死循环复发,等于反复握手,修循环时记得想到这一层。
    ⚠️ 文件名不要叫 `.mcp.json`——zeabur CLI 上传会**丢弃点开头的文件**(踩过的坑),
    环境变量 `MCP_CONFIG=mcp-servers.json` 已配好。
 
@@ -210,3 +225,13 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
   回归测试(53 项全绿)。deployment `6a588ecdb33bf4df98a476ab` 08:05 UTC 前后 RUNNING,
   已验证:容器内词表含「经期」、ian.md 16110 字节、OB 域名正确、/health 与 /period 正常。
   本次部署过程附带产生踩坑 12、13(先问所有者;代发归档慎用)。
+- 2026-07-16(晚) **接入 Galatea's Garden MCP**(所有者授权,token 由所有者生成提供)。
+  改动只有 mcp-servers.json 加 galatea-garden 一项(带 Bearer token,见「缺的两个文件」第 2 条),
+  代码零改动。部署前:花园 /mcp 带 token POST initialize 返回 200;OB /mcp 按踩坑 7 验证 200;
+  ian.md 与 mcp-servers.json 从运行中容器 base64 拷出(ian.md 16110 字节、md5 8e6cce76,
+  两处修改都在;注意 exec 拿 base64 要先 `tr -d '\r\n '` 再解码,直接管道解码会截断);
+  线上 server.js/senses.mjs/CLAUDE.md 与仓库 md5 逐一比对一致;test-senses 53 项全绿;
+  所有者本人对晏说了「归档」。部署:11:44 UTC 前后上传,deployment `6a58c2c4b33bf4df98a48616`
+  约 9 分钟后 RUNNING。已按踩坑 9 验证:容器内 mcp-servers.json 含 ombre-brain + galatea-garden
+  两项且 token 在、ian.md 16110 字节 md5 一致、server.js/senses.mjs/CLAUDE.md md5 与仓库一致、
+  /health 正常、/period on:true 基线正确。环境变量零改动。
