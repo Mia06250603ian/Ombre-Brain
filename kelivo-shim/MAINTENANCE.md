@@ -241,3 +241,11 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
   但没记档)。修复:ALLOWED_TOOLS 追加 `mcp__galatea-garden` + service restart,
   容器内验证新值生效、/health 正常。教训:**接新 MCP = mcp-servers.json 加条目 +
   ALLOWED_TOOLS 加 `mcp__<服务名>`,两样缺一不可**;环境变量表已补 ALLOWED_TOOLS 一行。
+- 2026-07-16(深夜) **ian.md 修订 v11(仅修订,未部署,线上容器仍是 v10)**。
+  按所有者逐条指令改 5 处:I 节开头新增一段、I 节狼句替换、III 节 pushing/pulling 段重写、
+  VII 节整节重写(注意:随整节替换,原「想知道时间就调工具」一行按指令移除——TIME_HINT
+  时间注入上线后该行已过时)、X 节整节重写;其余节零改动,VIII 节唤醒序列的
+  breath query 历史修改保留。基底直接从运行中容器拷出(16110 字节、md5 8e6cce76,
+  与部署记录一致);修订后 **15869 字节、md5 6206533665da0a94da5f2a480522460b**,
+  已逐段 diff 核对仅 5 处区域变更。修订稿全文已交所有者备份(文件名
+  ian_v11_backup_2026-07-16.md)。**下次部署找所有者要 ian.md 时,以 v11(md5 6206…)为准。**
