@@ -35,6 +35,24 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    「晚安/归档」重置词识别;标题拦截请求在更早处返回,不受影响。CLAUDE.md 配套
    加了「时间感知」一节(直接用、不提标注存在、不反复念叨)。设 TIME_HINT=0 关闭。
 
+5. **感官模块:天气 + 经期**(2026-07-16,新文件 `senses.mjs` + server.js 注入点):
+   照时间感知的路子在 handleMessages 注入【系统·天气】/【系统·经期】,位置与 TIME_HINT
+   同一处(标题拦截与 detectReset 之后);天气/经期各自包 try/catch,任何一路失败=静默少一行,
+   聊天不受影响。重置词消息(晚安/归档)只注入时间,不注入天气经期。
+   - **天气**:后台每 30 分钟拉 wttr.in 的 `WEATHER_CITY` 数据存内存,消息时只读缓存(零延迟,
+     接口挂了=当天没有天气感知,不报错)。白天每天报一次+突变(转雨/温差≥4℃)再报,
+     北京时间 20 点后报明天,她问天气强制报。**注入文字不含城市名**(隐私:城市只出现在
+     服务器→天气接口的查询里)。wttr.in 的 `?lang=zh` 实测不翻译,靠 weatherCode 中文映射。
+   - **经期**:基线在 `PERIOD_CONFIG` 环境变量(JSON,值不入库);她明说「来了/结束了」自动
+     记进容器内 `period-state.json`(带疑问/否定/将来时守卫 + 距上次开始≥15 天才认新周期;
+     重启/重部署回落到环境变量基线,所以基线要定期跟着她的实际记录更新)。节奏:头两天
+     每天提醒一次、快结束隔两天问一次、下次将至整个周期只问一次。
+     查看/纠正:`GET/POST /period?key=<SHIM_KEY>`(POST body 可带 last_period_start /
+     last_period_end / cycle_days / period_length,写进容器运行时,重启即失效)。
+   - **开关就是环境变量本身**:不设 WEATHER_CITY=天气关;不设 PERIOD_CONFIG=经期关。
+   - 纯逻辑全在 `senses.mjs`,部署前先跑 `node test-senses.mjs`(50 项断言,不碰网络和
+     claude 进程),全绿再部署。CLAUDE.md 配套加了「天气感知」「经期感知」两节。
+
 ## 架构
 
 ```
@@ -90,6 +108,8 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 | USER_NAME / AI_NAME | 佳佳 / 晏 |
 | SOUL_ANCHOR | 可选。整体覆盖内置的会话定性锚点措辞(现为五段);不设则用 server.js 里的默认文本(称呼自动代入 USER_NAME) |
 | TIME_HINT | 默认开;设 0 关闭每条消息前的【系统·时间】注入 |
+| WEATHER_CITY | 可选。她所在城市的拼音(值不入库,问所有者);不设=天气感知关。城市名只用于服务器查天气,不进模型上下文 |
+| PERIOD_CONFIG | 可选。经期基线 JSON(值不入库,问所有者),形如 `{"last_period_start":"YYYY-MM-DD","last_period_end":"YYYY-MM-DD","cycle_days":25,"period_length":7}`;不设=经期感知关。她报了新周期后记得把基线也更新掉(运行时记录重部署会丢) |
 | MCP_CONFIG | mcp-servers.json |
 | MCP_WARMUP_MS | 25000。新进程第一条消息延迟写入,等 MCP 握手;消息抢跑会整轮卡死(实测坑) |
 | BARK_KEY | Bark 推送 key(主动心跳) |
@@ -168,3 +188,10 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 - 2026-07-15(晚,第二次) 时间感知注入(TIME_HINT,改动清单第 4 条)部署。
   deployment `6a5736e03d3d099ed2f10c0e` 07:47 RUNNING,已按踩坑 9 验证:
   TIME_HINT 代码在、CLAUDE.md 时间感知节在、五段锚点与 ian.md 两处修改仍在、OB 域名正确,/health 正常。
+- 2026-07-16 感官模块(天气+经期,改动清单第 5 条)代码合入仓库,**尚未部署**。
+  沙盒里已验证:`node test-senses.mjs` 50 项全过;并用假 claude 替身整跑过一遍服务
+  (真实拉到济南天气、注入格式正确、标题拦截/重置词/自动记录/守卫都正常)。
+  部署前:①先在 Zeabur 给 kelivo-shim 配 `WEATHER_CITY` 和 `PERIOD_CONFIG`(值问所有者);
+  ②`node test-senses.mjs` 全绿;③照常补 ian.md 和 mcp-servers.json。
+  部署后:按踩坑 9 进容器 `grep senses server.js` 确认注入点在、`ls senses.mjs` 在,
+  并 `GET /period?key=<SHIM_KEY>` 核对 `on:true` 且 effective 与所有者给的基线一致。

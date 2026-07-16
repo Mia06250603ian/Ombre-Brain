@@ -2,6 +2,8 @@
 import express from "express";
 import { spawn } from "child_process";
 import { randomUUID } from "crypto";
+import fs from "fs";
+import { isWeatherAsk, buildWeatherNote, detectPeriodEvent, buildPeriodNote } from "./senses.mjs";
 
 const PORT = process.env.PORT || 8080;
 const SHIM_KEY = process.env.SHIM_KEY || "";            // Kelivo 要填的 API Key,自己编
@@ -299,6 +301,96 @@ function fmtGap(ms) {
   return `,距上一条消息约 ${h} 小时${r ? ` ${r} 分钟` : ""}`;
 }
 
+// ---- 感官:天气(WEATHER_CITY 不设即关) ----
+// 后台定时拉 wttr.in 存内存,消息时只读缓存:接口再慢再挂也不拖累聊天。
+// 注入文字不含城市名(隐私):城市只存在于这台服务器对天气接口的查询里。
+const WEATHER_CITY = process.env.WEATHER_CITY || "";
+let wxData = null, wxAt = 0, wxBusy = false;
+let wxMark = { day: "", night: "", desc: "", temp: null }; // 注入去重与突变基准(内存态,重启最多多报一次)
+async function refreshWeather() {
+  if (!WEATHER_CITY || wxBusy) return;
+  wxBusy = true;
+  const ctl = new AbortController();
+  const tm = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const r = await fetch(`https://wttr.in/${encodeURIComponent(WEATHER_CITY)}?format=j1`, { signal: ctl.signal });
+    if (r.ok) {
+      const j = await r.json();
+      if (j && j.current_condition) { wxData = j; wxAt = Date.now(); }
+    }
+  } catch (e) { log("[wx]", e.message || String(e)); }
+  clearTimeout(tm);
+  wxBusy = false;
+}
+if (WEATHER_CITY) { setTimeout(refreshWeather, 5000); setInterval(refreshWeather, 30 * 60000); }
+
+function bjTodayISO() { return new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10); }
+
+function weatherHint(orig) {
+  if (!WEATHER_CITY) return "";
+  const force = isWeatherAsk(orig);
+  const mode = bjHour() >= 20 ? "night" : "day";
+  const today = bjTodayISO();
+  if (!wxData || Date.now() - wxAt > 4 * 3600e3) {
+    return force ? "【系统·天气】她问到天气,但后台暂时没取到数据——如实说,需要就用搜索工具查一下" : "";
+  }
+  const w = buildWeatherNote({ data: wxData, mode, last: { desc: wxMark.desc, temp: wxMark.temp } });
+  if (!w) return "";
+  const due = force || (mode === "night" ? wxMark.night !== today : (wxMark.day !== today || w.changed));
+  if (!due) return "";
+  const label = force ? "她问起" : mode === "night" ? "睡前看一眼明天" : (wxMark.day === today && w.changed ? "有变化" : "今日一览");
+  if (mode === "night") wxMark.night = today; else wxMark.day = today;
+  wxMark.desc = w.desc; wxMark.temp = w.temp;
+  return `【系统·天气·${label}】${w.note}`;
+}
+
+// ---- 感官:经期(PERIOD_CONFIG 不设即关) ----
+// 基线在 PERIOD_CONFIG 环境变量(JSON,值不入库);她明说「来了/结束了」自动记进
+// 容器内 period-state.json(重启/重部署回落基线,基线更新见 GET/POST /period)。
+let periodEnv = {};
+try { periodEnv = JSON.parse(process.env.PERIOD_CONFIG || "{}") || {}; }
+catch { log("[period] PERIOD_CONFIG 不是合法 JSON,经期感知关闭"); }
+const PERIOD_ON = !!periodEnv.last_period_start;
+const PERIOD_FILE = process.env.PERIOD_FILE || "period-state.json";
+function loadPeriodState() {
+  try {
+    const s = JSON.parse(fs.readFileSync(PERIOD_FILE, "utf8"));
+    return s && typeof s === "object" ? s : {};
+  } catch { return {}; }
+}
+function savePeriodState(s) {
+  try { fs.writeFileSync(PERIOD_FILE, JSON.stringify(s, null, 2)); }
+  catch (e) { log("[period] save", e.message); }
+}
+function periodHint(orig) {
+  if (!PERIOD_ON) return "";
+  const st = loadPeriodState();
+  const cfg = { ...periodEnv, ...(st.cfg || {}) };
+  const r = buildPeriodNote({
+    todayISO: bjTodayISO(),
+    cfg,
+    notes: st.notes || {},
+    event: detectPeriodEvent((orig || "").replace(/\s+/g, "")),
+    userName: USER_NAME,
+  });
+  if (r.cfgPatch || r.notesPatch) {
+    savePeriodState({ cfg: { ...(st.cfg || {}), ...(r.cfgPatch || {}) }, notes: r.notesPatch || st.notes || {} });
+  }
+  return r.note ? `【系统·经期】${r.note}` : "";
+}
+app.get("/period", (req, res) => {
+  if (!awAuth(req)) return res.status(401).json({ ok: false });
+  const st = loadPeriodState();
+  res.json({ on: PERIOD_ON, effective: { ...periodEnv, ...(st.cfg || {}) }, runtime: st });
+});
+app.post("/period", (req, res) => {
+  if (!awAuth(req)) return res.status(401).json({ ok: false });
+  const b = req.body || {}, st = loadPeriodState(), cfg = { ...(st.cfg || {}) };
+  for (const k of ["last_period_start", "last_period_end", "cycle_days", "period_length"]) if (k in b) cfg[k] = b[k];
+  savePeriodState({ ...st, cfg });
+  res.json({ ok: true, effective: { ...periodEnv, ...cfg } });
+});
+
 // ---- 重置词 ----
 const GOODNIGHT_WORDS = ["晚安"];
 const ARCHIVE_WORDS = ["归档", "换窗口", "开新窗口", "新窗口"];
@@ -344,9 +436,15 @@ function handleMessages(req, res) {
     text = `【系统指令】立刻归档当前窗口(若挂了记忆工具),成功后只回一句「📦 归档好了,新窗口见」。`;
   }
 
-  if (TIME_HINT) {
-    text = `【系统·时间】现在北京时间 ${bjNowStr()}${fmtGap(Date.now() - lastUserAt)}。\n\n${text}`;
+  // 感官注入(时间/天气/经期):必须在标题拦截与 detectReset 之后。
+  // 天气/经期各自包 try/catch:任何一路出错只是少一行提示,消息照常送达。
+  const hints = [];
+  if (TIME_HINT) hints.push(`【系统·时间】现在北京时间 ${bjNowStr()}${fmtGap(Date.now() - lastUserAt)}。`);
+  if (!reset) {
+    try { const w = weatherHint(text); if (w) hints.push(w); } catch (e) { log("[wx-hint]", e.message); }
+    try { const p = periodHint(text); if (p) hints.push(p); } catch (e) { log("[period-hint]", e.message); }
   }
+  if (hints.length) text = `${hints.join("\n")}\n\n${text}`;
   lastUserAt = Date.now();
   log("[req]", { len: text.length, imgs: images.length, sysLen: system.length, stream, reset: reset || "-" });
   const sse = stream ? makeSSE(res) : makeCollector(res);
