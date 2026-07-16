@@ -92,7 +92,7 @@ export function buildWeatherNote({ data, mode = "day", last = {} }) {
 
 // ================= 经期 =================
 
-const P_WORDS = "(?:大姨妈|姨妈|月经|例假|生理期)";
+const P_WORDS = "(?:大姨妈|姨妈|月经|经期|例假|生理期)";
 const RE_MENTION = new RegExp(P_WORDS + "|痛经");
 const RE_START = new RegExp(P_WORDS + "(?:来了|来啦|驾到|报到)|来" + P_WORDS + "了");
 const RE_END = new RegExp(P_WORDS + "(?:走了|结束了|结束啦|完了|干净了)");
