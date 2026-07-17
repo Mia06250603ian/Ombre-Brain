@@ -49,6 +49,16 @@ kelivo-shim(yan-shim.zeabur.app)──→ 常驻 claude 进程(人设+记忆,见
 | TG_THINKING | 设 1 把思考作为折叠引用发出,默认关 |
 | BRIDGE_ON | 总开关。设 0 = 不轮询只留 /health,一键停用不用删服务 |
 | TURN_TIMEOUT_MS | 单轮超时,默认 900000(15 分钟) |
+| ELEVEN_API_KEY | ElevenLabs API key(限权:仅文本转语音+音色读;值不入库,所有者持有)。不设=语音功能关 |
+| ELEVEN_VOICE_ID | 晏的声音(所有者在 ElevenLabs 选定;免费档注意:声音库社区声音 API 用不了,默认声音和自建声音可用) |
+| VOICE_SPEED | 语速,默认 0.95(所有者 2026-07-18 四档盲测选定) |
+| VOICE_STABILITY | 默认 0.6 |
+| VOICE_MAX_CHARS | 单段语音字数上限,默认 500,超长退回文字(省积分;免费档每月 1 万积分≈1 万字符) |
+
+语音用法:回复里 `[语音]英文内容[/语音]`(全角括号也认;忘写闭合=标记后全算语音)。
+bridge 调 ElevenLabs(免费档实测可直出 Ogg/Opus,失败自动降级 mp3),经 sendVoice 发成
+Telegram 原生语音条;任何一步失败退回发文字,话不丢。内容用英文(中文有口音,所有者不要)。
+标记教学在 shim 的 CLAUDE.md(待下次 shim 部署;之前所有者可在对话里直接告诉他语法,当窗口有效)。
 
 ## 部署
 

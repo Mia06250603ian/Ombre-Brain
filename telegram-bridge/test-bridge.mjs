@@ -160,6 +160,25 @@ eq(splitBubbles("  \n "), [], "纯空白零泡");
   ok(bs.length === 3 && bs[0] === "短" && bs.every((b) => b.length <= 4096), "超长行继续按 4096 切");
 }
 
+// ---- 语音段解析 ----
+{
+  const tags = ["得意"];
+  eq(extractSegments("先打字 [语音]Go to sleep.[/语音] 再打字", tags).segments,
+    [{ type: "text", text: "先打字 " }, { type: "voice", text: "Go to sleep." }, { type: "text", text: " 再打字" }],
+    "语音块按原位插入");
+  eq(extractSegments("【语音】I'm right here.【/语音】", tags).segments,
+    [{ type: "voice", text: "I'm right here." }], "全角标记");
+  eq(extractSegments("晚安。[语音]Sweet dreams.", tags).segments,
+    [{ type: "text", text: "晚安。" }, { type: "voice", text: "Sweet dreams." }], "忘写闭合=后面全算语音");
+  eq(extractSegments("[语音]Line one.\nLine two.[/语音]", tags).segments,
+    [{ type: "voice", text: "Line one.\nLine two." }], "语音块可跨行");
+  eq(extractSegments("说完 [贴纸:得意] 再[语音]listen[/语音]", tags).segments,
+    [{ type: "text", text: "说完 " }, { type: "sticker", tag: "得意" }, { type: "text", text: " 再" }, { type: "voice", text: "listen" }],
+    "语音与贴纸混排");
+  eq(extractSegments("[语音][/语音]好", tags).segments,
+    [{ type: "text", text: "好" }], "空语音块丢弃");
+}
+
 // ---- bubblesFor(短拆长不拆)----
 {
   eq(bubblesFor("在。\n回来了?"), ["在。", "回来了?"], "短回复按换行拆");

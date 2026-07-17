@@ -83,8 +83,10 @@ export function isAllowedChat(chatId, allowList) {
 // extractSegments 保留标记在原文中的位置,输出有序段落流(text/sticker 交错),
 // 让「说一句、甩图、再说一句」按他写的顺序发生;未知标签只删不发(避免原样漏出)。
 const STICKER_RE = /[\[【]\s*贴纸\s*[::]\s*([^\]】\n]+?)\s*[\]】]/g;
-export function extractSegments(text, tags) {
-  const segments = [], unknown = [];
+// [语音]内容[/语音] / 【语音】内容【/语音】→ 该段转成语音条发出。
+// 只开了头没闭合 = 从标记到文末都算语音(宽容:他忘写闭合时按意图办)。
+const VOICE_RE = /[\[【]\s*语音\s*[\]】]([\s\S]*?)(?:[\[【]\s*\/\s*语音\s*[\]】]|$)/g;
+function sliceStickers(text, tags, segments, unknown) {
   let last = 0, m;
   STICKER_RE.lastIndex = 0;
   while ((m = STICKER_RE.exec(text || "")) !== null) {
@@ -96,6 +98,18 @@ export function extractSegments(text, tags) {
   }
   const rest = (text || "").slice(last);
   if (rest.trim()) segments.push({ type: "text", text: rest });
+}
+export function extractSegments(text, tags) {
+  const segments = [], unknown = [];
+  let last = 0, m;
+  VOICE_RE.lastIndex = 0;
+  while ((m = VOICE_RE.exec(text || "")) !== null) {
+    sliceStickers((text || "").slice(last, m.index), tags, segments, unknown);
+    const v = m[1].trim();
+    if (v) segments.push({ type: "voice", text: v });
+    last = m.index + m[0].length;
+  }
+  sliceStickers((text || "").slice(last), tags, segments, unknown);
   return { segments, unknown };
 }
 export function extractStickers(text, tags) {  // 兼容旧接口:整段文字 + 贴纸列表
