@@ -1,0 +1,2 @@
+# fishing-mcp 依赖:只要 MCP SDK(自带 uvicorn/starlette);引擎本体零依赖
+mcp>=1.0.0

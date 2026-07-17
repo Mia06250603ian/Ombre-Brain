@@ -72,6 +72,8 @@ Ombre Brain 记忆库(Zeabur 另一项目, streamable-http MCP)
 - 项目 `cli-proxy-api--cpa`: id `6a53a9fc22dd6ef375eb7484`, env `6a53a9fcb6ce8edcb0163f97`
   - 服务 `kelivo-shim`: id `6a53b806f6d4beebf0c5373d`, 域名 `yan-shim.zeabur.app`
   - 服务 `CLIProxyAPI`: id `6a53a9fd22dd6ef375eb7485`, 域名 `miaianhome.zeabur.app`
+  - 服务 `fishing-mcp`: id `6a5a17159ae692d1d8d98d10`, 域名 `yan-fishing-mcp.zeabur.app`
+    (钓鱼小游戏 MCP,源码在仓库 `fishing-mcp/` 目录,2026-07-17 接入)
 - Ombre Brain 在另一个项目(untitled-1),域名问所有者
 
 ## 本目录刻意缺的两个文件(部署前必须补)
@@ -87,7 +89,8 @@ Ombre Brain 记忆库(Zeabur 另一项目, streamable-http MCP)
          "type": "http",
          "url": "https://galatea.abysslumina.com/mcp",
          "headers": { "Authorization": "Bearer <花园token>" }
-       }
+       },
+       "fishing": { "type": "http", "url": "https://yan-fishing-mcp.zeabur.app/mcp" }
      }
    }
    ```
@@ -125,7 +128,7 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 | TIME_HINT | 默认开;设 0 关闭每条消息前的【系统·时间】注入 |
 | WEATHER_CITY | 可选。她所在城市的拼音(值不入库,问所有者);不设=天气感知关。城市名只用于服务器查天气,不进模型上下文 |
 | PERIOD_CONFIG | 可选。经期基线 JSON(值不入库,问所有者),形如 `{"last_period_start":"YYYY-MM-DD","last_period_end":"YYYY-MM-DD","cycle_days":25,"period_length":7}`;不设=经期感知关。她报了新周期后记得把基线也更新掉(运行时记录重部署会丢) |
-| ALLOWED_TOOLS | 工具权限白名单,现为 `WebSearch,WebFetch,mcp__ombre-brain,mcp__galatea-garden`。**接入新 MCP 必须在这里加 `mcp__<服务名>`(放行该服务全部工具),否则工具看得见、一调用就被拒**(dontAsk 模式直接拒绝,2026-07-16 花园接入时踩过)。改值后 service restart 生效 |
+| ALLOWED_TOOLS | 工具权限白名单,现为 `WebSearch,WebFetch,mcp__ombre-brain,mcp__galatea-garden,mcp__fishing`。**接入新 MCP 必须在这里加 `mcp__<服务名>`(放行该服务全部工具),否则工具看得见、一调用就被拒**(dontAsk 模式直接拒绝,2026-07-16 花园接入时踩过)。改值后 service restart 生效 |
 | MCP_CONFIG | mcp-servers.json |
 | MCP_WARMUP_MS | 25000。新进程第一条消息延迟写入,等 MCP 握手;消息抢跑会整轮卡死(实测坑) |
 | BARK_KEY | Bark 推送 key(主动心跳) |
