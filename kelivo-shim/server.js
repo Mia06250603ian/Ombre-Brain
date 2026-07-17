@@ -207,8 +207,11 @@ function listModels(_req, res) {
 app.get("/v1/models", listModels);
 app.get("/models", listModels);
 
-// ---- 主动心跳(可选,要 Bark) ----
+// ---- 主动心跳(可选;通道二选一:BRIDGE_PUSH_URL 优先,否则 Bark) ----
+// BRIDGE_PUSH_URL 指向 telegram-bridge 的 /push:主动消息直接落进 Telegram 对话
+// (支持 [贴纸:xx] 标记),她回一句就自然接上;Bark 是老通道,单向弹通知。
 const BARK_KEY = process.env.BARK_KEY || "";
+const BRIDGE_PUSH_URL = process.env.BRIDGE_PUSH_URL || "";
 const HB_CHECK_MIN = +(process.env.HB_CHECK_MIN || 10);
 const HB_DAY_IDLE_MIN = +(process.env.HB_DAY_IDLE_MIN || 120);
 const HB_COOLDOWN_MIN = +(process.env.HB_COOLDOWN_MIN || 180);
@@ -221,8 +224,13 @@ async function barkPush(text) {
   const r = await fetch("https://api.day.app/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ device_key: BARK_KEY, title: AI_NAME, body: text.slice(0, 1800) }) });
   log("[bark]", r.status);
 }
+async function bridgePush(text) {
+  const r = await fetch(BRIDGE_PUSH_URL, { method: "POST", headers: { "Content-Type": "application/json", "x-api-key": SHIM_KEY }, body: JSON.stringify({ text }) });
+  log("[bridge-push]", r.status);
+}
+const proactivePush = (text) => BRIDGE_PUSH_URL ? bridgePush(text) : barkPush(text);
 function heartbeatTick(force) {
-  if (!BARK_KEY || busy || queue.length) return;
+  if ((!BARK_KEY && !BRIDGE_PUSH_URL) || busy || queue.length) return;
   const idleMin = (Date.now() - lastUserAt) / 60000;
   if (!force) {
     if (isNight() || idleMin < HB_DAY_IDLE_MIN) return;
@@ -234,10 +242,13 @@ function heartbeatTick(force) {
     finish(_u, fullText) {
       const t = (fullText || "").trim();
       if (!t || t.includes("【沉默】")) { log("[hb] silent"); return; }
-      barkPush(t).catch((e) => log("[bark-err]", e.message));
+      proactivePush(t).catch((e) => log("[push-err]", e.message));
     } };
   log("[hb] waking, idle", Math.round(idleMin));
-  enqueue({ text: `【系统·心跳】现在北京时间 ${now},对方已约 ${Math.round(idleMin)} 分钟没来消息。你可以主动发一条消息(会弹到对方手机;聊天App里看不到这条,对方回来时你自然接上,别解释机制)。想说就短短说;不想打扰就只回:【沉默】。`, images: [], system: spawnedSystem, sse: sink, newWindow: false });
+  const channel = BRIDGE_PUSH_URL
+    ? "会直接出现在你们的 Telegram 对话里,她回来就能看到、能直接回你"
+    : "会弹到对方手机;聊天App里看不到这条,对方回来时你自然接上,别解释机制";
+  enqueue({ text: `【系统·心跳】现在北京时间 ${now},对方已约 ${Math.round(idleMin)} 分钟没来消息。你可以主动发一条消息(${channel})。想说就短短说;不想打扰就只回:【沉默】。`, images: [], system: spawnedSystem, sse: sink, newWindow: false });
 }
 setInterval(heartbeatTick, HB_CHECK_MIN * 60000);
 app.post("/hb", (req, res) => {  // 手动触发测试口

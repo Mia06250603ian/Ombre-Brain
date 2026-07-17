@@ -131,7 +131,8 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 | ALLOWED_TOOLS | 工具权限白名单,现为 `WebSearch,WebFetch,mcp__ombre-brain,mcp__galatea-garden,mcp__fishing`。**接入新 MCP 必须在这里加 `mcp__<服务名>`(放行该服务全部工具),否则工具看得见、一调用就被拒**(dontAsk 模式直接拒绝,2026-07-16 花园接入时踩过)。改值后 service restart 生效 |
 | MCP_CONFIG | mcp-servers.json |
 | MCP_WARMUP_MS | 25000。新进程第一条消息延迟写入,等 MCP 握手;消息抢跑会整轮卡死(实测坑) |
-| BARK_KEY | Bark 推送 key(主动心跳) |
+| BARK_KEY | Bark 推送 key(主动心跳老通道,单向弹通知) |
+| BRIDGE_PUSH_URL | 2026-07-17 起。telegram-bridge 的 /push 地址;设了则主动心跳直接发进 Telegram 对话(支持贴纸标记),不设回落 Bark。见 `../telegram-bridge/MAINTENANCE.md` |
 
 ## 踩过的坑(别再踩)
 
@@ -279,3 +280,16 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
   已按踩坑 9 验证:容器 mcp-servers.json 三条目(含 fishing、花园 token 原样)、
   ian.md 15869 字节 md5 一致、server.js/senses.mjs md5 与仓库一致、CLAUDE.md 含钓鱼节、
   容器内 ALLOWED_TOOLS 含 mcp__fishing、/health 正常、/period on:true 基线正确。
+- 2026-07-17(晚) **接入 Telegram 前端(telegram-bridge)+ 表情包 + 心跳进 Telegram 对话**。
+  当天上午所有者建 bot、确认隐私(对话过 Telegram 服务器)后,独立服务 telegram-bridge
+  上线(shim 当时零改动,详见 `../telegram-bridge/MAINTENANCE.md`);实测 Kelivo 发的
+  sysLen=0,双前端混用不触发换世界书杀进程。晚间第二阶段动了 shim:server.js 加
+  BRIDGE_PUSH_URL 通道(心跳改发 bridge /push,直接落进 Telegram 对话,提示语随通道
+  切换;不设则回落 Bark),CLAUDE.md 加「表情包」一节(26 个标签,[贴纸:标签] 约定,
+  图为所有者亲选,存 bridge 仓库目录)。部署前:test-senses 53 项全绿;ian.md 与
+  mcp-servers.json 从运行中容器拷出(ian.md 15869 字节 md5 6206…,即 v11);三个 MCP
+  端点(OB/花园/钓鱼)各验证 200;容器五件套 md5 与仓库改动前版本逐一一致;Zeabur 加
+  环境变量 BRIDGE_PUSH_URL;所有者本人对晏说了「归档」。部署后已按踩坑 9 验证:
+  容器 server.js/senses.mjs/CLAUDE.md md5 与仓库新版一致、ian.md v11 原样、
+  mcp-servers.json 三条目、BRIDGE_PUSH_URL 与 ALLOWED_TOOLS 在、/health 正常、
+  /period on:true 基线正确、bridge /push 无 key 正确 401。

@@ -1,8 +1,9 @@
 // 纯逻辑测试:node test-bridge.mjs,不碰网络。部署前必须全绿。
 import {
   splitForTelegram, detectReset, mergeTurn, buildShimBody,
-  makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf,
+  makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf, extractStickers,
 } from "./bridge-lib.mjs";
+import fs from "fs";
 
 let n = 0, fail = 0;
 function eq(got, want, name) {
@@ -109,6 +110,39 @@ ok(!isAllowedChat(12345, []), "空白名单全拒");
 eq(mediaTypeOf("photos/file_1.jpg"), "image/jpeg", "jpg");
 eq(mediaTypeOf("stickers/x.webp"), "image/webp", "webp");
 eq(mediaTypeOf("voice/x.oga"), null, "不支持类型给 null");
+
+// ---- extractStickers ----
+{
+  const tags = ["得意", "委屈", "贴贴"];
+  eq(extractStickers("干得漂亮吧 [贴纸:得意]", tags),
+    { text: "干得漂亮吧", stickers: ["得意"], unknown: [] }, "句尾标记");
+  eq(extractStickers("【贴纸:贴贴】晚安", tags),
+    { text: "晚安", stickers: ["贴贴"], unknown: [] }, "全角括号+句首");
+  eq(extractStickers("[贴纸: 委屈 ]怎么这样", tags),
+    { text: "怎么这样", stickers: ["委屈"], unknown: [] }, "全角冒号+空格容错");
+  eq(extractStickers("两张 [贴纸:得意][贴纸:贴贴]", tags),
+    { text: "两张", stickers: ["得意", "贴贴"], unknown: [] }, "多张按序");
+  eq(extractStickers("没这张 [贴纸:飞天]", tags),
+    { text: "没这张", stickers: [], unknown: ["飞天"] }, "未知标签删标记不发图");
+  eq(extractStickers("纯文字没有标记", tags),
+    { text: "纯文字没有标记", stickers: [], unknown: [] }, "无标记原样");
+  eq(extractStickers("第一行\n[贴纸:得意]\n第三行", tags),
+    { text: "第一行\n\n第三行", stickers: ["得意"], unknown: [] }, "独占一行不留三连空行");
+  eq(extractStickers("[贴纸:得意]", tags),
+    { text: "", stickers: ["得意"], unknown: [] }, "只有贴纸正文为空");
+  eq(extractStickers("方括号里有换行[贴纸:得\n意]", tags).stickers, [], "标签含换行不匹配");
+}
+
+// ---- registry.json 完整性:每个标签的文件都真实存在 ----
+{
+  const reg = JSON.parse(fs.readFileSync("stickers/registry.json", "utf8"));
+  const tags = Object.keys(reg);
+  ok(tags.length === 26, `registry 26 个标签(实际 ${tags.length})`);
+  const missing = tags.filter((t) => !fs.existsSync(`stickers/${reg[t]}`));
+  eq(missing, [], "registry 指向的文件全存在");
+  const dup = new Set(Object.values(reg));
+  ok(dup.size === tags.length, "文件无重复引用");
+}
 
 console.log(fail ? `\n${fail}/${n} FAILED` : `${n} 项全绿 ✓`);
 process.exit(fail ? 1 : 0);

@@ -2,9 +2,11 @@
 // 独立服务:shim 零改动,Kelivo 照常可用。停掉本服务 = 回到没有 Telegram 的现状。
 import express from "express";
 import https from "https";
+import fs from "fs";
+import path from "path";
 import {
   splitForTelegram, detectReset, mergeTurn, buildShimBody,
-  makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf,
+  makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf, extractStickers,
 } from "./bridge-lib.mjs";
 
 const PORT = process.env.PORT || 8080;
@@ -42,6 +44,35 @@ async function tgFileToImage(fileId) {
 }
 async function sendReply(chatId, text) {
   for (const chunk of splitForTelegram(text)) await tg("sendMessage", { chat_id: chatId, text: chunk });
+}
+
+// ---- 贴纸:stickers/registry.json 标签→文件;首次上传后缓存 file_id 复用 ----
+const STICKER_DIR = process.env.STICKER_DIR || "stickers";
+let stickerReg = {};
+try { stickerReg = JSON.parse(fs.readFileSync(path.join(STICKER_DIR, "registry.json"), "utf8")); }
+catch { log("[sticker] 没有 registry.json,贴纸功能关"); }
+const stickerTags = Object.keys(stickerReg);
+const stickerFileIds = {};
+async function sendSticker(chatId, tag) {
+  const file = stickerReg[tag];
+  if (!file) return;
+  if (stickerFileIds[tag]) { await tg("sendPhoto", { chat_id: chatId, photo: stickerFileIds[tag] }); return; }
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append("photo", new Blob([fs.readFileSync(path.join(STICKER_DIR, file))]), file);
+  const r = await fetch(`https://api.telegram.org/bot${BOT}/sendPhoto`, { method: "POST", body: form });
+  const j = await r.json().catch(() => ({}));
+  if (j.ok) { const ph = j.result?.photo; if (ph?.length) stickerFileIds[tag] = ph[ph.length - 1].file_id; }
+  else log("[sticker] sendPhoto failed:", j.description || r.status);
+}
+
+// 统一出口:剥贴纸标记 → 发正文 → 发贴纸(轮次回复和 /push 主动消息共用)
+async function sendOutput(chatId, rawText, { fallback } = {}) {
+  const { text, stickers, unknown } = extractStickers(rawText || "", stickerTags);
+  if (unknown.length) log("[sticker] unknown tags:", unknown.join(","));
+  if (text) await sendReply(chatId, text);
+  else if (!stickers.length && fallback) await sendReply(chatId, fallback);
+  for (const t of stickers) await sendSticker(chatId, t).catch((e) => log("[sticker-err]", e.message));
 }
 async function sendThinking(chatId, thinking) {
   if (!TG_THINKING || !thinking.trim()) return;
@@ -102,7 +133,7 @@ async function runQueue() {
     log("[turn]", { len: t.text.length, imgs: t.images.length });
     const r = await shimTurn(t);
     await sendThinking(t.chatId, r.thinking);
-    await sendReply(t.chatId, r.text || "⚠️[bridge] 空回复,看下 shim 日志");
+    await sendOutput(t.chatId, r.text, { fallback: "⚠️[bridge] 空回复,看下 shim 日志" });
   } catch (e) {
     log("[turn-err]", e.message);
     await sendReply(t.chatId, `⚠️[bridge] ${e.message}`).catch(() => {});
@@ -170,9 +201,20 @@ async function pollLoop() {
   }
 }
 
-// ---- health ----
+// ---- health + 主动推送口 ----
+// POST /push {text}:shim 的主动心跳走这里,直接落进 Telegram 对话(支持贴纸标记)。
 const app = express();
-app.get("/health", (_q, r) => r.json({ ok: true, on: BRIDGE_ON, polling, inflight, buffered: buffer.length, queued: turnQueue.length }));
+app.use(express.json({ limit: "1mb" }));
+app.post("/push", async (req, res) => {
+  const key = req.get("x-api-key") || req.query.key || "";
+  if (!SHIM_KEY || key !== SHIM_KEY) return res.status(401).json({ ok: false });
+  const text = (req.body?.text || "").trim();
+  if (!text) return res.status(400).json({ ok: false, error: "empty text" });
+  if (!lastChatId) return res.status(503).json({ ok: false, error: "no chat" });
+  try { await sendOutput(lastChatId, text); res.json({ ok: true }); }
+  catch (e) { log("[push-err]", e.message); res.status(502).json({ ok: false, error: e.message }); }
+});
+app.get("/health", (_q, r) => r.json({ ok: true, on: BRIDGE_ON, polling, inflight, buffered: buffer.length, queued: turnQueue.length, stickers: stickerTags.length }));
 app.listen(PORT, () => log(`telegram-bridge on :${PORT} shim=${SHIM_URL} on=${BRIDGE_ON}`));
 
 if (!BRIDGE_ON) log("[bridge] BRIDGE_ON=0,只留 /health");
