@@ -73,6 +73,25 @@ npx -y zeabur@latest deploy   # 首次部署后把 service id 记回本文档
    需改 shim 的 heartbeatTick 出口 —— 那是第二阶段,要动 shim,按 shim 手册全套流程 + 所有者授权。
 6. **隐私**:对话明文过 Telegram 服务器(Bot API 无端到端加密)。所有者已知情。
 
+## Zeabur 位置
+
+- 项目 `cli-proxy-api--cpa`(与 shim 同项目): id `6a53a9fc22dd6ef375eb7484`, env `6a53a9fcb6ce8edcb0163f97`
+- 服务 `telegram-bridge`: id `6a5a4287f947b6cb34511f79`, 域名 `yan-telegram-bridge.zeabur.app`
+
+重新部署:
+```bash
+cd telegram-bridge && node test-bridge.mjs   # 全绿再动
+npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-id 6a53a9fcb6ce8edcb0163f97 -i=false
+```
+
 ## 部署记录
 
-- (待首次部署后补:日期、service id、域名、验证结果)
+- 2026-07-17 首次搭建。所有者建 bot(t.me/Ianxu06030625miabot)并确认隐私点(对话过
+  Telegram 服务器)后部署。过程:`--create` 建服务时 `--domain yan-tg-bridge` 被占导致
+  addDomain 报错,但**服务本体已建成**,随后单独 `domain create` 绑 `yan-telegram-bridge` 成功
+  (教训:deploy 报 DOMAIN_UNAVAILABLE 先查 service list,别重复建服务)。
+  环境变量 TELEGRAM_BOT_TOKEN / SHIM_KEY / SHIM_URL / TELEGRAM_CHAT_ID(值不入库),
+  变量齐前服务自动只起 /health 不轮询(设计如此)。配齐后 restart,14:59 UTC 起轮询正常。
+  **实测确认 Kelivo 发的 sysLen=0(无世界书)**,桥的空 SYSTEM_TEXT 与之一致,
+  双前端混用不会触发 shim 换世界书杀进程——手册前文「混用注意」按此降级为无风险。
+  注意:新绑域名的 TLS 证书签发要几分钟,期间 curl /health 报 self-signed 属正常,等即可。
