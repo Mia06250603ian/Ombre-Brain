@@ -84,8 +84,21 @@ cd telegram-bridge && node test-bridge.mjs   # 全绿再动
 npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-id 6a53a9fcb6ce8edcb0163f97 -i=false
 ```
 
+## 表情包(2026-07-17 二阶段)
+
+- 图在 `stickers/`(ASCII 文件名),`registry.json` 是「标签→文件」表;26 张全部所有者亲选亲命名。
+- 晏在回复里写 `[贴纸:标签]`(全半角括号冒号都认),bridge 剥掉标记、正文照发、图用
+  sendPhoto 发出;首次上传后缓存 file_id 复用。未知标签只删标记不发图(防原样漏出)。
+- 标签教学在 shim 的 CLAUDE.md「表情包」一节。**加新图三步**:图进 stickers/、registry.json
+  加条目、CLAUDE.md 标签表同步加(要重部署 shim);bridge 侧 test-bridge 会校验 registry
+  与文件一一对应。
+- `POST /push {text}`(x-api-key=SHIM_KEY):shim 主动心跳走这里,直接落进对话,同样支持贴纸标记。
+
 ## 部署记录
 
+- 2026-07-17(晚) 二阶段:表情包 + /push 上线(deployment 含 stickers:26,/health 可见);
+  同晚 shim 侧配 BRIDGE_PUSH_URL 并重新部署(记录见 shim 手册)。TG_THINKING=1 当天由所有者
+  要求开启(思考以折叠引用发出)。
 - 2026-07-17 首次搭建。所有者建 bot(t.me/Ianxu06030625miabot)并确认隐私点(对话过
   Telegram 服务器)后部署。过程:`--create` 建服务时 `--domain yan-tg-bridge` 被占导致
   addDomain 报错,但**服务本体已建成**,随后单独 `domain create` 绑 `yan-telegram-bridge` 成功
