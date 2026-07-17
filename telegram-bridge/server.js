@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 import {
   splitForTelegram, detectReset, mergeTurn, buildShimBody,
-  makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf, extractStickers,
+  makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf, extractSegments, splitBubbles,
 } from "./bridge-lib.mjs";
 
 const PORT = process.env.PORT || 8080;
@@ -68,13 +68,33 @@ async function sendSticker(chatId, tag) {
   else log("[sticker] sendSticker failed:", j.description || r.status);
 }
 
-// 统一出口:剥贴纸标记 → 发正文 → 发贴纸(轮次回复和 /push 主动消息共用)
+// 统一出口(轮次回复和 /push 主动消息共用):按原文顺序发段落流——
+// 文字按换行拆成一句一个气泡(BUBBLE_SPLIT=0 关),贴纸在他写的位置插进序列;
+// 气泡间隔随下一句长度 0.5~1.6s,配 typing 状态,手感像真人连发。
+const BUBBLE_SPLIT = process.env.BUBBLE_SPLIT !== "0";
+const sleep = (ms) => new Promise((s) => setTimeout(s, ms));
 async function sendOutput(chatId, rawText, { fallback } = {}) {
-  const { text, stickers, unknown } = extractStickers(rawText || "", stickerTags);
+  const { segments, unknown } = extractSegments(rawText || "", stickerTags);
   if (unknown.length) log("[sticker] unknown tags:", unknown.join(","));
-  if (text) await sendReply(chatId, text);
-  else if (!stickers.length && fallback) await sendReply(chatId, fallback);
-  for (const t of stickers) await sendSticker(chatId, t).catch((e) => log("[sticker-err]", e.message));
+  if (!segments.length) { if (fallback) await sendReply(chatId, fallback); return; }
+  let first = true;
+  for (const seg of segments) {
+    if (seg.type === "sticker") {
+      if (!first) await sleep(400);
+      await sendSticker(chatId, seg.tag).catch((e) => log("[sticker-err]", e.message));
+      first = false;
+      continue;
+    }
+    const bubbles = BUBBLE_SPLIT ? splitBubbles(seg.text) : splitForTelegram(seg.text.trim());
+    for (const b of bubbles) {
+      if (!first) {
+        tg("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
+        await sleep(Math.min(500 + b.length * 25, 1600));
+      }
+      await tg("sendMessage", { chat_id: chatId, text: b });
+      first = false;
+    }
+  }
 }
 async function sendThinking(chatId, thinking) {
   if (!TG_THINKING || !thinking.trim()) return;

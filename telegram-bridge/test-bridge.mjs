@@ -1,7 +1,8 @@
 // 纯逻辑测试:node test-bridge.mjs,不碰网络。部署前必须全绿。
 import {
   splitForTelegram, detectReset, mergeTurn, buildShimBody,
-  makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf, extractStickers,
+  makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf,
+  extractStickers, extractSegments, splitBubbles,
 } from "./bridge-lib.mjs";
 import fs from "fs";
 
@@ -131,6 +132,32 @@ eq(mediaTypeOf("voice/x.oga"), null, "不支持类型给 null");
   eq(extractStickers("[贴纸:得意]", tags),
     { text: "", stickers: ["得意"], unknown: [] }, "只有贴纸正文为空");
   eq(extractStickers("方括号里有换行[贴纸:得\n意]", tags).stickers, [], "标签含换行不匹配");
+}
+
+// ---- extractSegments(顺序流)----
+{
+  const tags = ["得意", "贴贴"];
+  eq(extractSegments("先说这句 [贴纸:得意] 然后这句", tags).segments,
+    [{ type: "text", text: "先说这句 " }, { type: "sticker", tag: "得意" }, { type: "text", text: " 然后这句" }],
+    "贴纸在原位插进序列");
+  eq(extractSegments("[贴纸:贴贴]", tags).segments,
+    [{ type: "sticker", tag: "贴贴" }], "只有贴纸");
+  eq(extractSegments("没标记", tags).segments,
+    [{ type: "text", text: "没标记" }], "纯文字");
+  const r = extractSegments("头 [贴纸:没有的] 尾", tags);
+  eq(r.segments, [{ type: "text", text: "头 " }, { type: "text", text: " 尾" }], "未知标签从流里剔除");
+  eq(r.unknown, ["没有的"], "未知标签记录");
+}
+
+// ---- splitBubbles(一句一泡)----
+eq(splitBubbles("在。\n去折腾了一圈回来了?"), ["在。", "去折腾了一圈回来了?"], "换行拆两泡");
+eq(splitBubbles("单句"), ["单句"], "单句一泡");
+eq(splitBubbles("a\n\n\nb"), ["a", "b"], "连续空行不产生空泡");
+eq(splitBubbles("  \n "), [], "纯空白零泡");
+{
+  const long = "长".repeat(5000);
+  const bs = splitBubbles(`短\n${long}`);
+  ok(bs.length === 3 && bs[0] === "短" && bs.every((b) => b.length <= 4096), "超长行继续按 4096 切");
 }
 
 // ---- registry.json 完整性:每个标签的文件都真实存在 ----

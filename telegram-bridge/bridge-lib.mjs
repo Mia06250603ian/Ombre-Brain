@@ -80,16 +80,39 @@ export function isAllowedChat(chatId, allowList) {
 }
 
 // ---- 贴纸标记解析:[贴纸:标签] / 【贴纸:标签】(冒号全半角都认)----
-// 认识的标签收进 stickers,不认识的收进 unknown(只删标记不发图,避免原样漏出)。
-export function extractStickers(text, tags) {
-  const re = /[\[【]\s*贴纸\s*[::]\s*([^\]】\n]+?)\s*[\]】]/g;
-  const stickers = [], unknown = [];
-  const rest = (text || "").replace(re, (_, tag) => {
-    const t = tag.trim();
-    (tags.includes(t) ? stickers : unknown).push(t);
-    return "";
-  });
-  return { text: rest.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim(), stickers, unknown };
+// extractSegments 保留标记在原文中的位置,输出有序段落流(text/sticker 交错),
+// 让「说一句、甩图、再说一句」按他写的顺序发生;未知标签只删不发(避免原样漏出)。
+const STICKER_RE = /[\[【]\s*贴纸\s*[::]\s*([^\]】\n]+?)\s*[\]】]/g;
+export function extractSegments(text, tags) {
+  const segments = [], unknown = [];
+  let last = 0, m;
+  STICKER_RE.lastIndex = 0;
+  while ((m = STICKER_RE.exec(text || "")) !== null) {
+    const before = (text || "").slice(last, m.index);
+    if (before.trim()) segments.push({ type: "text", text: before });
+    const t = m[1].trim();
+    if (tags.includes(t)) segments.push({ type: "sticker", tag: t }); else unknown.push(t);
+    last = m.index + m[0].length;
+  }
+  const rest = (text || "").slice(last);
+  if (rest.trim()) segments.push({ type: "text", text: rest });
+  return { segments, unknown };
+}
+export function extractStickers(text, tags) {  // 兼容旧接口:整段文字 + 贴纸列表
+  const { segments, unknown } = extractSegments(text, tags);
+  const stickers = segments.filter((s) => s.type === "sticker").map((s) => s.tag);
+  const joined = segments.filter((s) => s.type === "text").map((s) => s.text).join("");
+  return { text: joined.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim(), stickers, unknown };
+}
+
+// ---- 气泡拆分:按换行拆(换行是他自己的气泡分隔符),长段落整段一泡 ----
+export function splitBubbles(text, limit = TG_LIMIT) {
+  const out = [];
+  for (const line of (text || "").split("\n")) {
+    const t = line.trim();
+    if (t) out.push(...splitForTelegram(t, limit));
+  }
+  return out;
 }
 
 // ---- Telegram 文件路径 → Anthropic image block 的 media_type ----
