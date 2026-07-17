@@ -260,3 +260,22 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
   已按踩坑 9 验证:容器内 ian.md 15869 字节、md5 6206533665da0a94da5f2a480522460b,
   mcp-servers.json 两项含 token 原样,代码三件套 md5 与仓库一致,ALLOWED_TOOLS 含
   ombre-brain + galatea-garden,/health 正常,/period on:true 基线正确。环境变量零改动。
+- 2026-07-17 **接入钓鱼小游戏 fishing-mcp**(所有者授权并提供 Zeabur token,部署前所有者
+  已让晏归档)。游戏引擎来自 tutusagi/ai-fishing-game(盲玩版 fishing.py,vendored 自
+  commit 39f79d1,PolyForm Noncommercial,个人非商业使用),包装层源码在仓库
+  **`fishing-mcp/`** 目录(FastMCP streamable-http,与 OB 同栈;工具 play/new_game;
+  /save?key=FISHING_KEY 可备份/恢复存档——**存档在容器内,重启/重部署丢进度**,
+  FISHING_KEY 当前未设=备份端点关闭,要用时在 fishing-mcp 服务加该环境变量)。
+  部署前:fishing-mcp 本地 test_server.py 41 项全绿(真 MCP 握手/工具调用/存档恢复);
+  test-senses 53 项全绿;OB 与花园 /mcp 各验证 200;ian.md 与 mcp-servers.json 从运行中
+  容器拷出(ian.md 15869 字节、md5 6206…,即 v11);server.js/senses.mjs/entrypoint.sh/
+  package.json 与容器 md5 逐一一致。
+  新服务:`fishing-mcp` id `6a5a17159ae692d1d8d98d10`,域名 `yan-fishing-mcp.zeabur.app`
+  (11:44 UTC 部署,`--domain yan-fishing` 被占改绑 yan-fishing-mcp),上线后验证
+  /health 200、/mcp initialize 200、远程 tools/call play 正常返回。
+  shim 改动:mcp-servers.json 加 `fishing` 条目 + ALLOWED_TOOLS 追加 `mcp__fishing`
+  (照踩坑「两样缺一不可」)+ CLAUDE.md 加「钓鱼小游戏」一节;**server.js 零改动**。
+  部署:11:56 UTC 上传,deployment `6a5a185db33bf4df98a4d162` 12:06 RUNNING。
+  已按踩坑 9 验证:容器 mcp-servers.json 三条目(含 fishing、花园 token 原样)、
+  ian.md 15869 字节 md5 一致、server.js/senses.mjs md5 与仓库一致、CLAUDE.md 含钓鱼节、
+  容器内 ALLOWED_TOOLS 含 mcp__fishing、/health 正常、/period on:true 基线正确。
