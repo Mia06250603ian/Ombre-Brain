@@ -46,7 +46,9 @@ async function sendReply(chatId, text) {
   for (const chunk of splitForTelegram(text)) await tg("sendMessage", { chat_id: chatId, text: chunk });
 }
 
-// ---- 贴纸:stickers/registry.json 标签→文件;首次上传后缓存 file_id 复用 ----
+// ---- 贴纸:stickers/registry.json 标签→512px WebP;首次上传后缓存 file_id 复用 ----
+// 必须走 sendSticker(不是 sendPhoto):photo 会被 Telegram 整宽渲染成大图,
+// sticker 才是聊天里小小一块的贴纸尺寸(2026-07-17 实测踩过)。
 const STICKER_DIR = process.env.STICKER_DIR || "stickers";
 let stickerReg = {};
 try { stickerReg = JSON.parse(fs.readFileSync(path.join(STICKER_DIR, "registry.json"), "utf8")); }
@@ -56,14 +58,14 @@ const stickerFileIds = {};
 async function sendSticker(chatId, tag) {
   const file = stickerReg[tag];
   if (!file) return;
-  if (stickerFileIds[tag]) { await tg("sendPhoto", { chat_id: chatId, photo: stickerFileIds[tag] }); return; }
+  if (stickerFileIds[tag]) { await tg("sendSticker", { chat_id: chatId, sticker: stickerFileIds[tag] }); return; }
   const form = new FormData();
   form.append("chat_id", String(chatId));
-  form.append("photo", new Blob([fs.readFileSync(path.join(STICKER_DIR, file))]), file);
-  const r = await fetch(`https://api.telegram.org/bot${BOT}/sendPhoto`, { method: "POST", body: form });
+  form.append("sticker", new Blob([fs.readFileSync(path.join(STICKER_DIR, file))], { type: "image/webp" }), file);
+  const r = await fetch(`https://api.telegram.org/bot${BOT}/sendSticker`, { method: "POST", body: form });
   const j = await r.json().catch(() => ({}));
-  if (j.ok) { const ph = j.result?.photo; if (ph?.length) stickerFileIds[tag] = ph[ph.length - 1].file_id; }
-  else log("[sticker] sendPhoto failed:", j.description || r.status);
+  if (j.ok) { const id = j.result?.sticker?.file_id; if (id) stickerFileIds[tag] = id; }
+  else log("[sticker] sendSticker failed:", j.description || r.status);
 }
 
 // 统一出口:剥贴纸标记 → 发正文 → 发贴纸(轮次回复和 /push 主动消息共用)
