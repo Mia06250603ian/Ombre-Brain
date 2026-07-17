@@ -68,6 +68,36 @@ async function sendSticker(chatId, tag) {
   else log("[sticker] sendSticker failed:", j.description || r.status);
 }
 
+// ---- 语音:[语音]…[/语音] 段经 ElevenLabs 转成 Telegram 语音条 ----
+// 免费档实测可直接输出 Ogg/Opus;转不出来就退回发文字,话永远不会丢。
+const ELEVEN_KEY = process.env.ELEVEN_API_KEY || "";
+const ELEVEN_VOICE = process.env.ELEVEN_VOICE_ID || "";
+const VOICE_MODEL = process.env.VOICE_MODEL || "eleven_multilingual_v2";
+const VOICE_SPEED = +(process.env.VOICE_SPEED || 0.95);
+const VOICE_STABILITY = +(process.env.VOICE_STABILITY || 0.6);
+const VOICE_MAX_CHARS = +(process.env.VOICE_MAX_CHARS || 500); // 超长不转,省积分
+const VOICE_ON = !!(ELEVEN_KEY && ELEVEN_VOICE);
+async function ttsOpus(text) {
+  const body = JSON.stringify({ text, model_id: VOICE_MODEL, voice_settings: { speed: VOICE_SPEED, stability: VOICE_STABILITY } });
+  for (const fmt of ["opus_48000_64", "mp3_44100_128"]) {
+    const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_VOICE}?output_format=${fmt}`, {
+      method: "POST", headers: { "xi-api-key": ELEVEN_KEY, "Content-Type": "application/json" }, body,
+    });
+    if (r.ok) return { buf: Buffer.from(await r.arrayBuffer()), name: fmt.startsWith("opus") ? "voice.ogg" : "voice.mp3" };
+    log("[tts]", fmt, r.status, (await r.text()).slice(0, 200));
+  }
+  throw new Error("tts failed");
+}
+async function sendVoiceMsg(chatId, text) {
+  const { buf, name } = await ttsOpus(text);
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append("voice", new Blob([buf]), name);
+  const r = await fetch(`https://api.telegram.org/bot${BOT}/sendVoice`, { method: "POST", body: form });
+  const j = await r.json().catch(() => ({}));
+  if (!j.ok) throw new Error(`sendVoice: ${j.description || r.status}`);
+}
+
 // 统一出口(轮次回复和 /push 主动消息共用):按原文顺序发段落流——
 // 文字按换行拆成一句一个气泡(BUBBLE_SPLIT=0 关),贴纸在他写的位置插进序列;
 // 气泡间隔随下一句长度 0.5~1.6s,配 typing 状态,手感像真人连发。
@@ -84,6 +114,21 @@ async function sendOutput(chatId, rawText, { fallback } = {}) {
       if (!first) await sleep(400);
       await sendSticker(chatId, seg.tag).catch((e) => log("[sticker-err]", e.message));
       first = false;
+      continue;
+    }
+    if (seg.type === "voice") {
+      if (VOICE_ON && seg.text.length <= VOICE_MAX_CHARS) {
+        if (!first) await sleep(400);
+        tg("sendChatAction", { chat_id: chatId, action: "record_voice" }).catch(() => {});
+        try { await sendVoiceMsg(chatId, seg.text); first = false; continue; }
+        catch (e) { log("[voice-err]", e.message); }
+      }
+      // 没配置/超长/转失败:话不能丢,退回文字发
+      for (const b of bubblesFor(seg.text, { split: BUBBLE_SPLIT, maxLen: BUBBLE_MAX })) {
+        if (!first) await sleep(500);
+        await tg("sendMessage", { chat_id: chatId, text: b });
+        first = false;
+      }
       continue;
     }
     const bubbles = bubblesFor(seg.text, { split: BUBBLE_SPLIT, maxLen: BUBBLE_MAX });
