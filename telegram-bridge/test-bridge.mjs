@@ -2,7 +2,7 @@
 import {
   splitForTelegram, detectReset, mergeTurn, buildShimBody,
   makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf,
-  extractStickers, extractSegments, splitBubbles,
+  extractStickers, extractSegments, splitBubbles, bubblesFor,
 } from "./bridge-lib.mjs";
 import fs from "fs";
 
@@ -158,6 +158,17 @@ eq(splitBubbles("  \n "), [], "纯空白零泡");
   const long = "长".repeat(5000);
   const bs = splitBubbles(`短\n${long}`);
   ok(bs.length === 3 && bs[0] === "短" && bs.every((b) => b.length <= 4096), "超长行继续按 4096 切");
+}
+
+// ---- bubblesFor(短拆长不拆)----
+{
+  eq(bubblesFor("在。\n回来了?"), ["在。", "回来了?"], "短回复按换行拆");
+  const deep = ("这是一段很长的深谈,情绪连着情绪,一句压着一句。\n").repeat(12).trim();
+  eq(bubblesFor(deep).length, 1, "超过 200 字的长文整段一泡");
+  ok(bubblesFor(deep)[0].includes("\n"), "长文保留内部换行");
+  eq(bubblesFor("在。\n回来了?", { split: false }), ["在。\n回来了?"], "split=false 整段");
+  eq(bubblesFor("短\n句", { maxLen: 1 }), ["短\n句"], "maxLen 阈值生效");
+  eq(bubblesFor("  "), [], "空白零泡");
 }
 
 // ---- registry.json 完整性:每个标签的文件都真实存在 ----

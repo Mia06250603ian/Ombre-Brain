@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 import {
   splitForTelegram, detectReset, mergeTurn, buildShimBody,
-  makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf, extractSegments, splitBubbles,
+  makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf, extractSegments, bubblesFor,
 } from "./bridge-lib.mjs";
 
 const PORT = process.env.PORT || 8080;
@@ -72,6 +72,7 @@ async function sendSticker(chatId, tag) {
 // 文字按换行拆成一句一个气泡(BUBBLE_SPLIT=0 关),贴纸在他写的位置插进序列;
 // 气泡间隔随下一句长度 0.5~1.6s,配 typing 状态,手感像真人连发。
 const BUBBLE_SPLIT = process.env.BUBBLE_SPLIT !== "0";
+const BUBBLE_MAX = +(process.env.BUBBLE_MAX || 200); // 整段回复超过此长度=长文,不拆
 const sleep = (ms) => new Promise((s) => setTimeout(s, ms));
 async function sendOutput(chatId, rawText, { fallback } = {}) {
   const { segments, unknown } = extractSegments(rawText || "", stickerTags);
@@ -85,7 +86,7 @@ async function sendOutput(chatId, rawText, { fallback } = {}) {
       first = false;
       continue;
     }
-    const bubbles = BUBBLE_SPLIT ? splitBubbles(seg.text) : splitForTelegram(seg.text.trim());
+    const bubbles = bubblesFor(seg.text, { split: BUBBLE_SPLIT, maxLen: BUBBLE_MAX });
     for (const b of bubbles) {
       if (!first) {
         tg("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});

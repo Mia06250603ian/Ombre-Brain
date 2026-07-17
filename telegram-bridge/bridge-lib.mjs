@@ -115,6 +115,14 @@ export function splitBubbles(text, limit = TG_LIMIT) {
   return out;
 }
 
+// ---- 拆不拆的决策:短回复拆泡(聊天手感),长文整段发(deeptalk 不能剁碎)----
+export function bubblesFor(text, { split = true, maxLen = 200 } = {}) {
+  const t = (text || "").trim();
+  if (!t) return [];
+  if (!split || t.length > maxLen) return splitForTelegram(t);
+  return splitBubbles(t);
+}
+
 // ---- Telegram 文件路径 → Anthropic image block 的 media_type ----
 const MEDIA = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif" };
 export function mediaTypeOf(filePath) {
