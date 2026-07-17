@@ -79,6 +79,19 @@ export function isAllowedChat(chatId, allowList) {
   return allowList.includes(String(chatId));
 }
 
+// ---- 贴纸标记解析:[贴纸:标签] / 【贴纸:标签】(冒号全半角都认)----
+// 认识的标签收进 stickers,不认识的收进 unknown(只删标记不发图,避免原样漏出)。
+export function extractStickers(text, tags) {
+  const re = /[\[【]\s*贴纸\s*[::]\s*([^\]】\n]+?)\s*[\]】]/g;
+  const stickers = [], unknown = [];
+  const rest = (text || "").replace(re, (_, tag) => {
+    const t = tag.trim();
+    (tags.includes(t) ? stickers : unknown).push(t);
+    return "";
+  });
+  return { text: rest.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim(), stickers, unknown };
+}
+
 // ---- Telegram 文件路径 → Anthropic image block 的 media_type ----
 const MEDIA = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif" };
 export function mediaTypeOf(filePath) {
