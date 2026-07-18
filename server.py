@@ -35,7 +35,7 @@
 import os
 import sys
 import random
-from datetime import datetime, date as _date
+from datetime import datetime, timedelta, date as _date
 import logging
 import asyncio
 import hashlib
@@ -58,7 +58,7 @@ from decay_engine import DecayEngine
 from embedding_engine import EmbeddingEngine
 from import_memory import ImportEngine
 from backup_exporter import BackupExporter
-from utils import load_config, setup_logging, strip_wikilinks, count_tokens_approx
+from utils import load_config, setup_logging, strip_wikilinks, count_tokens_approx, now_iso
 
 # --- Load config & init logging / 加载配置 & 初始化日志 ---
 config = load_config()
@@ -491,7 +491,7 @@ async def _merge_or_create(
                     await embedding_engine.generate_and_store(bucket["id"], merged)
                 except Exception:
                     pass
-                return bucket["metadata"].get("name", bucket["id"]), True
+                return bucket["metadata"].get("name", bucket["id"]), bucket["id"], True
             except Exception as e:
                 logger.warning(f"Merge failed, creating new / 合并失败，新建: {e}")
 
@@ -509,7 +509,7 @@ async def _merge_or_create(
         await embedding_engine.generate_and_store(bucket_id, content)
     except Exception:
         pass
-    return bucket_id, False
+    return name or bucket_id, bucket_id, False
 
 
 def _format_bucket_summary_line(b: dict, prefix: str = "") -> str:
@@ -1003,6 +1003,15 @@ async def _breath_impl(
 # Tool 2: hold — Hold on to this
 # 工具 2：hold — 握住，留下来
 # =============================================================
+def _valid_date(s: str) -> bool:
+    """YYYY-MM-DD 格式校验。"""
+    try:
+        datetime.strptime((s or "").strip(), "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
+
 @mcp.tool()
 async def hold(
     content: str,
@@ -1012,8 +1021,9 @@ async def hold(
     feel: bool = False,
     source_bucket: str = "",    valence: float = -1,
     arousal: float = -1,
+    trigger_date: str = "",
 ) -> str:
-    """存储单条记忆,自动打标+合并。tags逗号分隔,importance 1-10。pinned=True创建永久钉选桶。feel=True存储你的第一人称感受(不参与普通浮现)。source_bucket=被消化的记忆桶ID(feel模式下,标记源记忆为已消化)。"""
+    """存储单条记忆,自动打标+合并。tags逗号分隔,importance 1-10。pinned=True创建永久钉选桶。feel=True存储你的第一人称感受(不参与普通浮现)。source_bucket=被消化的记忆桶ID(feel模式下,标记源记忆为已消化)。trigger_date=YYYY-MM-DD设前瞻记忆:某天要报名/出成绩/纪念日,到那天这个桶会自动出现在awaken的「今日浮现」区,不用靠检索碰运气。"""
     await decay_engine.ensure_started()
 
     # --- Input validation / 输入校验 ---
@@ -1096,10 +1106,12 @@ async def hold(
             await embedding_engine.generate_and_store(bucket_id, content)
         except Exception:
             pass
+        if trigger_date and _valid_date(trigger_date):
+            await bucket_mgr.update(bucket_id, trigger_date=trigger_date.strip())
         return f"📌钉选→{bucket_id} {','.join(domain)}"
 
     # --- Step 2: merge or create / 合并或新建 ---
-    result_name, is_merged = await _merge_or_create(
+    result_name, result_id, is_merged = await _merge_or_create(
         content=content,
         tags=all_tags,
         importance=importance,
@@ -1109,8 +1121,14 @@ async def hold(
         name=suggested_name,
     )
 
+    # --- 前瞻记忆:带触发日期的桶,到那天会出现在 awaken 的「今日浮现」区 ---
+    extra = ""
+    if trigger_date and _valid_date(trigger_date):
+        await bucket_mgr.update(result_id, trigger_date=trigger_date.strip())
+        extra = f" ⏰{trigger_date.strip()}"
+
     action = "合并→" if is_merged else "新建→"
-    return f"{action}{result_name} {','.join(domain)}"
+    return f"{action}{result_name} {','.join(domain)}{extra}"
 
 
 # =============================================================
@@ -1140,7 +1158,7 @@ async def grow(content: str) -> str:
                 "domain": ["未分类"], "valence": 0.5, "arousal": 0.3,
                 "tags": [], "suggested_name": "",
             }
-        result_name, is_merged = await _merge_or_create(
+        result_name, _rid, is_merged = await _merge_or_create(
             content=content.strip(),
             tags=analysis.get("tags", []),
             importance=analysis.get("importance", 5) if isinstance(analysis.get("importance"), int) else 5,
@@ -1170,7 +1188,7 @@ async def grow(content: str) -> str:
     # --- 逐条合并或新建（单条失败不影响其他）---
     for item in items:
         try:
-            result_name, is_merged = await _merge_or_create(
+            result_name, _rid, is_merged = await _merge_or_create(
                 content=item["content"],
                 tags=item.get("tags", []),
                 importance=item.get("importance", 5),
@@ -1220,8 +1238,9 @@ async def trace(
     merge: str = "",
     history: bool = False,
     restore: str = "",
+    trigger_date: str = "",
 ) -> str:
-    """修改记忆元数据或内容。bucket_id支持逗号分隔多个ID批量操作（批量时content和name忽略）。merge=另一个bucket_id时将该源桶合并入bucket_id：内容追加、标签去重、importance取大、情感取平均、删除源桶；钉选桶不可作为合并任意一方。resolved=1沉底/0激活,pinned=1钉选/0取消,digested=1隐藏(保留但不浮现)/0取消隐藏。content=改正文：默认整桶替换，append=True时追加到原文之后（往桶里补内容用追加，别读出来拼好再整体替换）。delete=True删除。所有内容修改和删除前系统自动留快照：history=True查看该桶的历史版本列表，restore=版本号（history返回的version字段）把桶恢复到该版本（被误删的桶也能这样复活）。只传需改的,-1或空=不改。"""
+    """修改记忆元数据或内容。bucket_id支持逗号分隔多个ID批量操作（批量时content和name忽略）。merge=另一个bucket_id时将该源桶合并入bucket_id：内容追加、标签去重、importance取大、情感取平均、删除源桶；钉选桶不可作为合并任意一方。resolved=1沉底/0激活,pinned=1钉选/0取消,digested=1隐藏(保留但不浮现)/0取消隐藏。content=改正文：默认整桶替换，append=True时追加到原文之后（往桶里补内容用追加，别读出来拼好再整体替换）。delete=True删除。所有内容修改和删除前系统自动留快照：history=True查看该桶的历史版本列表，restore=版本号（history返回的version字段）把桶恢复到该版本（被误删的桶也能这样复活）。trigger_date=YYYY-MM-DD设/改前瞻触发日期（到那天出现在awaken今日浮现区）,"done"=标记已处理不再浮现,"clear"=移除触发日期。只传需改的,-1或空=不改。"""
 
     if not bucket_id or not bucket_id.strip():
         return "请提供有效的 bucket_id。"
@@ -1359,6 +1378,16 @@ async def trace(
                 updates["importance"] = 10  # pinned → lock importance
         if digested in (0, 1):
             updates["digested"] = bool(digested)
+        if trigger_date:
+            td = trigger_date.strip().lower()
+            if td == "done":
+                updates["trigger_handled"] = True
+            elif td in ("clear", "none"):
+                updates["trigger_date"] = ""
+            elif _valid_date(trigger_date):
+                updates["trigger_date"] = trigger_date.strip()
+            else:
+                return f"{bid}: trigger_date 格式错误（YYYY-MM-DD / done / clear）"
         if content and not batch:
             updates["content"] = content
         # Auto-undormant on any access
@@ -1435,6 +1464,16 @@ async def trace(
                 updates["importance"] = 10
         if digested in (0, 1):
             updates["digested"] = bool(digested)
+        if trigger_date:
+            td = trigger_date.strip().lower()
+            if td == "done":
+                updates["trigger_handled"] = True
+            elif td in ("clear", "none"):
+                updates["trigger_date"] = ""
+            elif _valid_date(trigger_date):
+                updates["trigger_date"] = trigger_date.strip()
+            else:
+                return f"trigger_date 格式错误: {trigger_date}（应为 YYYY-MM-DD，或 done=已处理 / clear=移除）"
         if content:
             if append and (bucket.get("content") or "").strip():
                 # 追加模式：拼在原文之后，不再需要"读出旧内容手动拼接再整体写回"
@@ -1731,6 +1770,10 @@ async def _dream_impl(detail_ids: str = "") -> str:
 @mcp.tool()
 async def todos() -> str:
     """汇总所有未resolved桶的todos字段，按桶分组返回桶名、bucket_id、重要度和待办列表。todos为metadata列表字段，每项可为字符串或含text/done键的字典。按重要度降序排列，末尾附统计。"""
+    return await _todos_impl()
+
+
+async def _todos_impl() -> str:
     try:
         all_buckets = await bucket_mgr.list_all(include_archive=False)
     except Exception as e:
@@ -1797,6 +1840,39 @@ async def todos() -> str:
 
 
 # =============================================================
+# 信箱 — 窗口与窗口之间的接力棒
+# 事实走记忆桶,嘱托走信箱:归档时给下一个窗口留言,awaken 时带出最新一封。
+# 存储为 buckets 卷上的 letters.jsonl(随卷持久,不进检索/浮现的记忆通道)。
+# =============================================================
+def _letters_path() -> str:
+    return os.path.join(bucket_mgr.base_dir, "letters.jsonl")
+
+
+def _save_letter(text: str) -> None:
+    entry = {"time": now_iso(), "text": text.strip()}
+    with open(_letters_path(), "a", encoding="utf-8") as f:
+        f.write(_json_lib.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def _load_letters(n: int = 1) -> list[dict]:
+    """最近 n 封留言,新的在前。文件不存在=空列表。"""
+    try:
+        with open(_letters_path(), "r", encoding="utf-8") as f:
+            lines = [ln for ln in f.read().splitlines() if ln.strip()]
+    except FileNotFoundError:
+        return []
+    out = []
+    for ln in reversed(lines):
+        try:
+            out.append(_json_lib.loads(ln))
+        except Exception:
+            continue
+        if len(out) >= max(1, n):
+            break
+    return out
+
+
+# =============================================================
 # Tool 8: archive_session — Archive current conversation summary
 # 工具 8：archive_session — 归档对话摘要
 # =============================================================
@@ -1807,8 +1883,9 @@ async def archive_session(
     mood: str = "",
     valence: float = -1,
     arousal: float = -1,
+    letter: str = "",
 ) -> str:
-    """将当前对话摘要存入归档。summary(必需)为对话概述；highlights(可选)为逗号分隔要点；mood(可选)为心情描述；valence/arousal 0~1(-1自动推断)。创建permanent桶存入对话归档域，不衰减不参与普通浮现。"""
+    """将当前对话摘要存入归档。summary(必需)为对话概述；highlights(可选)为逗号分隔要点；mood(可选)为心情描述；valence/arousal 0~1(-1自动推断)。创建permanent桶存入对话归档域，不衰减不参与普通浮现。letter(可选)=写给下一个窗口的自己的留言：归档传事实,留言传嘱托(她最近心情如何、哪个话题没聊完、想叮嘱下个自己什么),下个窗口 awaken 时第一眼就能看到。"""
     if not summary or not summary.strip():
         return "summary 不能为空。"
 
@@ -1853,7 +1930,113 @@ async def archive_session(
     except Exception:
         pass
 
-    return f"📁 session归档→{bucket_id}"
+    suffix = ""
+    if letter and letter.strip():
+        try:
+            _save_letter(letter)
+            suffix = " ✉️已给下个窗口留言"
+        except Exception as e:
+            logger.warning(f"Letter save failed / 留言保存失败: {e}")
+            suffix = " ⚠️留言保存失败"
+
+    return f"📁 session归档→{bucket_id}{suffix}"
+
+
+# =============================================================
+# Tool 9: awaken — 一键开机
+# 新窗口睁眼一次调用拿全:钉选/今日浮现/信箱/待办/归档/感受回声,
+# 开机动作从"记得跑三四个工具"变成"跑一个",漏不了,也省了重复开销。
+# =============================================================
+OMBRE_ECHO_MIN_DAYS = int(os.environ.get("OMBRE_ECHO_MIN_DAYS", "14") or "14")
+
+
+def _bj_today() -> str:
+    """北京日期(触发日期按所有者的日历过日子,不按服务器时区)。"""
+    return (datetime.utcnow() + timedelta(hours=8)).strftime("%Y-%m-%d")
+
+
+@mcp.tool()
+async def awaken(letters: int = 1) -> str:
+    """一键开机。新窗口睁眼调这一个就够,单次返回:钉选桶(核心准则)、今日浮现(到期的前瞻记忆)、上个窗口留给你的信、未完结待办、最近对话归档、一条旧日感受回声。替代原来 breath()→dream()→breath(domain="feel") 的三步开机(dream 想做梦自省时仍单独可用)。letters=带出最近几封留言(默认1)。返回末尾附[seal:...]防伪字段,开机第一件事核验它。"""
+    return _with_seal(await _awaken_impl(letters=letters))
+
+
+async def _awaken_impl(letters: int = 1) -> str:
+    await decay_engine.ensure_started()
+    await backup_exporter.ensure_started()
+    try:
+        live = await bucket_mgr.list_all(include_archive=False)
+        allb = await bucket_mgr.list_all(include_archive=True)
+    except Exception as e:
+        return f"记忆系统暂时无法访问: {e}"
+
+    today = _bj_today()
+    parts = [f"=== 开机 · {today} ==="]
+
+    # --- 📌 钉选桶:核心准则,始终第一屏 ---
+    pinned = [b for b in live if b["metadata"].get("pinned") or b["metadata"].get("protected")]
+    if pinned:
+        pinned.sort(key=lambda b: str(b["metadata"].get("created", "")))
+        lines = ["📌 核心准则(钉选):"]
+        for b in pinned:
+            lines.append("  " + _format_bucket_summary_line(b))
+        parts.append("\n".join(lines))
+
+    # --- 📅 今日浮现:到期(或已过期未处理)的前瞻记忆,连归档里的也捞 ---
+    due = [
+        b for b in allb
+        if b["metadata"].get("trigger_date")
+        and not b["metadata"].get("trigger_handled")
+        and str(b["metadata"].get("trigger_date")) <= today
+    ]
+    if due:
+        due.sort(key=lambda b: str(b["metadata"].get("trigger_date")))
+        lines = ["📅 今日浮现(会看日子的桶):"]
+        for b in due:
+            td = str(b["metadata"].get("trigger_date"))
+            tag = "今天" if td == today else f"原定{td},已过期"
+            preview = strip_wikilinks(b.get("content", "")).strip().replace("\n", " ")[:100]
+            lines.append(f"  ⏰[{tag}] [bucket_id:{b['id']}] {b['metadata'].get('name', b['id'])}: {preview}")
+        lines.append('  处理完用 trace(bucket_id, trigger_date="done") 收掉,不再重复浮现。')
+        parts.append("\n".join(lines))
+
+    # --- ✉️ 信箱:上个窗口的嘱托 ---
+    mail = _load_letters(max(1, min(int(letters or 1), 10)))
+    if mail:
+        lines = ["✉️ 上个窗口留给你的信:"]
+        for m in mail:
+            t = str(m.get("time", ""))[:16].replace("T", " ")
+            lines.append(f"  [{t}] {m.get('text', '')}")
+        parts.append("\n".join(lines))
+
+    # --- 📋 待办 ---
+    todos_out = await _todos_impl()
+    if not todos_out.startswith("没有待办"):
+        parts.append(todos_out)
+
+    # --- 🗂 最近对话归档 ---
+    sessions = [b for b in live if "对话归档" in (b["metadata"].get("domain") or [])]
+    if sessions:
+        sessions.sort(key=lambda b: str(b["metadata"].get("created", "")), reverse=True)
+        lines = ["🗂 最近对话归档:"]
+        for b in sessions[:3]:
+            d = str(b["metadata"].get("created", ""))[:10]
+            lines.append(f"  [{d}] [bucket_id:{b['id']}] {b['metadata'].get('name', b['id'])}")
+        parts.append("\n".join(lines))
+
+    # --- 🫧 感受回声:旧日记被风翻到某一页(随机,刻意不去重) ---
+    cutoff = (datetime.utcnow() + timedelta(hours=8) - timedelta(days=OMBRE_ECHO_MIN_DAYS)).strftime("%Y-%m-%d")
+    old_feels = [
+        b for b in live
+        if b["metadata"].get("type") == "feel" and str(b["metadata"].get("created", ""))[:10] <= cutoff
+    ]
+    if old_feels:
+        echo = random.choice(old_feels)
+        d = str(echo["metadata"].get("created", ""))[:10]
+        body = strip_wikilinks(echo.get("content", "")).strip()[:600]
+        parts.append(f"🫧 感受回声({d} 的你写下的):\n{body}")
+
+    return "\n\n".join(parts)
 
 
 # =============================================================

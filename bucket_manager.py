@@ -406,6 +406,16 @@ class BucketManager:
             post["dormant"] = bool(kwargs["dormant"])
         if "model_valence" in kwargs:
             post["model_valence"] = max(0.0, min(1.0, float(kwargs["model_valence"])))
+        # --- 前瞻记忆:触发日期(YYYY-MM-DD)。空串=清除;设新日期时重置已处理标记 ---
+        if "trigger_date" in kwargs:
+            if kwargs["trigger_date"]:
+                post["trigger_date"] = str(kwargs["trigger_date"])
+                post["trigger_handled"] = False
+            else:
+                post.metadata.pop("trigger_date", None)
+                post.metadata.pop("trigger_handled", None)
+        if "trigger_handled" in kwargs:
+            post["trigger_handled"] = bool(kwargs["trigger_handled"])
 
         # --- Auto-refresh activation time / 自动刷新激活时间 ---
         post["last_active"] = now_iso()
