@@ -1957,7 +1957,7 @@ def _bj_today() -> str:
 
 @mcp.tool()
 async def awaken(letters: int = 1) -> str:
-    """一键开机。新窗口睁眼调这一个就够,单次返回:钉选桶(核心准则)、今日浮现(到期的前瞻记忆)、上个窗口留给你的信、未完结待办、最近对话归档、一条旧日感受回声。替代原来 breath()→dream()→breath(domain="feel") 的三步开机(dream 想做梦自省时仍单独可用)。letters=带出最近几封留言(默认1)。返回末尾附[seal:...]防伪字段,开机第一件事核验它。"""
+    """一键开机。新窗口睁眼调这一个就够,单次返回:钉选桶(核心准则)、记忆浮现(按权重的top摘要)、今日浮现(到期的前瞻记忆)、上个窗口留给你的信、未完结待办、最近对话归档(最新一条含全文,窗口衔接不断档)、一条旧日感受回声。替代原来 breath→pulse→breath(query)→dream 的多步开机(dream/breath 对话中按需单独可用)。letters=带出最近几封留言(默认1)。返回末尾附[seal:...]防伪字段,开机第一件事核验它。"""
     return _with_seal(await _awaken_impl(letters=letters))
 
 
@@ -1979,6 +1979,19 @@ async def _awaken_impl(letters: int = 1) -> str:
         pinned.sort(key=lambda b: str(b["metadata"].get("created", "")))
         lines = ["📌 核心准则(钉选):"]
         for b in pinned:
+            lines.append("  " + _format_bucket_summary_line(b))
+        parts.append("\n".join(lines))
+
+    # --- 💭 记忆浮现:按衰减权重的 top 摘要行(原开机第一步 breath() 的职责) ---
+    dyn = [
+        b for b in live
+        if b["metadata"].get("type") == "dynamic"
+        and not b["metadata"].get("pinned") and not b["metadata"].get("dormant")
+    ]
+    if dyn:
+        dyn.sort(key=lambda b: decay_engine.calculate_score(b["metadata"]), reverse=True)
+        lines = ["💭 记忆浮现(按当前权重):"]
+        for b in dyn[:8]:
             lines.append("  " + _format_bucket_summary_line(b))
         parts.append("\n".join(lines))
 
@@ -2014,12 +2027,16 @@ async def _awaken_impl(letters: int = 1) -> str:
     if not todos_out.startswith("没有待办"):
         parts.append(todos_out)
 
-    # --- 🗂 最近对话归档 ---
+    # --- 🗂 最近对话归档:最新一条给全文(窗口衔接的关键),更早的给标题 ---
     sessions = [b for b in live if "对话归档" in (b["metadata"].get("domain") or [])]
     if sessions:
         sessions.sort(key=lambda b: str(b["metadata"].get("created", "")), reverse=True)
         lines = ["🗂 最近对话归档:"]
-        for b in sessions[:3]:
+        latest = sessions[0]
+        d0 = str(latest["metadata"].get("created", ""))[:10]
+        full = strip_wikilinks(latest.get("content", "")).strip()[:1500]
+        lines.append(f"  [{d0}] [bucket_id:{latest['id']}] {latest['metadata'].get('name', latest['id'])}(全文):\n{full}")
+        for b in sessions[1:3]:
             d = str(b["metadata"].get("created", ""))[:10]
             lines.append(f"  [{d}] [bucket_id:{b['id']}] {b['metadata'].get('name', b['id'])}")
         parts.append("\n".join(lines))

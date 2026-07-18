@@ -63,7 +63,7 @@ class TestTriggerDate:
         bid = await _mk(srv, "下周才到期的事")
         await srv.trace(bucket_id=bid, trigger_date=_bj(+7))
         boot = await srv._awaken_impl()
-        assert bid not in boot
+        assert "今日浮现" not in boot  # 还没到日子,该区块整个不出现
 
     @pytest.mark.asyncio
     async def test_overdue_shows_with_tag_and_done_stops(self, srv):
@@ -73,7 +73,7 @@ class TestTriggerDate:
         assert bid in boot and "已过期" in boot
         out = await srv.trace(bucket_id=bid, trigger_date="done")
         assert "trigger_handled" in out
-        assert bid not in await srv._awaken_impl()
+        assert "今日浮现" not in await srv._awaken_impl()  # 收掉后不再浮现
 
     @pytest.mark.asyncio
     async def test_clear_removes_trigger(self, srv):
@@ -82,7 +82,7 @@ class TestTriggerDate:
         await srv.trace(bucket_id=bid, trigger_date="clear")
         b = await srv.bucket_mgr.get(bid)
         assert "trigger_date" not in b["metadata"]
-        assert bid not in await srv._awaken_impl()
+        assert "今日浮现" not in await srv._awaken_impl()
 
     @pytest.mark.asyncio
     async def test_bad_date_rejected(self, srv):
@@ -128,6 +128,14 @@ class TestAwakenSections:
         boot = await srv._awaken_impl()
         assert "核心准则" in boot and pid in boot
         assert "最近对话归档" in boot
+        # 最新一条归档必须带全文(窗口衔接的关键),不是只有标题
+        assert "(全文)" in boot and "昨晚的对话概述" in boot
+
+    @pytest.mark.asyncio
+    async def test_surfacing_section_lists_dynamic_buckets(self, srv):
+        bid = await _mk(srv, "最近发生的一件热乎事")
+        boot = await srv._awaken_impl()
+        assert "记忆浮现" in boot and bid in boot
 
     @pytest.mark.asyncio
     async def test_feel_echo_only_old_feels(self, srv):
