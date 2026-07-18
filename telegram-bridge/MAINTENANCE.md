@@ -64,7 +64,7 @@ Telegram 原生语音条;任何一步失败退回发文字,话不丢。内容用
 
 ```bash
 cd telegram-bridge
-node test-bridge.mjs        # 37 项,必须全绿
+node test-bridge.mjs        # 71 项,必须全绿
 npx -y zeabur@latest auth login --token <API_KEY>
 npx -y zeabur@latest deploy   # 首次部署后把 service id 记回本文档
 ```
@@ -96,7 +96,8 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
 
 ## 表情包(2026-07-17 二阶段)
 
-- 图在 `stickers/`(ASCII 文件名),`registry.json` 是「标签→文件」表;26 张全部所有者亲选亲命名。
+- 图在 `stickers/`(ASCII 文件名),`registry.json` 是「标签→文件」表;35 张全部所有者亲选亲命名
+  (2026-07-17 首批 26 张,2026-07-18 加 9 张 s27–s35)。
 - 晏在回复里写 `[贴纸:标签]`(全半角括号冒号都认),bridge 剥掉标记、正文照发、图用
   sendPhoto 发出;首次上传后缓存 file_id 复用。未知标签只删标记不发图(防原样漏出)。
 - 标签教学在 shim 的 CLAUDE.md「表情包」一节。**加新图三步**:图进 stickers/、registry.json
