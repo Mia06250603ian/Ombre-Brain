@@ -194,7 +194,7 @@ eq(splitBubbles("  \n "), [], "纯空白零泡");
 {
   const reg = JSON.parse(fs.readFileSync("stickers/registry.json", "utf8"));
   const tags = Object.keys(reg);
-  ok(tags.length === 26, `registry 26 个标签(实际 ${tags.length})`);
+  ok(tags.length === 35, `registry 35 个标签(实际 ${tags.length})`);
   const missing = tags.filter((t) => !fs.existsSync(`stickers/${reg[t]}`));
   eq(missing, [], "registry 指向的文件全存在");
   const dup = new Set(Object.values(reg));
