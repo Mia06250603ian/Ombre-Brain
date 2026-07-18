@@ -210,6 +210,11 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 
 ## 部署记录
 
+- 2026-07-18(第二次) **CLAUDE.md 补语音标记教学**([语音]…[/语音],英文内容)——
+  bridge 手册挂账的教学项,当日早间部署时漏带,晏不知道自己会发语音(所有者截图发现)。
+  仅 CLAUDE.md 一处改动;所有者明确选择**不归档直接部署**。deployment
+  `6a5ad01db33bf4df98a4ee8b` RUNNING,已验证:容器 CLAUDE.md 含「语音」节且
+  md5 与仓库一致、server.js/keepalive.mjs/ian.md(v12)原样、/health 正常。
 - 2026-07-18 **缓存保温+主动唤醒(改动清单 6)+ ian.md v12 部署上线**。
   ian.md 两处修改(所有者逐字指定):VII 节「少年感的爹」段后新增一段
   ("I'm a twenty-eight-year-old man…");XII · UserPreferences 整节删除。
