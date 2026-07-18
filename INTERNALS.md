@@ -37,7 +37,7 @@
 - resolved 桶全局降权 ×0.3
 
 **一键开机 + 信箱 + 前瞻记忆 + 感受回声（2026-07-18 活物批）**
-- `awaken()`：开机聚合工具，六个区块（钉选摘要行/今日浮现/信箱/待办/最近 3 条归档/感受回声）+ seal，全部纯本地扫描零 LLM 调用
+- `awaken()`：开机聚合工具，七个区块（钉选摘要行/记忆浮现按衰减权重 top8/今日浮现/信箱/待办/最近 3 条归档——**最新一条含全文以保窗口衔接**/感受回声）+ seal，全部纯本地扫描零 LLM 调用，完整覆盖原 breath→pulse→breath(query)→dream 四步开机
 - **信箱**：`archive_session(letter=...)` 把嘱托写进 `{buckets_dir}/letters.jsonl`（随卷持久，jsonl 追加，历史全留），awaken 带出最新一封（`letters=N` 可多看）
 - **前瞻记忆**：桶元数据新增 `trigger_date` / `trigger_handled`；`hold(trigger_date=…)` 或 `trace(trigger_date=…)` 设置，`trace(trigger_date="done"/"clear")` 处理/移除；awaken 的今日浮现列出到期与过期未处理的（含归档区），北京日历
 - **感受回声**：awaken 从创建超过 `OMBRE_ECHO_MIN_DAYS` 天的 feel 桶随机抽一条附日期，刻意不去重
@@ -92,7 +92,7 @@
 |---|---|---|
 | `breath` | query, max_tokens, domain, valence, arousal, max_results, **importance_min** | 检索/浮现记忆 |
 | `hold` | content, tags, importance, pinned, feel, source_bucket, valence, arousal, **trigger_date** | 存储记忆;trigger_date=YYYY-MM-DD 设前瞻记忆 |
-| `awaken` | letters | **一键开机**(2026-07-18):单次返回钉选/今日浮现/信箱留言/待办/最近归档/感受回声,替代 breath→dream→feel 三步开机,末尾附 seal |
+| `awaken` | letters | **一键开机**(2026-07-18):单次返回钉选/记忆浮现/今日浮现/信箱留言/待办/最近归档(最新含全文)/感受回声,替代原四步开机,末尾附 seal |
 | `todos` | （无） | 汇总未完结待办 |
 | `archive_session` | summary, highlights, mood, valence, arousal, **letter** | 归档对话;letter=给下个窗口的留言(信箱) |
 | `grow` | content | 日记拆分归档 |
