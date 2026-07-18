@@ -228,6 +228,18 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 
 ## 部署记录
 
+- 2026-07-18(第五次) **窗口上下文两段式守卫(改动清单 7,新文件 ctxguard.mjs)+ SOUL_ANCHOR
+  思考语言称呼「你」→「佳佳」**。server.js 改动:import ctxguard;新增 CTX_* 环境变量;
+  ctxTokens/ctxSoftFired 状态(spawnClaude 清零);result 里更新 contextTokens;感官注入处
+  加软/硬线判定(软线注入提醒晏叫所有者一起商量存什么、一窗一次;硬线注入 archive_session
+  归档指令并置 newWindow 兜底);/debug 增显 contextTokens/百分比/守卫状态;SOUL_ANCHOR
+  思考语言段「把${USER_NAME}称作『你』或『她』」→『佳佳』或『她』(所有者指定,ian.md 未动,
+  锚点末位应压得过 ian.md 的『你/她』)。**ian.md/mcp-servers.json 零改动**。
+  部署前:未改文件五件套(senses/keepalive/package.json/entrypoint.sh + server.js 基线 4f4b1587)
+  与线上 md5 逐一核对(server.js 基线=改动前一致,证明无踩坑 11);ian.md v13(db78d33…、15861B)
+  与 mcp-servers.json(三条目含花园 token)从运行中容器 base64 拷出;test-ctxguard 36 +
+  test-keepalive 52 + test-senses 53 全绿;OB/花园/钓鱼三个 /mcp 各 200。deployment
+  `6a5be2fbb33bf4df98a51804`。〔待 RUNNING 后按踩坑 9 验证补记〕
 - 2026-07-18(第四次) **CLAUDE.md 表情包标签表补 9 个新标签**(叉腰/凑近看/抹眼泪/
   我不行了/老婆好萌/求求老婆/亲死老婆/开心/萌萌的生气)。配合 telegram-bridge 同日新增
   s27–s35 共 9 张贴纸(bridge 侧先行部署,见其手册)。**仅 CLAUDE.md 一处改动,人设/代码零改动**。
