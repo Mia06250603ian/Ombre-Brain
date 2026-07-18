@@ -4,6 +4,7 @@ import { spawn } from "child_process";
 import { randomUUID } from "crypto";
 import fs from "fs";
 import { isWeatherAsk, buildWeatherNote, detectPeriodEvent, buildPeriodNote } from "./senses.mjs";
+import { kaDecide, kaPrompt, kaSilent } from "./keepalive.mjs";
 
 const PORT = process.env.PORT || 8080;
 const SHIM_KEY = process.env.SHIM_KEY || "";            // Kelivo 要填的 API Key,自己编
@@ -74,7 +75,7 @@ function spawnClaude(kelivoSystem) {
     log("[claude] exited", code);
     if (proc !== p) return; // 被 pump/世界书切换主动换掉的旧进程,不许动新回合的现场
     proc = null; busy = false;
-    if (turn && !turn.done) { try { turn.sse?.finish(); } catch {} turn = null; }
+    if (turn && !turn.done) { if (turn.isKA) kaFailedAt = Date.now(); try { turn.sse?.finish(); } catch {} turn = null; }
     setTimeout(() => ensureProc(spawnedSystem), 1500); // 复活时带上原世界书,否则下一条消息必触发杀进程重开
   });
   procReadyAt = Date.now() + MCP_WARMUP_MS;
@@ -103,6 +104,8 @@ function handleEvent(ev) {
       const cb = e.content_block || {};
       if (cb.type === "tool_use" && typeof cb.name === "string" && cb.name.startsWith("mcp__")) {
         turn.sse?.thinking(`\n〔🔧 ${cb.name.replace(/^mcp__/, "")}〕\n`);
+        // 他自己动手归档(晚安措辞没被 detectReset 认出时):该轮结束照样换新窗口
+        if (cb.name.endsWith("__archive_session")) turn.newWindow = true;
       }
     }
     if (e.type === "content_block_delta") {
@@ -116,12 +119,16 @@ function handleEvent(ev) {
     if (ev.subtype && ev.subtype !== "success") {
       log("[result-error]", ev.subtype);
       if (!turn.fullText) turn.sse?.text(`⚠️[shim] ${ev.subtype}`);
+      if (turn.isKA) kaFailedAt = Date.now();      // 保温 ping 失败(多半额度耗尽)→ 抢救节奏
+    } else {
+      lastTurnOkAt = Date.now(); kaFailedAt = 0;   // 任何成功回合都续上缓存链
     }
     const usage = ev.usage ? { output_tokens: ev.usage.output_tokens } : undefined;
     const wasNewWindow = turn.newWindow;
     turn.done = true;
     turn.sse?.finish(usage, turn.fullText);
     turn = null; busy = false;
+    if (wasNewWindow) windowCleared = true;        // 晚安/归档:保温歇火,等她再出现
     if (wasNewWindow && proc) { log("[window] restart"); try { proc.kill(); } catch {} proc = null; }
     pump();
   }
@@ -135,7 +142,7 @@ function pump() {
   busy = true;
   if (proc && item.system !== spawnedSystem) { try { proc.kill(); } catch {} proc = null; } // 世界书变了重启生效
   ensureProc(item.system);
-  turn = { sse: item.sse, fullText: "", newWindow: !!item.newWindow };
+  turn = { sse: item.sse, fullText: "", newWindow: !!item.newWindow, isKA: !!item.isKA };
   const content = item.images?.length ? [{ type: "text", text: item.text }, ...item.images] : item.text;
   const p = proc;
   const wait = Math.max(0, procReadyAt - Date.now());
@@ -207,19 +214,31 @@ function listModels(_req, res) {
 app.get("/v1/models", listModels);
 app.get("/models", listModels);
 
-// ---- 主动心跳(可选;通道二选一:BRIDGE_PUSH_URL 优先,否则 Bark) ----
-// BRIDGE_PUSH_URL 指向 telegram-bridge 的 /push:主动消息直接落进 Telegram 对话
-// (支持 [贴纸:xx] 标记),她回一句就自然接上;Bark 是老通道,单向弹通知。
+// ---- 缓存保温 + 主动唤醒(2026-07-18;原 2 小时心跳并入本机制) ----
+// 1 小时 prompt 缓存命中即续期:闲置 KA_IDLE_MIN 分钟发一条极简 ping(不分昼夜),
+// 前缀一直走 0.1 倍读,免掉闲置超时后的整体重写。决策纯逻辑在 keepalive.mjs:
+// 白天(非 HB_NIGHT 区间)且距他上次主动消息 ≥ HB_COOLDOWN_MIN 的那些次唤醒,
+// 提示语给他「想说就发一条」的出口(经 BRIDGE_PUSH_URL 落进 Telegram 对话,
+// 否则 Bark);其余次一律静默回「。」。断链检测:距上次成功回合超 KA_DEAD_MIN
+// 分钟=缓存已死,歇火(再 ping 全价,比不 ping 还亏);ping 失败进 KA_RETRY_MIN
+// 分钟抢救节奏(订阅额度回血后自动续上)。晚安/归档后歇火直到所有者再出现;
+// 连续闲置 KA_CAP_HOURS 小时封顶。KA_ON=0 全关(连带主动消息一起关)。
 const BARK_KEY = process.env.BARK_KEY || "";
 const BRIDGE_PUSH_URL = process.env.BRIDGE_PUSH_URL || "";
-const HB_CHECK_MIN = +(process.env.HB_CHECK_MIN || 10);
-const HB_DAY_IDLE_MIN = +(process.env.HB_DAY_IDLE_MIN || 120);
-const HB_COOLDOWN_MIN = +(process.env.HB_COOLDOWN_MIN || 180);
+const KA_ON = process.env.KA_ON !== "0";
+const KA_IDLE_MIN = +(process.env.KA_IDLE_MIN || 55);
+const KA_DEAD_MIN = +(process.env.KA_DEAD_MIN || 60);
+const KA_RETRY_MIN = +(process.env.KA_RETRY_MIN || 15);
+const KA_CAP_HOURS = +(process.env.KA_CAP_HOURS || 24);
+const KA_CHECK_MIN = +(process.env.KA_CHECK_MIN || 2);
+const HB_COOLDOWN_MIN = +(process.env.HB_COOLDOWN_MIN || 120);
 const HB_NIGHT_START = +(process.env.HB_NIGHT_START || 23);
 const HB_NIGHT_END = +(process.env.HB_NIGHT_END || 8);
 let lastUserAt = Date.now(), lastProactiveAt = 0;
+let lastTurnOkAt = 0;      // 上次成功回合=缓存链的存活锚点;0=还没有活缓存
+let kaFailedAt = 0;        // 上次保温 ping 失败时间;非 0 = 抢救节奏
+let windowCleared = true;  // 晚安/归档后 true:歇火等她。开机也算(新进程无缓存可保)
 function bjHour() { return (new Date().getUTCHours() + 8) % 24; }
-function isNight() { const h = bjHour(); return HB_NIGHT_START > HB_NIGHT_END ? (h >= HB_NIGHT_START || h < HB_NIGHT_END) : (h >= HB_NIGHT_START && h < HB_NIGHT_END); }
 async function barkPush(text) {
   const r = await fetch("https://api.day.app/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ device_key: BARK_KEY, title: AI_NAME, body: text.slice(0, 1800) }) });
   log("[bark]", r.status);
@@ -229,31 +248,30 @@ async function bridgePush(text) {
   log("[bridge-push]", r.status);
 }
 const proactivePush = (text) => BRIDGE_PUSH_URL ? bridgePush(text) : barkPush(text);
-function heartbeatTick(force) {
-  if ((!BARK_KEY && !BRIDGE_PUSH_URL) || busy || queue.length) return;
-  const idleMin = (Date.now() - lastUserAt) / 60000;
-  if (!force) {
-    if (isNight() || idleMin < HB_DAY_IDLE_MIN) return;
-    if ((Date.now() - lastProactiveAt) / 60000 < HB_COOLDOWN_MIN) return;
-  }
-  lastProactiveAt = Date.now();
-  const now = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace("T", " ");
+function keepaliveTick(force) {
+  const d = kaDecide({
+    force, on: KA_ON, busy, queued: queue.length, windowCleared,
+    now: Date.now(), lastTurnOkAt, lastUserAt, lastProactiveAt, failedAt: kaFailedAt,
+    hour: bjHour(), hasChannel: !!(BRIDGE_PUSH_URL || BARK_KEY),
+    idleMin: KA_IDLE_MIN, deadMin: KA_DEAD_MIN, retryMin: KA_RETRY_MIN, capHours: KA_CAP_HOURS,
+    nightStart: HB_NIGHT_START, nightEnd: HB_NIGHT_END, cooldownMin: HB_COOLDOWN_MIN,
+  });
+  if (!d.fire) return;
+  const idleMin = Math.round((Date.now() - lastUserAt) / 60000);
+  const allowSpeak = !!d.speak;
+  log("[ka] ping", allowSpeak ? "speak-ok" : "silent-only", d.rescue ? "(rescue)" : "", "idle", idleMin);
   const sink = { text() {}, thinking() {},
     finish(_u, fullText) {
-      const t = (fullText || "").trim();
-      if (!t || t.includes("【沉默】")) { log("[hb] silent"); return; }
-      proactivePush(t).catch((e) => log("[push-err]", e.message));
+      if (!allowSpeak || kaSilent(fullText)) { log("[ka] silent"); return; }
+      lastProactiveAt = Date.now();  // 冷却只在他真发了消息时才计时
+      proactivePush((fullText || "").trim()).catch((e) => log("[push-err]", e.message));
     } };
-  log("[hb] waking, idle", Math.round(idleMin));
-  const channel = BRIDGE_PUSH_URL
-    ? "会直接出现在你们的 Telegram 对话里,她回来就能看到、能直接回你"
-    : "会弹到对方手机;聊天App里看不到这条,对方回来时你自然接上,别解释机制";
-  enqueue({ text: `【系统·心跳】现在北京时间 ${now},对方已约 ${Math.round(idleMin)} 分钟没来消息。你可以主动发一条消息(${channel})。想说就短短说;不想打扰就只回:【沉默】。`, images: [], system: spawnedSystem, sse: sink, newWindow: false });
+  enqueue({ text: kaPrompt({ speak: allowSpeak, bjNow: bjNowStr(), idleMin, userName: USER_NAME, viaBridge: !!BRIDGE_PUSH_URL }), images: [], system: spawnedSystem, sse: sink, newWindow: false, isKA: true });
 }
-setInterval(heartbeatTick, HB_CHECK_MIN * 60000);
-app.post("/hb", (req, res) => {  // 手动触发测试口
+setInterval(keepaliveTick, KA_CHECK_MIN * 60000);
+app.post("/hb", (req, res) => {  // 手动触发测试口(带开口权,绕过昼夜/冷却/闲置判定)
   if (SHIM_KEY && (req.query.key || req.get("x-api-key")) !== SHIM_KEY) return res.status(401).json({ ok: false });
-  heartbeatTick(true); res.json({ ok: true });
+  keepaliveTick(true); res.json({ ok: true });
 });
 
 // ---- 健康数据中转(可选,配 iOS 快捷指令) ----
@@ -457,6 +475,7 @@ function handleMessages(req, res) {
   }
   if (hints.length) text = `${hints.join("\n")}\n\n${text}`;
   lastUserAt = Date.now();
+  windowCleared = false;  // 她出现了:保温重新上岗(若这条是晚安/归档,回合结束会再置回 true)
   log("[req]", { len: text.length, imgs: images.length, sysLen: system.length, stream, reset: reset || "-" });
   const sse = stream ? makeSSE(res) : makeCollector(res);
   enqueue({ text, images, system, sse, newWindow });

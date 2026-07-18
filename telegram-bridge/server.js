@@ -73,7 +73,7 @@ async function sendSticker(chatId, tag) {
 const ELEVEN_KEY = process.env.ELEVEN_API_KEY || "";
 const ELEVEN_VOICE = process.env.ELEVEN_VOICE_ID || "";
 const VOICE_MODEL = process.env.VOICE_MODEL || "eleven_multilingual_v2";
-const VOICE_SPEED = +(process.env.VOICE_SPEED || 0.95);
+const VOICE_SPEED = +(process.env.VOICE_SPEED || 0.85);
 const VOICE_STABILITY = +(process.env.VOICE_STABILITY || 0.6);
 const VOICE_MAX_CHARS = +(process.env.VOICE_MAX_CHARS || 500); // 超长不转,省积分
 const VOICE_ON = !!(ELEVEN_KEY && ELEVEN_VOICE);

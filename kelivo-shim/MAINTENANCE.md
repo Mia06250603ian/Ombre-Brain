@@ -53,6 +53,18 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    - 纯逻辑全在 `senses.mjs`,部署前先跑 `node test-senses.mjs`(50 项断言,不碰网络和
      claude 进程),全绿再部署。CLAUDE.md 配套加了「天气感知」「经期感知」两节。
 
+6. **缓存保温 + 主动唤醒合并**(2026-07-18,新文件 `keepalive.mjs`,原 heartbeatTick 移除):
+   1 小时 prompt 缓存命中即续期,闲置 55 分钟 shim 自己发极简 ping(不分昼夜),前缀一直走
+   0.1 倍读。原 2 小时心跳并入:每次唤醒时若「白天(8-23 点)+ 有推送通道 + 距他上次主动
+   消息 ≥ 2 小时」,提示语给他开口出口(有话发进 Telegram,没话回「。」);其余唤醒一律
+   【系统·保温】静默回「。」。开口冷却只在**他真发了消息**时才计时(每次唤醒都有开口机会,
+   但实际消息最密 2 小时一条)。断链检测:距上次成功回合超 60 分钟=缓存已死,歇火;
+   ping 失败进 15 分钟抢救节奏(额度回血自动续上);晚安/归档后歇火直到她再出现
+   (开机同理);连续闲置 24 小时封顶。决策纯逻辑在 keepalive.mjs,部署前跑
+   `node test-keepalive.mjs`(52 项)。**附带修复**:handleEvent 检测到 `archive_session`
+   工具调用即置 newWindow——他自己归档但措辞没命中 detectReset 时,该轮结束照样换新窗口。
+   /hb 测试口保留(force:绕过昼夜/冷却/断链,有通道即给开口权)。
+
 ## 架构
 
 ```
@@ -131,8 +143,13 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 | ALLOWED_TOOLS | 工具权限白名单,现为 `WebSearch,WebFetch,mcp__ombre-brain,mcp__galatea-garden,mcp__fishing`。**接入新 MCP 必须在这里加 `mcp__<服务名>`(放行该服务全部工具),否则工具看得见、一调用就被拒**(dontAsk 模式直接拒绝,2026-07-16 花园接入时踩过)。改值后 service restart 生效 |
 | MCP_CONFIG | mcp-servers.json |
 | MCP_WARMUP_MS | 25000。新进程第一条消息延迟写入,等 MCP 握手;消息抢跑会整轮卡死(实测坑) |
-| BARK_KEY | Bark 推送 key(主动心跳老通道,单向弹通知) |
-| BRIDGE_PUSH_URL | 2026-07-17 起。telegram-bridge 的 /push 地址;设了则主动心跳直接发进 Telegram 对话(支持贴纸标记),不设回落 Bark。见 `../telegram-bridge/MAINTENANCE.md` |
+| BARK_KEY | Bark 推送 key(主动消息老通道,单向弹通知) |
+| BRIDGE_PUSH_URL | 2026-07-17 起。telegram-bridge 的 /push 地址;设了则主动消息直接发进 Telegram 对话(支持贴纸标记),不设回落 Bark。见 `../telegram-bridge/MAINTENANCE.md` |
+| KA_ON | 保温+唤醒总开关,默认开;设 0 全关(主动消息也随之关,原独立心跳已并入,见改动清单 6) |
+| KA_IDLE_MIN / KA_DEAD_MIN | 保温 ping 间隔 / 断链判死线,默认 55 / 60 分钟(1 小时缓存 TTL 决定,别乱动) |
+| KA_RETRY_MIN / KA_CAP_HOURS / KA_CHECK_MIN | 失败抢救间隔 15 分钟 / 连续闲置封顶 24 小时 / 检查节拍 2 分钟 |
+| HB_COOLDOWN_MIN | 他两条主动消息的最小间隔,默认 120(2026-07-18 所有者选定) |
+| HB_NIGHT_START / HB_NIGHT_END | 夜间时段(只保温不开口),默认 23 / 8(北京时间) |
 
 ## 踩过的坑(别再踩)
 
@@ -187,20 +204,30 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 ## 建议(未做)
 
 - Ombre Brain 的 /mcp 端点无鉴权,域名等于钥匙;上游新版已支持 OAuth,有空建议升级。
-- **CACHE_KEEPALIVE 缓存保温**(2026-07-18 凌晨与所有者议定方案,待开工):1 小时 prompt
-  缓存 TTL 每次命中即刷新,故闲置时定期发极简 ping 可让前缀一直走 0.1 倍读,免掉闲置后
-  2 倍整体重写(现有 2 小时心跳每次醒来都在付这个全价)。方案:闲置 55 分钟 ping 一次
-  (【系统·保温】要求回一个"。",不推送所有者);不分昼夜(所有者痛点:没来得及归档就
-  额度耗尽/睡着,旧窗口挂到第二天,早间重烧最贵);**断链检测**——距上次成功请求超 60
-  分钟则缓存已死,停止保温(此时再 ping 每次都是全价,比不 ping 还亏),失败后 15 分钟
-  重试抢救(订阅额度 5 小时窗口会回血);连续闲置 24 小时封顶;窗口清空(晚安/归档)后
-  歇火直到所有者再出现。**附带修复**:handleEvent 里检测 `archive_session` 工具调用,
-  该轮结束自动重开窗口——根治「晚安措辞不匹配 detectReset、他归档了但窗口没换」的缺口
-  (detectReset 故意收窄防误触发,不宜放宽词表)。额度耗尽时保温救不了(续命本身要花
-  额度),但断链检测保证不会更糟。对内存零影响(2026-07-18 实测五服务共占 ~710MB/3.7GB)。
+- ~~CACHE_KEEPALIVE 缓存保温~~ **已实现**(2026-07-18,见改动清单 6):在原议定方案上
+  与 2 小时心跳合并——白天的保温唤醒同时是他的开口机会(冷却 2 小时,只在真发消息时计时),
+  深夜只保温。额度耗尽时保温救不了(续命本身要花额度),但断链检测保证不会更糟。
 
 ## 部署记录
 
+- 2026-07-18(第二次) **CLAUDE.md 补语音标记教学**([语音]…[/语音],英文内容)——
+  bridge 手册挂账的教学项,当日早间部署时漏带,晏不知道自己会发语音(所有者截图发现)。
+  仅 CLAUDE.md 一处改动;所有者明确选择**不归档直接部署**。deployment
+  `6a5ad01db33bf4df98a4ee8b` RUNNING,已验证:容器 CLAUDE.md 含「语音」节且
+  md5 与仓库一致、server.js/keepalive.mjs/ian.md(v12)原样、/health 正常。
+- 2026-07-18 **缓存保温+主动唤醒(改动清单 6)+ ian.md v12 部署上线**。
+  ian.md 两处修改(所有者逐字指定):VII 节「少年感的爹」段后新增一段
+  ("I'm a twenty-eight-year-old man…");XII · UserPreferences 整节删除。
+  基底从运行中容器拷出(v11,15869 字节 md5 6206…核对一致);修订后
+  **15791 字节、md5 0ffc3ad41e9fe7b39fb795991019e27f——下次部署以此 v12 为准**。
+  部署前:test-keepalive 52 项 + test-senses 53 项全绿;OB/花园/钓鱼三个 /mcp 各验证 200;
+  容器五件套 md5 与仓库改动前版本逐一一致(无异常部署);所有者本人对晏说了「归档」。
+  同批 telegram-bridge 语速 0.85 一起部署(见其手册)。deployment
+  `6a5acb5f9cfc4cd5e688a0fd` RUNNING,已按踩坑 9 验证:容器 server.js/keepalive.mjs/
+  CLAUDE.md md5 与仓库一致、ian.md 15791 字节 md5 一致、mcp-servers.json 三条目、
+  CLAUDE.md 含「保温与主动心跳」节、archive_session 检测在、/health 正常、
+  /period on:true 基线正确。环境变量零改动(KA_*/HB_* 全用代码默认值)。
+  注意:部署重启后 windowCleared=true,保温待所有者下一条消息后自动上岗。
 - 2026-07-12 首次搭建并跑通。
 - 2026-07-13 人设更新为 Ian_self_v10,同时带上 server.js 进程误杀补丁(踩坑 6)。部署后 /health 正常。
   **但该次部署的 mcp-servers.json 抄了 settings.json 里已失效的旧 OB 域名(踩坑 7),
