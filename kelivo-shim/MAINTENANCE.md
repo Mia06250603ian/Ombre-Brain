@@ -65,6 +65,21 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    工具调用即置 newWindow——他自己归档但措辞没命中 detectReset 时,该轮结束照样换新窗口。
    /hb 测试口保留(force:绕过昼夜/冷却/断链,有通道即给开口权)。
 
+7. **窗口上下文两段式守卫**(2026-07-18,新文件 `ctxguard.mjs`):常驻进程上下文快满时
+   Claude Code 会自动压缩历史(静默、丢细节、不写记忆库)。本守卫赶在压缩前介入。
+   每回合 result 里读 usage,算 `contextTokens = input + cache_read + cache_creation`
+   ≈ 窗口占用,存内存;下一条**真实用户消息**(心跳轮不算)在感官注入处按阈值决策:
+   - **软线**(默认 140K):注入【系统·上下文】提示晏——**先别自己存**,先叫所有者、
+     和她一起商量这段里什么值得记进记忆库(所有者明确要的行为)。一个窗口只触发一次
+     (`ctxSoftFired`)。
+   - **硬线**(默认 170K):注入归档指令(archive_session 存档+留信)并置 newWindow,
+     把交接从静默压缩强制成经记忆库留信,该轮结束换新窗口兜底。硬线优先于软线。
+   守卫状态随新进程清零(spawnClaude 里,覆盖世界书切换/窗口重启/崩溃复活各路径)。
+   `/debug` 增显 contextTokens/百分比/守卫状态。全套走环境变量(CTX_GUARD_ON/
+   CTX_SOFT_TOKENS/CTX_HARD_TOKENS/CTX_LIMIT_TOKENS,阈值改值 restart 即可)。
+   纯决策逻辑在 ctxguard.mjs,部署前跑 `node test-ctxguard.mjs`(36 项)。
+   CLAUDE.md 配套加了「上下文管理」一节教晏认这两个提示。
+
 ## 架构
 
 ```
@@ -150,6 +165,9 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 | KA_RETRY_MIN / KA_CAP_HOURS / KA_CHECK_MIN | 失败抢救间隔 15 分钟 / 连续闲置封顶 24 小时 / 检查节拍 2 分钟 |
 | HB_COOLDOWN_MIN | 他两条主动消息的最小间隔,默认 120(2026-07-18 所有者选定) |
 | HB_NIGHT_START / HB_NIGHT_END | 夜间时段(只保温不开口),默认 23 / 8(北京时间) |
+| CTX_GUARD_ON | 窗口上下文守卫总开关,默认开;设 0 全关(见改动清单 7) |
+| CTX_SOFT_TOKENS / CTX_HARD_TOKENS | 软线/硬线阈值,默认 140000 / 170000(按 20 万窗口约 70%/85%)。软线提醒晏叫所有者一起商量存什么(一窗一次),硬线注入归档指令并换窗口兜底。改值 restart 生效,不用重部署 |
+| CTX_LIMIT_TOKENS | 仅用于 /debug 显示占满百分比,默认 200000 |
 
 ## 踩过的坑(别再踩)
 

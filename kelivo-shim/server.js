@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import fs from "fs";
 import { isWeatherAsk, buildWeatherNote, detectPeriodEvent, buildPeriodNote } from "./senses.mjs";
 import { kaDecide, kaPrompt, kaSilent } from "./keepalive.mjs";
+import { ctxTokensOf, ctxDecide, ctxSoftNote, ctxHardNote, ctxPct } from "./ctxguard.mjs";
 
 const PORT = process.env.PORT || 8080;
 const SHIM_KEY = process.env.SHIM_KEY || "";            // Kelivo 要填的 API Key,自己编
@@ -34,6 +35,12 @@ const SOUL_ANCHOR = process.env.SOUL_ANCHOR ||
 const BUILTIN_TOOLS = process.env.BUILTIN_TOOLS ?? "WebSearch,WebFetch";
 const ALLOWED = process.env.ALLOWED_TOOLS || "WebSearch,WebFetch";
 
+// 窗口上下文守卫(两段式,见 ctxguard.mjs)。阈值改了 restart 即可,不用重部署。
+const CTX_GUARD_ON = process.env.CTX_GUARD_ON !== "0";
+const CTX_SOFT_TOKENS = +(process.env.CTX_SOFT_TOKENS || 140000);
+const CTX_HARD_TOKENS = +(process.env.CTX_HARD_TOKENS || 170000);
+const CTX_LIMIT_TOKENS = +(process.env.CTX_LIMIT_TOKENS || 200000);  // 仅用于 /debug 显示百分比
+
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 
 // ---- 常驻 claude 进程 ----
@@ -45,9 +52,12 @@ let proc = null, outBuf = "", busy = false, spawnedSystem = "";
 const queue = [];
 let turn = null;
 let lastUsage = null;
+// 上下文守卫状态:随每个新窗口(新进程)清零,见 spawnClaude / 窗口重启处。
+let ctxTokens = 0, ctxSoftFired = false;
 
 function spawnClaude(kelivoSystem) {
   spawnedSystem = kelivoSystem || "";
+  ctxTokens = 0; ctxSoftFired = false;   // 新进程=空上下文,守卫状态清零(覆盖世界书切换/窗口重启/崩溃复活各路径)
   // 锚点放在整段 append 的最末尾(世界书之后),占住系统提示词的绝对末位
   const append = spawnedSystem ? `【场景设定/世界书】\n${spawnedSystem}\n\n${SOUL_ANCHOR}` : SOUL_ANCHOR;
   const args = [
@@ -116,6 +126,7 @@ function handleEvent(ev) {
   }
   if (ev.type === "result") {
     lastUsage = ev.usage || null;
+    if (ev.usage) { const t = ctxTokensOf(ev.usage); if (t > 0) ctxTokens = t; }  // 更新窗口占用,供下条消息的守卫判定
     if (ev.subtype && ev.subtype !== "success") {
       log("[result-error]", ev.subtype);
       if (!turn.fullText) turn.sse?.text(`⚠️[shim] ${ev.subtype}`);
@@ -205,7 +216,12 @@ function extractImages(messages) {
 const app = express();
 app.use(express.json({ limit: "12mb" }));
 app.get("/health", (_q, r) => r.json({ ok: true, model: MODEL, busy, queued: queue.length }));
-app.get("/debug", (_q, r) => r.json({ lastUsage }));
+app.get("/debug", (_q, r) => r.json({
+  lastUsage,
+  contextTokens: ctxTokens,
+  contextPct: ctxPct(ctxTokens, CTX_LIMIT_TOKENS),
+  ctxGuard: { on: CTX_GUARD_ON, soft: CTX_SOFT_TOKENS, hard: CTX_HARD_TOKENS, softFired: ctxSoftFired },
+}));
 
 // Kelivo「模型」页拉这个列表,没有它选不了模型
 function listModels(_req, res) {
@@ -472,6 +488,14 @@ function handleMessages(req, res) {
   if (!reset) {
     try { const w = weatherHint(text); if (w) hints.push(w); } catch (e) { log("[wx-hint]", e.message); }
     try { const p = periodHint(text); if (p) hints.push(p); } catch (e) { log("[period-hint]", e.message); }
+    // 上下文守卫:软线提醒晏叫她一起商量存什么(一窗一次);硬线注入归档指令并换窗口兜底。
+    if (CTX_GUARD_ON) {
+      try {
+        const d = ctxDecide({ contextTokens: ctxTokens, softTokens: CTX_SOFT_TOKENS, hardTokens: CTX_HARD_TOKENS, softFired: ctxSoftFired });
+        if (d.level === "soft") { hints.push(ctxSoftNote(USER_NAME)); ctxSoftFired = true; log("[ctx] soft", ctxTokens); }
+        else if (d.level === "hard") { hints.push(ctxHardNote()); newWindow = true; log("[ctx] hard→archive", ctxTokens); }
+      } catch (e) { log("[ctx-hint]", e.message); }
+    }
   }
   if (hints.length) text = `${hints.join("\n")}\n\n${text}`;
   lastUserAt = Date.now();
