@@ -36,6 +36,20 @@
 - importance（权重 1.0）：importance/10
 - resolved 桶全局降权 ×0.3
 
+**一键开机 + 信箱 + 前瞻记忆 + 感受回声（2026-07-18 活物批）**
+- `awaken()`：开机聚合工具，六个区块（钉选摘要行/今日浮现/信箱/待办/最近 3 条归档/感受回声）+ seal，全部纯本地扫描零 LLM 调用
+- **信箱**：`archive_session(letter=...)` 把嘱托写进 `{buckets_dir}/letters.jsonl`（随卷持久，jsonl 追加，历史全留），awaken 带出最新一封（`letters=N` 可多看）
+- **前瞻记忆**：桶元数据新增 `trigger_date` / `trigger_handled`；`hold(trigger_date=…)` 或 `trace(trigger_date=…)` 设置，`trace(trigger_date="done"/"clear")` 处理/移除；awaken 的今日浮现列出到期与过期未处理的（含归档区），北京日历
+- **感受回声**：awaken 从创建超过 `OMBRE_ECHO_MIN_DAYS` 天的 feel 桶随机抽一条附日期，刻意不去重
+- 心境共鸣不另做——breath 原生 valence/arousal 检索 + 四维评分的情绪共鸣项已覆盖
+
+**写前快照（2026-07-18 安全批）**
+- 任何**内容覆盖或删除**执行前，当前文件自动拷入 `{buckets_dir}/.history/{bucket_id}/`（时间戳+操作类型命名），每桶默认保留最近 20 份（config `history.keep_per_bucket`）
+- 纯元数据修改（importance/resolved 等）高频且不丢数据，**不**产生快照
+- `trace(bucket_id, history=True)` 列出版本；`trace(bucket_id, restore="<version>")` 回滚（被删的桶也能按快照复活，恢复前的状态同样留底）
+- `.history` 目录对所有扫描/检索/统计路径隐身；快照失败不阻塞写入但大声记日志
+- `trace` 的 `content` 参数默认仍是整桶替换，新增 `append=True` 追加模式（防"读出旧内容手动拼接"的误覆盖）
+
 **记忆随时间变化**
 - **衰减引擎**：改进版艾宾浩斯遗忘曲线
   - 公式：`Score = Importance × activation_count^0.3 × e^(-λ×days) × combined_weight`
@@ -77,9 +91,12 @@
 | 工具 | 关键参数 | 功能 |
 |---|---|---|
 | `breath` | query, max_tokens, domain, valence, arousal, max_results, **importance_min** | 检索/浮现记忆 |
-| `hold` | content, tags, importance, pinned, feel, source_bucket, valence, arousal | 存储记忆 |
+| `hold` | content, tags, importance, pinned, feel, source_bucket, valence, arousal, **trigger_date** | 存储记忆;trigger_date=YYYY-MM-DD 设前瞻记忆 |
+| `awaken` | letters | **一键开机**(2026-07-18):单次返回钉选/今日浮现/信箱留言/待办/最近归档/感受回声,替代 breath→dream→feel 三步开机,末尾附 seal |
+| `todos` | （无） | 汇总未完结待办 |
+| `archive_session` | summary, highlights, mood, valence, arousal, **letter** | 归档对话;letter=给下个窗口的留言(信箱) |
 | `grow` | content | 日记拆分归档 |
-| `trace` | bucket_id, name, domain, valence, arousal, importance, tags, resolved, pinned, digested, content, delete | 修改元数据/内容/删除 |
+| `trace` | bucket_id, name, domain, valence, arousal, importance, tags, resolved, pinned, digested, content, **append**, delete, merge, **history**, **restore** | 修改元数据/内容/删除;append=True 追加不替换;history=True 列历史快照;restore=版本号 回滚(可复活被删桶) |
 | `pulse` | include_archive | 系统状态 |
 | `dream` | （无） | 做梦自省 |
 
@@ -189,6 +206,8 @@
 | `OMBRE_HOOK_URL` | SessionStart 钩子调用的服务器 URL | 否 | `"http://localhost:8000"` |
 | `OMBRE_HOOK_SKIP` | 设为 `"1"` 跳过 SessionStart 钩子 | 否 | 未设置（不跳过） |
 | `OMBRE_DASHBOARD_PASSWORD` | 预设 Dashboard 访问密码；设置后覆盖文件密码，首次访问不弹设置向导 | 否 | `""` |
+| `OMBRE_SEAL_WORD` | 返回通道防伪暗语（2026-07-18）。breath/dream/awaken 返回末尾附 `[seal:<暗语>]`，AI 侧使用说明要求核验；只存环境变量，不进代码/数据库/备份。未设置时输出明显异常提示而非留空 | 否 | `""` |
+| `OMBRE_ECHO_MIN_DAYS` | 感受回声的最小年龄天数：awaken 只从存在超过此天数的 feel 里随机抽一条 | 否 | `14` |
 
 环境变量优先级：`环境变量 > config.yaml > 硬编码默认值`。所有环境变量在 `utils.py` 中读取并注入 config dict。
 

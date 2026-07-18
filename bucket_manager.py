@@ -92,6 +92,14 @@ class BucketManager:
         # --- Optional embedding engine for pre-filtering / 可选 embedding 引擎，用于预筛候选集 ---
         self.embedding_engine = embedding_engine
 
+        # --- Write-ahead snapshot dir / 写前快照目录 ---
+        # Any content overwrite or delete first copies the current file here,
+        # so a bad write can always be undone (daily backup only covers yesterday).
+        # 任何内容覆盖或删除前，先把当前文件拷进这里；误操作随时可恢复
+        # （每日备份只救得回昨天，这里救得回上一秒）。
+        self.history_dir = os.path.join(self.base_dir, ".history")
+        self.history_keep = int(config.get("history", {}).get("keep_per_bucket", 20))
+
     # ---------------------------------------------------------
     # Create a new bucket
     # 创建新桶
@@ -236,6 +244,113 @@ class BucketManager:
     # 更新桶
     # Supports: content, tags, importance, valence, arousal, name, resolved
     # ---------------------------------------------------------
+    # ---------------------------------------------------------
+    # Write-ahead snapshot / 写前快照
+    # ---------------------------------------------------------
+    def _snapshot(self, file_path: str, bucket_id: str, op: str) -> None:
+        """
+        Copy the bucket's current file into .history/{id}/ before a destructive
+        write. Failure to snapshot never blocks the write itself (best-effort),
+        but is logged loudly.
+        破坏性写入前把当前文件拷进 .history/{id}/。快照失败不阻塞写入
+        （尽力而为），但会大声记日志。
+        """
+        try:
+            dest_dir = os.path.join(self.history_dir, bucket_id)
+            os.makedirs(dest_dir, exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            dest = os.path.join(dest_dir, f"{stamp}_{op}.md")
+            if os.path.exists(dest):  # two writes in the same second
+                dest = os.path.join(dest_dir, f"{stamp}_{op}_{os.getpid()}{len(os.listdir(dest_dir))}.md")
+            shutil.copy2(file_path, dest)
+            # Prune oldest beyond keep limit / 超出保留上限删最旧
+            snaps = sorted(os.listdir(dest_dir))
+            for old in snaps[: max(0, len(snaps) - self.history_keep)]:
+                os.remove(os.path.join(dest_dir, old))
+            logger.info(f"Snapshot before {op} / 写前快照: {bucket_id} → {os.path.basename(dest)}")
+        except Exception as e:
+            logger.error(f"SNAPSHOT FAILED (write proceeds) / 快照失败(写入继续): {bucket_id}: {e}")
+
+    def list_history(self, bucket_id: str) -> list[dict]:
+        """List snapshots for a bucket, newest first. 列出某桶的快照，新的在前。"""
+        dest_dir = os.path.join(self.history_dir, bucket_id)
+        if not os.path.isdir(dest_dir):
+            return []
+        out = []
+        for fn in sorted(os.listdir(dest_dir), reverse=True):
+            if not fn.endswith(".md"):
+                continue
+            base = fn[:-3]
+            parts = base.split("_", 1)
+            out.append({
+                "version": base,
+                "time": parts[0],
+                "op": parts[1] if len(parts) > 1 else "?",
+                "size": os.path.getsize(os.path.join(dest_dir, fn)),
+            })
+        return out
+
+    def read_history_version(self, bucket_id: str, version: str) -> Optional[dict]:
+        """
+        Load one snapshot's content+metadata. version 为 list_history 返回的 version 字段。
+        """
+        safe_version = os.path.basename(version.strip())
+        if safe_version.endswith(".md"):
+            safe_version = safe_version[:-3]
+        path = os.path.join(self.history_dir, bucket_id, safe_version + ".md")
+        if not os.path.isfile(path):
+            return None
+        try:
+            post = frontmatter.load(path)
+            return {"content": post.content, "metadata": dict(post.metadata)}
+        except Exception as e:
+            logger.error(f"Failed to read snapshot / 读快照失败: {path}: {e}")
+            return None
+
+    async def restore_from_history(self, bucket_id: str, version: str) -> Optional[dict]:
+        """
+        Restore a bucket to a snapshot version (full file: content + metadata).
+        Handles both overwrite-recovery (bucket exists → its current state is
+        snapshotted first) and undelete (file gone → rebuilt from snapshot).
+        Returns {"content", "metadata"} on success, None if snapshot not found.
+        把桶恢复到某个快照版本(整个文件:正文+元数据)。桶还在=先快照当前
+        状态再覆盖;桶被删了=按快照里的元数据重建文件。
+        """
+        safe_version = os.path.basename(version.strip())
+        if safe_version.endswith(".md"):
+            safe_version = safe_version[:-3]
+        snap_path = os.path.join(self.history_dir, bucket_id, safe_version + ".md")
+        if not os.path.isfile(snap_path):
+            return None
+        snap = self.read_history_version(bucket_id, safe_version)
+        if not snap:
+            return None
+
+        file_path = self._find_bucket_file(bucket_id)
+        try:
+            if file_path:
+                self._snapshot(file_path, bucket_id, "restore")  # 当前状态也留底,恢复可再反悔
+            else:
+                meta = snap["metadata"]
+                btype = meta.get("type", "dynamic")
+                type_dir = {
+                    "permanent": self.permanent_dir,
+                    "feel": self.feel_dir,
+                    "archive": self.archive_dir,
+                }.get(btype, self.dynamic_dir)
+                domain = meta.get("domain") or ["未分类"]
+                target_dir = os.path.join(type_dir, sanitize_name(domain[0]) or "未分类")
+                os.makedirs(target_dir, exist_ok=True)
+                bname = sanitize_name(meta.get("name", "")) if meta.get("name") else ""
+                filename = f"{bname}_{bucket_id}.md" if bname else f"{bucket_id}.md"
+                file_path = safe_path(target_dir, filename)
+            shutil.copy2(snap_path, file_path)
+        except Exception as e:
+            logger.error(f"Restore failed / 恢复失败: {bucket_id}@{safe_version}: {e}")
+            return None
+        logger.info(f"Restored / 已恢复: {bucket_id} ← {safe_version}")
+        return snap
+
     async def update(self, bucket_id: str, **kwargs) -> bool:
         """
         Update bucket content or metadata fields.
@@ -244,6 +359,13 @@ class BucketManager:
         file_path = self._find_bucket_file(bucket_id)
         if not file_path:
             return False
+
+        # Content overwrite is the destructive path — snapshot first.
+        # Metadata-only updates (importance/resolved/...) don't lose data and
+        # happen constantly; snapshotting them would flood the history.
+        # 只有内容覆盖是破坏性路径，先快照;纯元数据修改不丢数据且高频，不快照。
+        if "content" in kwargs:
+            self._snapshot(file_path, bucket_id, "update")
 
         try:
             post = frontmatter.load(file_path)
@@ -284,6 +406,16 @@ class BucketManager:
             post["dormant"] = bool(kwargs["dormant"])
         if "model_valence" in kwargs:
             post["model_valence"] = max(0.0, min(1.0, float(kwargs["model_valence"])))
+        # --- 前瞻记忆:触发日期(YYYY-MM-DD)。空串=清除;设新日期时重置已处理标记 ---
+        if "trigger_date" in kwargs:
+            if kwargs["trigger_date"]:
+                post["trigger_date"] = str(kwargs["trigger_date"])
+                post["trigger_handled"] = False
+            else:
+                post.metadata.pop("trigger_date", None)
+                post.metadata.pop("trigger_handled", None)
+        if "trigger_handled" in kwargs:
+            post["trigger_handled"] = bool(kwargs["trigger_handled"])
 
         # --- Auto-refresh activation time / 自动刷新激活时间 ---
         post["last_active"] = now_iso()
@@ -333,6 +465,8 @@ class BucketManager:
         file_path = self._find_bucket_file(bucket_id)
         if not file_path:
             return False
+
+        self._snapshot(file_path, bucket_id, "delete")
 
         try:
             os.remove(file_path)
