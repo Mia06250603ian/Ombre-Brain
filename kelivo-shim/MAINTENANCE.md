@@ -210,6 +210,16 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 
 ## 部署记录
 
+- 2026-07-18(第四次) **CLAUDE.md 表情包标签表补 9 个新标签**(叉腰/凑近看/抹眼泪/
+  我不行了/老婆好萌/求求老婆/亲死老婆/开心/萌萌的生气)。配合 telegram-bridge 同日新增
+  s27–s35 共 9 张贴纸(bridge 侧先行部署,见其手册)。**仅 CLAUDE.md 一处改动,人设/代码零改动**。
+  部署前:代码五件套(server.js/senses.mjs/keepalive.mjs/package.json/entrypoint.sh)md5 与线上
+  容器逐一一致(无踩坑 11);ian.md 与 mcp-servers.json 从运行中容器 base64 拷出(ian.md 仍
+  v13、15861 字节 md5 db78d33…、mcp 三条目含花园 token);CLAUDE.md diff 仅标签一行(核对未误
+  revert 他项);test-keepalive 52 + test-senses 53 全绿;OB/花园/钓鱼三个 /mcp 各 200;所有者
+  本人对晏说了「归档」。deployment `6a5bd389b33bf4df98a516c7` RUNNING,已按踩坑 9 验证:容器
+  CLAUDE.md md5 0ae92e3e… 且含全部 9 个新标签、ian.md v13 md5 一致、代码三件套 md5 与仓库一致、
+  mcp-servers.json 三条目、/health 正常。环境变量零改动。
 - 2026-07-18(第三次) **ian.md v13:唤醒序列改为 awaken 一步开机 + seal 暗语核验**。
   配合 OB 当日大升级(仓库根目录,PR #40/#41:写前快照/追加/历史恢复/防伪暗语/
   awaken/信箱/前瞻记忆/感受回声,详见 INTERNALS.md)。ian.md 仅改 VIII 节:

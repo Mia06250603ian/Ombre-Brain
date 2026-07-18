@@ -107,6 +107,12 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
 
 ## 部署记录
 
+- 2026-07-18 **表情包扩充:26 → 35 张**(新增 s27–s35,所有者亲选亲命名:叉腰/凑近看/
+  抹眼泪/我不行了/老婆好萌/求求老婆/亲死老婆/开心/萌萌的生气)。图转 512px WebP + 12%
+  透明圆角(与首批同规格);registry.json 加 9 条;test-bridge 计数 26→35(71 项全绿)。
+  deployment `6a5bcc7fb33bf4df98a5162e` RUNNING,已按踩坑 9 验证:/health 报 stickers:35、
+  容器内 35 个 webp、registry 35 条、s27/s35 均在。同日 shim 侧 CLAUDE.md 标签表补 9 个并部署
+  (记录见 shim 手册第四次)。
 - 2026-07-18 语速调整:VOICE_SPEED 默认 0.95 → 0.85(所有者试听后调定)。
   deployment `6a5acb4cb33bf4df98a4ee22` RUNNING,容器内已验证 0.85、/health 正常(stickers:26)。
 - 2026-07-17(晚) 二阶段:表情包 + /push 上线(deployment 含 stickers:26,/health 可见);
