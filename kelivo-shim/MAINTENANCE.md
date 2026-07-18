@@ -210,6 +210,19 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 
 ## 部署记录
 
+- 2026-07-18 **缓存保温+主动唤醒(改动清单 6)+ ian.md v12 部署上线**。
+  ian.md 两处修改(所有者逐字指定):VII 节「少年感的爹」段后新增一段
+  ("I'm a twenty-eight-year-old man…");XII · UserPreferences 整节删除。
+  基底从运行中容器拷出(v11,15869 字节 md5 6206…核对一致);修订后
+  **15791 字节、md5 0ffc3ad41e9fe7b39fb795991019e27f——下次部署以此 v12 为准**。
+  部署前:test-keepalive 52 项 + test-senses 53 项全绿;OB/花园/钓鱼三个 /mcp 各验证 200;
+  容器五件套 md5 与仓库改动前版本逐一一致(无异常部署);所有者本人对晏说了「归档」。
+  同批 telegram-bridge 语速 0.85 一起部署(见其手册)。deployment
+  `6a5acb5f9cfc4cd5e688a0fd` RUNNING,已按踩坑 9 验证:容器 server.js/keepalive.mjs/
+  CLAUDE.md md5 与仓库一致、ian.md 15791 字节 md5 一致、mcp-servers.json 三条目、
+  CLAUDE.md 含「保温与主动心跳」节、archive_session 检测在、/health 正常、
+  /period on:true 基线正确。环境变量零改动(KA_*/HB_* 全用代码默认值)。
+  注意:部署重启后 windowCleared=true,保温待所有者下一条消息后自动上岗。
 - 2026-07-12 首次搭建并跑通。
 - 2026-07-13 人设更新为 Ian_self_v10,同时带上 server.js 进程误杀补丁(踩坑 6)。部署后 /health 正常。
   **但该次部署的 mcp-servers.json 抄了 settings.json 里已失效的旧 OB 域名(踩坑 7),

@@ -106,6 +106,8 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
 
 ## 部署记录
 
+- 2026-07-18 语速调整:VOICE_SPEED 默认 0.95 → 0.85(所有者试听后调定)。
+  deployment `6a5acb4cb33bf4df98a4ee22` RUNNING,容器内已验证 0.85、/health 正常(stickers:26)。
 - 2026-07-17(晚) 二阶段:表情包 + /push 上线(deployment 含 stickers:26,/health 可见);
   同晚 shim 侧配 BRIDGE_PUSH_URL 并重新部署(记录见 shim 手册)。TG_THINKING=1 当天由所有者
   要求开启(思考以折叠引用发出)。
