@@ -218,6 +218,11 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 13. **代替所有者发「归档」要慎用**:晏对不像所有者口吻的消息会起疑、可能拒绝执行归档,
     但 detectReset 的 newWindow 机制在他回复后仍会重开窗口——结果是窗口丢了还没归档。
     2026-07-16 就发生过一次(丢了约 20 分钟闲聊)。正确姿势:部署前让所有者本人对晏说「归档」。
+14. **部署卡在 Pulling image 不动 = 调度挂了,别干等**:2026-07-18 第五次部署首个 deployment
+    构建成功后,Pod 拉镜像那步挂住,DEPLOYING 停 25 分钟零进度(日志只有一条 `Pulling image`)。
+    这是 Zeabur 节点/镜像仓库侧的坑,与代码无关。判断法:`deployment log` 若长时间(~10 分钟)
+    只有 Pulling 一条、无新行且无报错,就是卡死。处理:直接重新 `deploy`(老容器全程兜底,无风险),
+    卡死那条去网页控制台手动 Cancel(CLI 无 cancel:deployment 子命令只有 get/list/log)。
 
 ## 建议(未做)
 
@@ -238,8 +243,17 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
   部署前:未改文件五件套(senses/keepalive/package.json/entrypoint.sh + server.js 基线 4f4b1587)
   与线上 md5 逐一核对(server.js 基线=改动前一致,证明无踩坑 11);ian.md v13(db78d33…、15861B)
   与 mcp-servers.json(三条目含花园 token)从运行中容器 base64 拷出;test-ctxguard 36 +
-  test-keepalive 52 + test-senses 53 全绿;OB/花园/钓鱼三个 /mcp 各 200。deployment
-  `6a5be2fbb33bf4df98a51804`。〔待 RUNNING 后按踩坑 9 验证补记〕
+  test-keepalive 52 + test-senses 53 全绿;OB/花园/钓鱼三个 /mcp 各 200。
+  **首个 deployment `6a5be2fbb33bf4df98a51804` 卡死**:构建成功,但 Pod 拉镜像那步挂住,
+  DEPLOYING 停 25 分钟零进度(日志只有一条 `Pulling image` 后再无动静)——Zeabur 调度/
+  镜像仓库侧的坑,与代码无关(老容器 6a5bd389 全程 RUNNING 兜底)。重新触发部署
+  `6a5be8b89cfc4cd5e688bcb8`,卡死那个由所有者在网页控制台手动 Cancel(CLI 无 cancel 命令,
+  deployment 子命令只有 get/list/log;service 级只有 restart/redeploy/delete,均不对症)。
+  新部署约 9.5 分钟 RUNNING。已按踩坑 9 验证:容器 server.js md5 d5856819… 与仓库一致、
+  ctxguard.mjs 在、ctxDecide 接线在、SOUL_ANCHOR 称呼=「佳佳」、ian.md v13 db78d33…、
+  CLAUDE.md「上下文管理」节在、mcp 三条目、/health 正常、/debug 现出 ctxGuard 字段
+  (on/soft 140000/hard 170000/softFired false)。环境变量零改动(CTX_* 全用代码默认)。
+  **教训:Pulling 卡超 ~10 分钟零进度=调度挂了,直接重新 deploy;别干等(踩坑 14)。**
 - 2026-07-18(第四次) **CLAUDE.md 表情包标签表补 9 个新标签**(叉腰/凑近看/抹眼泪/
   我不行了/老婆好萌/求求老婆/亲死老婆/开心/萌萌的生气)。配合 telegram-bridge 同日新增
   s27–s35 共 9 张贴纸(bridge 侧先行部署,见其手册)。**仅 CLAUDE.md 一处改动,人设/代码零改动**。
