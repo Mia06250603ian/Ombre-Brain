@@ -84,6 +84,25 @@ OMBRE_HOOK_SKIP = os.environ.get("OMBRE_HOOK_SKIP", "").strip().lower() in ("1",
 # OMBRE_BACKUP_TRIGGER_TOKEN: GitHub Actions 调用 /api/export-backup 时使用的共享密钥。
 OMBRE_BACKUP_TRIGGER_TOKEN = os.environ.get("OMBRE_BACKUP_TRIGGER_TOKEN", "").strip()
 
+# OMBRE_SEAL_WORD: return-channel authenticity watchword. Only lives in the
+# server's environment — never in code, database, or backups. Boot/retrieval
+# tool returns end with [seal:<word>]; the AI-side usage doc says to verify it.
+# Anything injected into the tool-return channel can't forge a reply that
+# carries the right seal without knowing the word.
+# OMBRE_SEAL_WORD: 返回通道防伪暗语。只存在于服务器环境变量——不进代码、
+# 不进数据库、不进备份。开机/检索类工具返回末尾附 [seal:<暗语>]，AI 侧
+# 使用说明要求核验；不知道暗语的注入内容伪造不出带正确 seal 的完整返回。
+OMBRE_SEAL_WORD = os.environ.get("OMBRE_SEAL_WORD", "").strip()
+
+
+def _with_seal(text: str) -> str:
+    """Append the authenticity seal line to a tool return. 给工具返回附上防伪 seal 行。"""
+    if OMBRE_SEAL_WORD:
+        return f"{text}\n\n[seal:{OMBRE_SEAL_WORD}]"
+    # Env missing → loud placeholder, never a silent blank (per spec)
+    # 环境变量缺失 → 明显异常提示，绝不静默留空
+    return f"{text}\n\n[seal:⚠️未配置——请检查 OMBRE_SEAL_WORD 环境变量]"
+
 
 async def _fire_webhook(event: str, payload: dict) -> None:
     """
@@ -577,7 +596,27 @@ async def breath(
     date_to: str = "",
     include_dormant: bool = False,
 ) -> str:
-    """检索/浮现记忆。不传query或传空=自动浮现,有query=关键词检索。max_tokens控制返回总token上限(默认10000)。domain逗号分隔,valence/arousal 0~1(-1忽略)。max_results控制返回数量上限(默认5,最大50),超出的在末尾附注还有N个相关桶未显示,钉选桶不计入名额。importance_min>=1时按重要度批量拉取(不走语义搜索,按importance降序)。mode=summary(默认)时每个桶仅返回一行摘要(bucket_id+桶名+主题+情感坐标+重要度+更新时间),mode=full时返回完整内容;query非空时忽略mode始终返回full。搜索排名三级权重：精确匹配tags(keywords)字段最高→关键词出现在content次高→语义向量匹配最低;≤4字中文短词强制精确子串匹配防止被拆散。date_from/date_to(YYYY-MM-DD)按桶last_active过滤,可与其他参数组合;钉选桶不受日期过滤。命中桶若metadata含related字段(bucket_id列表),在该桶结果下附一行关联提示(id+名称,不展开全文)。include_dormant=false(默认)时休眠桶不出现在结果中;include_dormant=true时包含休眠桶。休眠条件：>30天未访问且importance<3且非钉选桶；被命中后自动解除休眠。"""
+    """检索/浮现记忆。不传query或传空=自动浮现,有query=关键词检索。max_tokens控制返回总token上限(默认10000)。domain逗号分隔,valence/arousal 0~1(-1忽略)。max_results控制返回数量上限(默认5,最大50),超出的在末尾附注还有N个相关桶未显示,钉选桶不计入名额。importance_min>=1时按重要度批量拉取(不走语义搜索,按importance降序)。mode=summary(默认)时每个桶仅返回一行摘要(bucket_id+桶名+主题+情感坐标+重要度+更新时间),mode=full时返回完整内容;query非空时忽略mode始终返回full。搜索排名三级权重：精确匹配tags(keywords)字段最高→关键词出现在content次高→语义向量匹配最低;≤4字中文短词强制精确子串匹配防止被拆散。date_from/date_to(YYYY-MM-DD)按桶last_active过滤,可与其他参数组合;钉选桶不受日期过滤。命中桶若metadata含related字段(bucket_id列表),在该桶结果下附一行关联提示(id+名称,不展开全文)。include_dormant=false(默认)时休眠桶不出现在结果中;include_dormant=true时包含休眠桶。休眠条件：>30天未访问且importance<3且非钉选桶；被命中后自动解除休眠。返回末尾附[seal:...]防伪字段。"""
+    return _with_seal(await _breath_impl(
+        query=query, max_tokens=max_tokens, domain=domain, valence=valence,
+        arousal=arousal, max_results=max_results, importance_min=importance_min,
+        mode=mode, date_from=date_from, date_to=date_to, include_dormant=include_dormant,
+    ))
+
+
+async def _breath_impl(
+    query: str = "",
+    max_tokens: int = 10000,
+    domain: str = "",
+    valence: float = -1,
+    arousal: float = -1,
+    max_results: int = 5,
+    importance_min: int = -1,
+    mode: str = "summary",
+    date_from: str = "",
+    date_to: str = "",
+    include_dormant: bool = False,
+) -> str:
     await decay_engine.ensure_started()
     await backup_exporter.ensure_started()
     max_results = min(max_results, 50)
@@ -1176,13 +1215,41 @@ async def trace(
     pinned: int = -1,
     digested: int = -1,
     content: str = "",
+    append: bool = False,
     delete: bool = False,
     merge: str = "",
+    history: bool = False,
+    restore: str = "",
 ) -> str:
-    """修改记忆元数据或内容。bucket_id支持逗号分隔多个ID批量操作（批量时content和name忽略）。merge=另一个bucket_id时将该源桶合并入bucket_id：内容追加、标签去重、importance取大、情感取平均、删除源桶；钉选桶不可作为合并任意一方。resolved=1沉底/0激活,pinned=1钉选/0取消,digested=1隐藏(保留但不浮现)/0取消隐藏,content=替换桶正文,delete=True删除。只传需改的,-1或空=不改。"""
+    """修改记忆元数据或内容。bucket_id支持逗号分隔多个ID批量操作（批量时content和name忽略）。merge=另一个bucket_id时将该源桶合并入bucket_id：内容追加、标签去重、importance取大、情感取平均、删除源桶；钉选桶不可作为合并任意一方。resolved=1沉底/0激活,pinned=1钉选/0取消,digested=1隐藏(保留但不浮现)/0取消隐藏。content=改正文：默认整桶替换，append=True时追加到原文之后（往桶里补内容用追加，别读出来拼好再整体替换）。delete=True删除。所有内容修改和删除前系统自动留快照：history=True查看该桶的历史版本列表，restore=版本号（history返回的version字段）把桶恢复到该版本（被误删的桶也能这样复活）。只传需改的,-1或空=不改。"""
 
     if not bucket_id or not bucket_id.strip():
         return "请提供有效的 bucket_id。"
+
+    # --- History mode: list snapshots / 历史模式：列出快照 ---
+    if history:
+        bid = bucket_id.strip()
+        snaps = bucket_mgr.list_history(bid)
+        if not snaps:
+            return f"{bid}: 没有历史快照（快照在内容修改/删除时自动产生）。"
+        lines = [f"=== {bid} 的历史快照（新→旧）==="]
+        for s in snaps:
+            lines.append(f"  version: {s['version']}  操作: {s['op']}  大小: {s['size']}字节")
+        lines.append("用 trace(bucket_id, restore=\"<version>\") 恢复到某个版本。")
+        return "\n".join(lines)
+
+    # --- Restore mode: roll back to a snapshot / 恢复模式：回滚到快照 ---
+    if restore and restore.strip():
+        bid = bucket_id.strip()
+        snap = await bucket_mgr.restore_from_history(bid, restore.strip())
+        if not snap:
+            return f"未找到快照: {bid} @ {restore.strip()}（用 history=True 查看可用版本）"
+        try:
+            await embedding_engine.generate_and_store(bid, snap["content"])
+        except Exception:
+            pass
+        preview = (snap["content"] or "").strip()[:60].replace("\n", " ")
+        return f"已恢复 {bid} 到版本 {restore.strip()}（恢复前的状态也已留快照）。内容开头: {preview}"
 
     # --- Merge mode / 合并模式 ---
     if merge and merge.strip():
@@ -1369,7 +1436,11 @@ async def trace(
         if digested in (0, 1):
             updates["digested"] = bool(digested)
         if content:
-            updates["content"] = content
+            if append and (bucket.get("content") or "").strip():
+                # 追加模式：拼在原文之后，不再需要"读出旧内容手动拼接再整体写回"
+                updates["content"] = (bucket.get("content") or "").rstrip() + "\n\n" + content.strip()
+            else:
+                updates["content"] = content
         # Auto-undormant on any access
         if bucket["metadata"].get("dormant"):
             updates["dormant"] = False
@@ -1389,7 +1460,8 @@ async def trace(
 
         changed = ", ".join(f"{k}={v}" for k, v in updates.items() if k != "content")
         if "content" in updates:
-            changed += (", content=已替换" if changed else "content=已替换")
+            word = "content=已追加" if append else "content=已替换(旧版已留快照)"
+            changed += (", " + word if changed else word)
         if "resolved" in updates:
             if updates["resolved"]:
                 changed += " → 已沉底，只在关键词触发时重新浮现"
@@ -1516,7 +1588,11 @@ async def pulse(include_archive: bool = False, show_all: bool = False) -> str:
 # =============================================================
 @mcp.tool()
 async def dream(detail_ids: str = "") -> str:
-    """做梦——读取最近5个记忆桶摘要,供你自省。detail_ids传逗号分隔的bucket_id,指定桶返回全文,其余返回摘要。读完后可以trace(resolved=1)放下,或hold(feel=True)写感受。"""
+    """做梦——读取最近5个记忆桶摘要,供你自省。detail_ids传逗号分隔的bucket_id,指定桶返回全文,其余返回摘要。读完后可以trace(resolved=1)放下,或hold(feel=True)写感受。返回末尾附[seal:...]防伪字段。"""
+    return _with_seal(await _dream_impl(detail_ids=detail_ids))
+
+
+async def _dream_impl(detail_ids: str = "") -> str:
     await decay_engine.ensure_started()
 
     try:

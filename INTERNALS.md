@@ -36,6 +36,13 @@
 - importance（权重 1.0）：importance/10
 - resolved 桶全局降权 ×0.3
 
+**写前快照（2026-07-18 安全批）**
+- 任何**内容覆盖或删除**执行前，当前文件自动拷入 `{buckets_dir}/.history/{bucket_id}/`（时间戳+操作类型命名），每桶默认保留最近 20 份（config `history.keep_per_bucket`）
+- 纯元数据修改（importance/resolved 等）高频且不丢数据，**不**产生快照
+- `trace(bucket_id, history=True)` 列出版本；`trace(bucket_id, restore="<version>")` 回滚（被删的桶也能按快照复活，恢复前的状态同样留底）
+- `.history` 目录对所有扫描/检索/统计路径隐身；快照失败不阻塞写入但大声记日志
+- `trace` 的 `content` 参数默认仍是整桶替换，新增 `append=True` 追加模式（防"读出旧内容手动拼接"的误覆盖）
+
 **记忆随时间变化**
 - **衰减引擎**：改进版艾宾浩斯遗忘曲线
   - 公式：`Score = Importance × activation_count^0.3 × e^(-λ×days) × combined_weight`
@@ -79,7 +86,7 @@
 | `breath` | query, max_tokens, domain, valence, arousal, max_results, **importance_min** | 检索/浮现记忆 |
 | `hold` | content, tags, importance, pinned, feel, source_bucket, valence, arousal | 存储记忆 |
 | `grow` | content | 日记拆分归档 |
-| `trace` | bucket_id, name, domain, valence, arousal, importance, tags, resolved, pinned, digested, content, delete | 修改元数据/内容/删除 |
+| `trace` | bucket_id, name, domain, valence, arousal, importance, tags, resolved, pinned, digested, content, **append**, delete, merge, **history**, **restore** | 修改元数据/内容/删除;append=True 追加不替换;history=True 列历史快照;restore=版本号 回滚(可复活被删桶) |
 | `pulse` | include_archive | 系统状态 |
 | `dream` | （无） | 做梦自省 |
 
@@ -189,6 +196,7 @@
 | `OMBRE_HOOK_URL` | SessionStart 钩子调用的服务器 URL | 否 | `"http://localhost:8000"` |
 | `OMBRE_HOOK_SKIP` | 设为 `"1"` 跳过 SessionStart 钩子 | 否 | 未设置（不跳过） |
 | `OMBRE_DASHBOARD_PASSWORD` | 预设 Dashboard 访问密码；设置后覆盖文件密码，首次访问不弹设置向导 | 否 | `""` |
+| `OMBRE_SEAL_WORD` | 返回通道防伪暗语（2026-07-18）。breath/dream 返回末尾附 `[seal:<暗语>]`，AI 侧使用说明要求核验；只存环境变量，不进代码/数据库/备份。未设置时输出明显异常提示而非留空 | 否 | `""` |
 
 环境变量优先级：`环境变量 > config.yaml > 硬编码默认值`。所有环境变量在 `utils.py` 中读取并注入 config dict。
 
