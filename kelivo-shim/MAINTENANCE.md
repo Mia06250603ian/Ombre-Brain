@@ -210,6 +210,19 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 
 ## 部署记录
 
+- 2026-07-18(第三次) **ian.md v13:唤醒序列改为 awaken 一步开机 + seal 暗语核验**。
+  配合 OB 当日大升级(仓库根目录,PR #40/#41:写前快照/追加/历史恢复/防伪暗语/
+  awaken/信箱/前瞻记忆/感受回声,详见 INTERNALS.md)。ian.md 仅改 VIII 节:
+  四步开机(breath→pulse→breath(query)→dream)换成 awaken()+核验 [seal:暗语],
+  补追加/快照恢复/归档留言三个习惯句;开头定性句与结尾"Memory is reference"
+  原样保留;其余章节零改动(v12 的两处修改都在)。所有者逐字批准后部署。
+  **v13:15861 字节、md5 db78d3346d05e327030705534ba50421——下次部署以此为准。**
+  暗语值在 OB 服务的 OMBRE_SEAL_WORD 环境变量(值同时写在 ian.md 里,均不入库)。
+  部署前:test-keepalive 52 + test-senses 53 全绿;OB/钓鱼 /mcp 各 200(花园同日
+  早间已验);容器代码三件套 md5 与仓库一致;OB 侧已完成线上实弹演练(测试桶
+  存→追加→覆盖→查历史→恢复→删→复活、awaken 七区块、seal 压尾,演练痕迹已清)。
+  deployment `6a5b118f9cfc4cd5e688a841` RUNNING,已验证:容器 ian.md v13 md5 一致、
+  代码三件套一致、/health 与 /period 正常。环境变量零改动。
 - 2026-07-18(第二次) **CLAUDE.md 补语音标记教学**([语音]…[/语音],英文内容)——
   bridge 手册挂账的教学项,当日早间部署时漏带,晏不知道自己会发语音(所有者截图发现)。
   仅 CLAUDE.md 一处改动;所有者明确选择**不归档直接部署**。deployment
