@@ -71,10 +71,23 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    ≈ 窗口占用,存内存;下一条**真实用户消息**(心跳轮不算)在感官注入处按阈值决策。
    **⚠️ 2026-07-19 修正(ctxWindowTokensOf)**:result 顶层 usage 是整轮所有 API 调用
    的**总和**——模型每调一次工具就重读一遍缓存前缀,工具密的轮会把窗口重复计数倍
-   (实测真实 ~37K 被读成 138934,聊两小时就假撞软线提醒归档)。现改为取
-   `usage.iterations` **末条**(= 该轮最后一次调用,即真实窗口占用;末条脏值往前找,
-   iterations 缺失才回落总和,老版 CLI 行为不变)。截图证据:末条 cache_read+creation
-   = 下一轮的 cache_read,严丝合缝。阈值决策分两段:
+   (实测真实 ~37K 被读成 138934,聊两小时就假撞软线提醒归档)。当时改为取
+   `usage.iterations` 末条,**当晚证实不够**(见下一条)。
+   **⚠️ 2026-07-19(晚)第二次修正(ctxReading,已改码待部署)**:iterations 是
+   **上游 API 的可选字段**,CLI 只透传末次调用给的值、默认空数组(扒 2.1.214/215
+   两版二进制 + 假后端实测,行为一致,和 CLI 版本无关)——第六次部署后线上它一直为空,
+   ctxWindowTokensOf 静默回落到虚高总和,37% 就 softFired,误报原样复发。现改为三级取数
+   (ctxguard.mjs `ctxReading`):**首选 shim 自己从流事件抓的该轮最后一次 message_start/
+   message_delta 合并 usage**(server.js 的 handleEvent 里存 turn.lastCallUsage;
+   `--include-partial-messages` 本来就开着,数据现成、不依赖上游、零额外 token);
+   次选 iterations 末条;两级可信源都空时顶层总和只作 /debug 展示(trusted:false),
+   **不触发守卫**——宁可漏报(硬线到 20 万上限还有余量)不误报(硬线误归档是最坏结果)。
+   另加 `ctxSoftShouldReset`:软线曾触发而后续可信读数回落到软线九成以下,自动复位
+   softFired(真实窗口只会单调涨,回落=当时那记是虚的)。/debug 的 ctxGuard 增显
+   trusted 字段。附带把 package.json 的 claude-code 钉死 2.1.215(原 ^2.1.206 浮动,
+   排查时的干扰项)。test-ctxguard 45→66 项;另在沙盒用真 server.js + 真 2.1.215
+   二进制 + 假 Anthropic 后端整链路重演过误报场景(工具轮总和 40510/真实 20505,
+   软线 3 万:不误报、真超才提醒、回落复位、超硬线注归档,全对)。阈值决策分两段:
    - **软线**(默认 140K):注入【系统·上下文】提示晏——**先别自己存**,先叫所有者、
      和她一起商量这段里什么值得记进记忆库(所有者明确要的行为)。一个窗口只触发一次
      (`ctxSoftFired`)。
@@ -231,6 +244,36 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
     只有 Pulling 一条、无新行且无报错,就是卡死。处理:直接重新 `deploy`(老容器全程兜底,无风险),
     卡死那条去网页控制台手动 Cancel(CLI 无 cancel:deployment 子命令只有 get/list/log)。
 
+## CLI 版本与升级指南(2026-07-19 起,给所有者和未来会话)
+
+**现状**:package.json 把 `@anthropic-ai/claude-code` 钉死在 `2.1.215`(不带 `^`)。
+第七次部署前是 `^2.1.206` 浮动——每次部署装当天最新版,等于每次部署都换一个没测过的
+CLI,是排查守卫误报时的干扰项。钉死后 CLI 只随**主动决定**升级,不随部署日期漂移。
+
+**什么时候该怀疑"需要升 CLI"**(所有者是小白,症状对上了直接照下面流程做,不用她判断):
+- Anthropic 出了新模型/新功能,老 CLI 不认(如 `--model` 报 unknown model);
+- claude 进程起不来或启动报错,而 shim 代码零改动、Zeabur 也没动过;
+- Anthropic 官方公告老版本停止支持/有安全修复;
+- 上游 API 行为变化导致功能异常(先看 `/debug` 的 `trusted`:守卫在数据断供时会
+  自动闭嘴不误报,`trusted:false` 就是上游/CLI 行为又变了的信号)。
+
+**安全升级流程(全程零聊天额度,约 10 分钟)**:
+```bash
+cd kelivo-shim
+# 1. 先拿候选版本跑整链路 e2e(不改任何文件;版本号看 npm view @anthropic-ai/claude-code version)
+E2E_CLI_VERSION=<候选版本> bash e2e-run.sh     # 必须 "E2E ALL PASS"
+# 2. 过了再改 package.json 里钉死的版本号为候选版本(仍不带 ^)
+# 3. 常规回归:三套单测 + 不带参数再跑一遍 e2e(此时用的就是新钉死的版本)
+node test-ctxguard.mjs && node test-senses.mjs && node test-keepalive.mjs && bash e2e-run.sh
+# 4. 走本手册「重新部署的完整流程」全套(md5 对账、拷 ian.md/mcp-servers.json、三 /mcp 验 200、
+#    所有者归档、部署后踩坑 9 验证),并在部署记录里写明 CLI 从 x 升到 y
+```
+e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进制 + 假 Anthropic
+后端,整链路重演 2026-07-19 守卫误报场景(工具轮虚高不误报/真超线才提醒/回落复位/
+超硬线归档),断言全自动。临时文件和二进制缓存都在 /tmp,不污染部署目录。
+**e2e 挂了 = 新版 CLI 改了流事件/usage 行为,别升,回来排查**;单测都过、只有 e2e 挂,
+基本就是 CLI 侧变化。
+
 ## 建议(未做)
 
 - Ombre Brain 的 /mcp 端点无鉴权,域名等于钥匙;上游新版已支持 OAuth,有空建议升级。
@@ -240,6 +283,25 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 
 ## 部署记录
 
+- 2026-07-19(第七次,晚) **ctxguard 误报二次修复:守卫读数首选 shim 自抓的末次调用 usage
+  (ctxReading),不再依赖上游 iterations 字段**。背景:第六次部署当晚误报复发
+  (/debug 实测 contextPct 37% 却 softFired:true,iterations 恒为空数组)。取证:
+  拉下 2.1.214/215 两版 CLI 二进制,假后端各跑带工具调用的整轮——两版行为一致,
+  iterations 是**上游 API 可选字段、CLI 只透传末次调用的值**(二进制里聚合代码为
+  `iterations: t.iterations`),上游不给就恒空,ctxWindowTokensOf 静默回落虚高总和。
+  改动见「改动清单 7」的第二次修正段(ctxReading 三级取数 + trusted 门闩 +
+  ctxSoftShouldReset 复位 + /debug 增显 trusted + package.json 钉死 2.1.215)。
+  **所有者授权部署,并已亲自让晏归档。**
+  部署前:未改文件(senses/keepalive/entrypoint/CLAUDE.md)与容器 md5 逐一一致,
+  改动的四件(server.js/ctxguard/package.json/test-ctxguard)容器版本=改动前 git 基线
+  (无踩坑 11);ian.md v13(15861B、db78d33…)与 mcp-servers.json(三条目)从容器
+  base64 拷出、md5 与容器一致;test-ctxguard 66 + test-senses 53 + test-keepalive 52
+  全绿;OB/花园/钓鱼三个 /mcp 各 200;另在沙盒用真 server.js+真 2.1.215+假后端整链路
+  重演误报场景全对(工具轮不误报/真超才提醒/回落复位/超硬线归档)。
+  deployment `6a5cb8ae9cfc4cd5e688c9d6` 约 10 分钟 RUNNING。已按踩坑 9 验证:
+  容器八件套 md5 与仓库一致、ctxReading/lastCallUsage 接线在(grep 7 处)、
+  CLI 实装 2.1.215、ian.md v13 与 mcp 三条目原样、/health 正常、/debug 守卫清零且
+  新增 trusted:true 字段。环境变量零改动。
 - 2026-07-19(第六次) **ctxguard 误报修复:窗口占用改取 iterations 末条(ctxWindowTokensOf)**。
   背景:上线次日实测,守卫把 result 顶层 usage(整轮所有 API 调用的总和)当窗口占用,
   工具密的轮虚高数倍——真实 ~37K 被读成 138934;所有者聊两小时被软线误提醒,15:25 让晏
