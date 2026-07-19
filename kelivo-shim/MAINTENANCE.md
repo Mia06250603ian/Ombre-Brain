@@ -244,6 +244,36 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
     只有 Pulling 一条、无新行且无报错,就是卡死。处理:直接重新 `deploy`(老容器全程兜底,无风险),
     卡死那条去网页控制台手动 Cancel(CLI 无 cancel:deployment 子命令只有 get/list/log)。
 
+## CLI 版本与升级指南(2026-07-19 起,给所有者和未来会话)
+
+**现状**:package.json 把 `@anthropic-ai/claude-code` 钉死在 `2.1.215`(不带 `^`)。
+第七次部署前是 `^2.1.206` 浮动——每次部署装当天最新版,等于每次部署都换一个没测过的
+CLI,是排查守卫误报时的干扰项。钉死后 CLI 只随**主动决定**升级,不随部署日期漂移。
+
+**什么时候该怀疑"需要升 CLI"**(所有者是小白,症状对上了直接照下面流程做,不用她判断):
+- Anthropic 出了新模型/新功能,老 CLI 不认(如 `--model` 报 unknown model);
+- claude 进程起不来或启动报错,而 shim 代码零改动、Zeabur 也没动过;
+- Anthropic 官方公告老版本停止支持/有安全修复;
+- 上游 API 行为变化导致功能异常(先看 `/debug` 的 `trusted`:守卫在数据断供时会
+  自动闭嘴不误报,`trusted:false` 就是上游/CLI 行为又变了的信号)。
+
+**安全升级流程(全程零聊天额度,约 10 分钟)**:
+```bash
+cd kelivo-shim
+# 1. 先拿候选版本跑整链路 e2e(不改任何文件;版本号看 npm view @anthropic-ai/claude-code version)
+E2E_CLI_VERSION=<候选版本> bash e2e-run.sh     # 必须 "E2E ALL PASS"
+# 2. 过了再改 package.json 里钉死的版本号为候选版本(仍不带 ^)
+# 3. 常规回归:三套单测 + 不带参数再跑一遍 e2e(此时用的就是新钉死的版本)
+node test-ctxguard.mjs && node test-senses.mjs && node test-keepalive.mjs && bash e2e-run.sh
+# 4. 走本手册「重新部署的完整流程」全套(md5 对账、拷 ian.md/mcp-servers.json、三 /mcp 验 200、
+#    所有者归档、部署后踩坑 9 验证),并在部署记录里写明 CLI 从 x 升到 y
+```
+e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进制 + 假 Anthropic
+后端,整链路重演 2026-07-19 守卫误报场景(工具轮虚高不误报/真超线才提醒/回落复位/
+超硬线归档),断言全自动。临时文件和二进制缓存都在 /tmp,不污染部署目录。
+**e2e 挂了 = 新版 CLI 改了流事件/usage 行为,别升,回来排查**;单测都过、只有 e2e 挂,
+基本就是 CLI 侧变化。
+
 ## 建议(未做)
 
 - Ombre Brain 的 /mcp 端点无鉴权,域名等于钥匙;上游新版已支持 OAuth,有空建议升级。
