@@ -68,7 +68,13 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
 7. **窗口上下文两段式守卫**(2026-07-18,新文件 `ctxguard.mjs`):常驻进程上下文快满时
    Claude Code 会自动压缩历史(静默、丢细节、不写记忆库)。本守卫赶在压缩前介入。
    每回合 result 里读 usage,算 `contextTokens = input + cache_read + cache_creation`
-   ≈ 窗口占用,存内存;下一条**真实用户消息**(心跳轮不算)在感官注入处按阈值决策:
+   ≈ 窗口占用,存内存;下一条**真实用户消息**(心跳轮不算)在感官注入处按阈值决策。
+   **⚠️ 2026-07-19 修正(ctxWindowTokensOf)**:result 顶层 usage 是整轮所有 API 调用
+   的**总和**——模型每调一次工具就重读一遍缓存前缀,工具密的轮会把窗口重复计数倍
+   (实测真实 ~37K 被读成 138934,聊两小时就假撞软线提醒归档)。现改为取
+   `usage.iterations` **末条**(= 该轮最后一次调用,即真实窗口占用;末条脏值往前找,
+   iterations 缺失才回落总和,老版 CLI 行为不变)。截图证据:末条 cache_read+creation
+   = 下一轮的 cache_read,严丝合缝。阈值决策分两段:
    - **软线**(默认 140K):注入【系统·上下文】提示晏——**先别自己存**,先叫所有者、
      和她一起商量这段里什么值得记进记忆库(所有者明确要的行为)。一个窗口只触发一次
      (`ctxSoftFired`)。
@@ -77,8 +83,10 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    守卫状态随新进程清零(spawnClaude 里,覆盖世界书切换/窗口重启/崩溃复活各路径)。
    `/debug` 增显 contextTokens/百分比/守卫状态。全套走环境变量(CTX_GUARD_ON/
    CTX_SOFT_TOKENS/CTX_HARD_TOKENS/CTX_LIMIT_TOKENS,阈值改值 restart 即可)。
-   纯决策逻辑在 ctxguard.mjs,部署前跑 `node test-ctxguard.mjs`(36 项)。
-   CLAUDE.md 配套加了「上下文管理」一节教晏认这两个提示。
+   纯决策逻辑在 ctxguard.mjs,部署前跑 `node test-ctxguard.mjs`(45 项,含 7-19
+   总和虚高的实测回归用例)。CLAUDE.md 配套加了「上下文管理」一节教晏认这两个提示。
+   **注意:7-19 修正只在仓库,线上容器还是总和版(会误报),要 restart 之外的完整
+   重新部署才生效(部署流程照旧,所有者授权后进行)。**
 
 ## 架构
 
