@@ -85,8 +85,7 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    CTX_SOFT_TOKENS/CTX_HARD_TOKENS/CTX_LIMIT_TOKENS,阈值改值 restart 即可)。
    纯决策逻辑在 ctxguard.mjs,部署前跑 `node test-ctxguard.mjs`(45 项,含 7-19
    总和虚高的实测回归用例)。CLAUDE.md 配套加了「上下文管理」一节教晏认这两个提示。
-   **注意:7-19 修正只在仓库,线上容器还是总和版(会误报),要 restart 之外的完整
-   重新部署才生效(部署流程照旧,所有者授权后进行)。**
+   7-19 修正已随第六次部署上线(见部署记录)。
 
 ## 架构
 
@@ -241,6 +240,22 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 
 ## 部署记录
 
+- 2026-07-19(第六次) **ctxguard 误报修复:窗口占用改取 iterations 末条(ctxWindowTokensOf)**。
+  背景:上线次日实测,守卫把 result 顶层 usage(整轮所有 API 调用的总和)当窗口占用,
+  工具密的轮虚高数倍——真实 ~37K 被读成 138934;所有者聊两小时被软线误提醒,15:25 让晏
+  逛论坛(一轮多次花园工具调用)直接假撞 170K 硬线、窗口被强制归档。证据链:/debug 里
+  iterations 末条 cache_read+creation(35833+757=36590)恰等于下一轮的 cache_read,
+  证明末条=真实窗口。改动:ctxguard.mjs 加 ctxWindowTokensOf(末条优先、脏值前溯、
+  无 iterations 回落总和)、server.js result 处换用、test-ctxguard 36→45 项(含实测
+  回归用例)。**所有者明确授权部署且选择不归档当前窗口。**
+  部署前:未改文件(senses/keepalive/package.json/entrypoint.sh/CLAUDE.md)与容器 md5
+  逐一一致,容器 server.js/ctxguard.mjs = 改动前 git 基线(d5856819…/ba489fab…,无踩坑 11);
+  ian.md v13(15861B、db78d33…)与 mcp-servers.json(三条目)从容器 base64 拷出;
+  test-ctxguard 45 + test-senses 53 + test-keepalive 52 全绿;OB/花园/钓鱼三个 /mcp 各 200。
+  deployment `6a5c8310b33bf4df98a52cb6` 约 12 分钟 RUNNING(无踩坑 14)。已按踩坑 9 验证:
+  容器 server.js/ctxguard.mjs/test-ctxguard md5 与仓库一致、ctxWindowTokensOf 接线在、
+  ian.md v13 原样、mcp 三条目、/health 正常、/debug 守卫状态清零且 on/soft/hard 默认值。
+  环境变量零改动。
 - 2026-07-18(第五次) **窗口上下文两段式守卫(改动清单 7,新文件 ctxguard.mjs)+ SOUL_ANCHOR
   思考语言称呼「你」→「佳佳」**。server.js 改动:import ctxguard;新增 CTX_* 环境变量;
   ctxTokens/ctxSoftFired 状态(spawnClaude 清零);result 里更新 contextTokens;感官注入处
