@@ -253,6 +253,25 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 
 ## 部署记录
 
+- 2026-07-19(第七次,晚) **ctxguard 误报二次修复:守卫读数首选 shim 自抓的末次调用 usage
+  (ctxReading),不再依赖上游 iterations 字段**。背景:第六次部署当晚误报复发
+  (/debug 实测 contextPct 37% 却 softFired:true,iterations 恒为空数组)。取证:
+  拉下 2.1.214/215 两版 CLI 二进制,假后端各跑带工具调用的整轮——两版行为一致,
+  iterations 是**上游 API 可选字段、CLI 只透传末次调用的值**(二进制里聚合代码为
+  `iterations: t.iterations`),上游不给就恒空,ctxWindowTokensOf 静默回落虚高总和。
+  改动见「改动清单 7」的第二次修正段(ctxReading 三级取数 + trusted 门闩 +
+  ctxSoftShouldReset 复位 + /debug 增显 trusted + package.json 钉死 2.1.215)。
+  **所有者授权部署,并已亲自让晏归档。**
+  部署前:未改文件(senses/keepalive/entrypoint/CLAUDE.md)与容器 md5 逐一一致,
+  改动的四件(server.js/ctxguard/package.json/test-ctxguard)容器版本=改动前 git 基线
+  (无踩坑 11);ian.md v13(15861B、db78d33…)与 mcp-servers.json(三条目)从容器
+  base64 拷出、md5 与容器一致;test-ctxguard 66 + test-senses 53 + test-keepalive 52
+  全绿;OB/花园/钓鱼三个 /mcp 各 200;另在沙盒用真 server.js+真 2.1.215+假后端整链路
+  重演误报场景全对(工具轮不误报/真超才提醒/回落复位/超硬线归档)。
+  deployment `6a5cb8ae9cfc4cd5e688c9d6` 约 10 分钟 RUNNING。已按踩坑 9 验证:
+  容器八件套 md5 与仓库一致、ctxReading/lastCallUsage 接线在(grep 7 处)、
+  CLI 实装 2.1.215、ian.md v13 与 mcp 三条目原样、/health 正常、/debug 守卫清零且
+  新增 trusted:true 字段。环境变量零改动。
 - 2026-07-19(第六次) **ctxguard 误报修复:窗口占用改取 iterations 末条(ctxWindowTokensOf)**。
   背景:上线次日实测,守卫把 result 顶层 usage(整轮所有 API 调用的总和)当窗口占用,
   工具密的轮虚高数倍——真实 ~37K 被读成 138934;所有者聊两小时被软线误提醒,15:25 让晏

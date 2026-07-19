@@ -97,6 +97,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 | 07-17 | 接入 fishing-mcp;**telegram-bridge 上线(Telegram 成为主前端)**;表情包+主动消息进 TG |
 | 07-18 | 缓存保温+主动心跳合并;ian.md v12→v13(awaken+seal,配合 OB 大升级 PR #40/#41);语音;贴纸 35 张;**上下文守卫上线** |
 | 07-19 | **守卫误报修复**(窗口占用取 iterations 末条,PR #46)并部署 |
+| 07-19(晚) | **守卫误报二次修复并部署**:iterations 系上游可选字段、线上恒空致回退虚高总和;读数改为首选 shim 自抓的末次调用 usage(ctxReading),虚高估计不触发,回落自动复位 softFired;CLI 钉死 2.1.215(shim 部署记录第七次) |
 
 ## 6. 部署与运维操作速查
 
@@ -133,7 +134,7 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 | 晏说自己「只有 WebFetch/WebSearch」 | 某个 MCP 静默握手失败(域名死/token 失效) | shim 踩坑 7 |
 | 工具看得见、一调就被拒 | `ALLOWED_TOOLS` 没加 `mcp__<服务名>` | shim 环境变量表 |
 | 第一条消息整轮卡死 | 消息抢跑 MCP 握手 | shim 踩坑 1 |
-| 窗口没聊多久就提醒/强制归档 | 守卫读数——07-19 已修;若复发看 /debug 的 iterations | shim 改动清单 7 |
+| 窗口没聊多久就提醒/强制归档 | 守卫读数——07-19 两次修复(第二次改自家流事件取数);复发看 /debug 的 trusted | shim 改动清单 7 |
 | 部署后行为回退到旧版 | 旧副本部署/控制台 Redeploy 旧构建 | shim 踩坑 11 |
 | deploy 后没生效 | 上传≠上线;或被后一次 deploy 取消 | shim 踩坑 9、10 |
 | 部署卡 Pulling image 不动 | Zeabur 调度挂了,重新 deploy | shim 踩坑 14 |
