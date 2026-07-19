@@ -1,6 +1,6 @@
 // test-ctxguard.mjs — 上下文守卫决策单测,部署前跑一遍:node test-ctxguard.mjs
 // 全绿输出 "ALL PASS";不碰网络、不碰 claude 进程。
-import { ctxTokensOf, ctxWindowTokensOf, ctxDecide, ctxSoftNote, ctxHardNote, ctxPct } from "./ctxguard.mjs";
+import { ctxTokensOf, ctxWindowTokensOf, ctxReading, ctxDecide, ctxSoftNote, ctxHardNote, ctxPct, ctxSoftShouldReset } from "./ctxguard.mjs";
 
 let n = 0, bad = 0;
 function ok(cond, name) {
@@ -52,6 +52,52 @@ eq(ctxWindowTokensOf({ input_tokens: 5, cache_read_input_tokens: 40000 }), 40005
 eq(ctxWindowTokensOf({ input_tokens: 5, cache_read_input_tokens: 40000, iterations: "nope" }), 40005, "iterations 非数组 → 回落顶层总和");
 eq(ctxWindowTokensOf(null), 0, "null usage → 0");
 eq(ctxWindowTokensOf(undefined), 0, "undefined usage → 0");
+
+// ============ ctxReading:流事件首选 → iterations 次选 → 总和只作估计(trusted:false) ============
+// 2026-07-19(晚)线上实测回归:iterations 是上游可选字段,第六次部署后线上一直为空,
+// 守卫静默退回虚高总和、37% 就 softFired。可信读数必须首选 shim 自己抓的流事件 usage。
+const streamU = { input_tokens: 3, cache_read_input_tokens: 72935, cache_creation_input_tokens: 1364, output_tokens: 323 };
+const inflatedResult = { input_tokens: 12, cache_read_input_tokens: 145000, cache_creation_input_tokens: 3000, iterations: [] };
+{
+  const r = ctxReading({ streamUsage: streamU, resultUsage: inflatedResult });
+  eq(r.tokens, 74302, "流事件 usage 优先(实测 74302,不取虚高总和 148012)");
+  eq(r.trusted, true, "流事件读数 trusted");
+}
+{
+  const r = ctxReading({ streamUsage: null, resultUsage: realWorld });
+  eq(r.tokens, 36591, "无流事件 → iterations 末条");
+  eq(r.trusted, true, "iterations 读数 trusted");
+}
+{
+  const r = ctxReading({ streamUsage: null, resultUsage: inflatedResult });
+  eq(r.tokens, 148012, "两级可信源都空 → 总和只作展示估计");
+  eq(r.trusted, false, "总和估计 trusted:false");
+}
+{
+  const r = ctxReading({ streamUsage: { output_tokens: 99 }, resultUsage: inflatedResult });
+  eq(r.trusted, false, "流事件 usage 无输入侧字段(算 0)→ 跳过,落到估计");
+}
+eq(ctxReading({}).tokens, 0, "全空 → 0");
+eq(ctxReading().tokens, 0, "无参 → 0");
+
+// trusted:false 时任何读数都不触发(宁可不吭声,不拿虚高数误报/误归档)
+eq(ctxDecide({ contextTokens: 148012, softTokens: SOFT, hardTokens: HARD, softFired: false, trusted: false }).level, "none",
+   "估计值超软线 → 不触发");
+eq(ctxDecide({ contextTokens: 190000, softTokens: SOFT, hardTokens: HARD, softFired: false, trusted: false }).level, "none",
+   "估计值超硬线 → 也不触发(误归档是最坏结果)");
+eq(ctxDecide({ contextTokens: 150000, softTokens: SOFT, hardTokens: HARD, softFired: false }).level, "soft",
+   "trusted 缺省 = true(老调用方行为不变)");
+
+// ============ ctxSoftShouldReset:虚高误触发后,可信读数回落到软线九成以下即复位 ============
+ok(ctxSoftShouldReset({ contextTokens: 74302, softTokens: SOFT, softFired: true }), "误触发后回落 37% → 复位");
+ok(!ctxSoftShouldReset({ contextTokens: 135000, softTokens: SOFT, softFired: true }), "回落但仍在九成线上(96%)→ 不复位");
+ok(!ctxSoftShouldReset({ contextTokens: 125999, softTokens: SOFT, softFired: false }), "没触发过 → 无事可复位");
+ok(!ctxSoftShouldReset({ contextTokens: 74302, softTokens: SOFT, softFired: true, trusted: false }), "估计值不作复位依据");
+ok(!ctxSoftShouldReset({ contextTokens: 0, softTokens: SOFT, softFired: true }), "读数 0(无数据)→ 不复位");
+ok(!ctxSoftShouldReset({ contextTokens: 74302, softTokens: 0, softFired: true }), "软阈值 0(段关闭)→ 不复位");
+eq(SOFT * 0.9, 126000, "九成线基准自检(140000 → 126000)");
+ok(!ctxSoftShouldReset({ contextTokens: 126000, softTokens: SOFT, softFired: true }), "恰在九成线 → 不复位(需严格低于)");
+ok(ctxSoftShouldReset({ contextTokens: 125999, softTokens: SOFT, softFired: true }), "九成线下一格 → 复位");
 
 // ============ ctxDecide:分段与优先级 ============
 eq(dec(0), "none", "0 → none");

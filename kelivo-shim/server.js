@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import fs from "fs";
 import { isWeatherAsk, buildWeatherNote, detectPeriodEvent, buildPeriodNote } from "./senses.mjs";
 import { kaDecide, kaPrompt, kaSilent } from "./keepalive.mjs";
-import { ctxWindowTokensOf, ctxDecide, ctxSoftNote, ctxHardNote, ctxPct } from "./ctxguard.mjs";
+import { ctxReading, ctxDecide, ctxSoftNote, ctxHardNote, ctxPct, ctxSoftShouldReset } from "./ctxguard.mjs";
 
 const PORT = process.env.PORT || 8080;
 const SHIM_KEY = process.env.SHIM_KEY || "";            // Kelivo 要填的 API Key,自己编
@@ -53,11 +53,12 @@ const queue = [];
 let turn = null;
 let lastUsage = null;
 // 上下文守卫状态:随每个新窗口(新进程)清零,见 spawnClaude / 窗口重启处。
-let ctxTokens = 0, ctxSoftFired = false;
+// ctxTrusted=false 表示当前读数只是虚高总和估计(见 ctxguard.mjs 头注),不触发守卫。
+let ctxTokens = 0, ctxSoftFired = false, ctxTrusted = true;
 
 function spawnClaude(kelivoSystem) {
   spawnedSystem = kelivoSystem || "";
-  ctxTokens = 0; ctxSoftFired = false;   // 新进程=空上下文,守卫状态清零(覆盖世界书切换/窗口重启/崩溃复活各路径)
+  ctxTokens = 0; ctxSoftFired = false; ctxTrusted = true;   // 新进程=空上下文,守卫状态清零(覆盖世界书切换/窗口重启/崩溃复活各路径)
   // 锚点放在整段 append 的最末尾(世界书之后),占住系统提示词的绝对末位
   const append = spawnedSystem ? `【场景设定/世界书】\n${spawnedSystem}\n\n${SOUL_ANCHOR}` : SOUL_ANCHOR;
   const args = [
@@ -109,6 +110,10 @@ function handleEvent(ev) {
   if (!turn) return;
   if (ev.type === "stream_event") {
     const e = ev.event || {}, d = e.delta || {};
+    // 抓每次 API 调用自己的 usage(该轮最后一次留存,= 真实窗口占用,守卫首选读数)。
+    // message_start 带输入侧字段;message_delta 的 usage 若带字段则覆盖合并。
+    if (e.type === "message_start" && e.message?.usage) turn.lastCallUsage = e.message.usage;
+    else if (e.type === "message_delta" && e.usage) turn.lastCallUsage = { ...turn.lastCallUsage, ...e.usage };
     if (e.type === "content_block_start") {
       // MCP 工具调用可见化:思考里插一行标记
       const cb = e.content_block || {};
@@ -126,9 +131,15 @@ function handleEvent(ev) {
   }
   if (ev.type === "result") {
     lastUsage = ev.usage || null;
-    // 更新窗口占用,供下条消息的守卫判定。取 iterations 末条(单次调用)而非顶层总和:
-    // 总和把一轮里每次工具调用重读的前缀全加在一起,工具密的轮会虚高数倍、假撞软/硬线。
-    if (ev.usage) { const t = ctxWindowTokensOf(ev.usage); if (t > 0) ctxTokens = t; }
+    // 更新窗口占用,供下条消息的守卫判定。首选流事件里抓的末次调用 usage(自家数据),
+    // 次选 iterations 末条;只剩虚高总和时 trusted=false,只展示不触发(见 ctxguard.mjs 头注)。
+    if (ev.usage || turn.lastCallUsage) {
+      const r = ctxReading({ streamUsage: turn.lastCallUsage, resultUsage: ev.usage });
+      if (r.tokens > 0) { ctxTokens = r.tokens; ctxTrusted = r.trusted; }
+      if (ctxSoftShouldReset({ contextTokens: ctxTokens, softTokens: CTX_SOFT_TOKENS, softFired: ctxSoftFired, trusted: ctxTrusted })) {
+        ctxSoftFired = false; log("[ctx] softFired reset", ctxTokens);   // 之前那记是虚的,放它复位
+      }
+    }
     if (ev.subtype && ev.subtype !== "success") {
       log("[result-error]", ev.subtype);
       if (!turn.fullText) turn.sse?.text(`⚠️[shim] ${ev.subtype}`);
@@ -155,7 +166,7 @@ function pump() {
   busy = true;
   if (proc && item.system !== spawnedSystem) { try { proc.kill(); } catch {} proc = null; } // 世界书变了重启生效
   ensureProc(item.system);
-  turn = { sse: item.sse, fullText: "", newWindow: !!item.newWindow, isKA: !!item.isKA };
+  turn = { sse: item.sse, fullText: "", newWindow: !!item.newWindow, isKA: !!item.isKA, lastCallUsage: null };
   const content = item.images?.length ? [{ type: "text", text: item.text }, ...item.images] : item.text;
   const p = proc;
   const wait = Math.max(0, procReadyAt - Date.now());
@@ -222,7 +233,7 @@ app.get("/debug", (_q, r) => r.json({
   lastUsage,
   contextTokens: ctxTokens,
   contextPct: ctxPct(ctxTokens, CTX_LIMIT_TOKENS),
-  ctxGuard: { on: CTX_GUARD_ON, soft: CTX_SOFT_TOKENS, hard: CTX_HARD_TOKENS, softFired: ctxSoftFired },
+  ctxGuard: { on: CTX_GUARD_ON, soft: CTX_SOFT_TOKENS, hard: CTX_HARD_TOKENS, softFired: ctxSoftFired, trusted: ctxTrusted },
 }));
 
 // Kelivo「模型」页拉这个列表,没有它选不了模型
@@ -493,7 +504,7 @@ function handleMessages(req, res) {
     // 上下文守卫:软线提醒晏叫她一起商量存什么(一窗一次);硬线注入归档指令并换窗口兜底。
     if (CTX_GUARD_ON) {
       try {
-        const d = ctxDecide({ contextTokens: ctxTokens, softTokens: CTX_SOFT_TOKENS, hardTokens: CTX_HARD_TOKENS, softFired: ctxSoftFired });
+        const d = ctxDecide({ contextTokens: ctxTokens, softTokens: CTX_SOFT_TOKENS, hardTokens: CTX_HARD_TOKENS, softFired: ctxSoftFired, trusted: ctxTrusted });
         if (d.level === "soft") { hints.push(ctxSoftNote(USER_NAME)); ctxSoftFired = true; log("[ctx] soft", ctxTokens); }
         else if (d.level === "hard") { hints.push(ctxHardNote()); newWindow = true; log("[ctx] hard→archive", ctxTokens); }
       } catch (e) { log("[ctx-hint]", e.message); }

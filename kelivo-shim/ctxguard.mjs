@@ -13,8 +13,14 @@
 //
 // ⚠️ result 事件顶层的 usage 是**整轮所有 API 调用的总和**:模型每调一次工具就多一次
 // 调用,每次都重读同一段缓存前缀,总和会把窗口重复计好几倍(2026-07-19 实测:真实
-// 窗口 ~37K,一轮调了几次工具,总和读到 138934,凭空撞了软线)。窗口占用要取
-// usage.iterations 的**最后一条**(= 该轮最后一次调用),用 ctxWindowTokensOf。
+// 窗口 ~37K,一轮调了几次工具,总和读到 138934,凭空撞了软线)。
+// ⚠️ usage.iterations 是上游 API 的**可选字段**(CLI 只透传末次调用给的值,默认空数组,
+// 2026-07-19 二进制取证+假后端实测,2.1.214/215 行为一致):上游不给它就是空,
+// 靠它取末条会静默退回虚高总和——第六次部署后误报复发就是这么来的。
+// 可信读数要用 ctxReading:首选 shim 自己从流事件里抓的**该轮最后一次 message_start
+// 的 usage**(单次调用,自家数据,不依赖上游赏脸),其次 iterations 末条;
+// 两样都没有时顶层总和只当展示用的估计值(trusted:false),**不触发**守卫——
+// 宁可这一轮不吭声,也不拿虚高数打扰人(硬线误归档是最坏结果)。
 
 function num(x) { return Number.isFinite(+x) ? +x : 0; }
 
@@ -39,14 +45,38 @@ export function ctxWindowTokensOf(usage) {
   return ctxTokensOf(usage);
 }
 
+// 可信读数:{ tokens, trusted }。
+//   streamUsage = shim 从流事件抓的该轮最后一次 message_start/message_delta 合并 usage(首选);
+//   resultUsage = result 事件顶层 usage(iterations 末条次选;顶层总和只作估计,trusted:false)。
+export function ctxReading({ streamUsage, resultUsage } = {}) {
+  const s = ctxTokensOf(streamUsage);
+  if (s > 0) return { tokens: s, trusted: true };
+  if (resultUsage && typeof resultUsage === "object" && Array.isArray(resultUsage.iterations)) {
+    for (let i = resultUsage.iterations.length - 1; i >= 0; i--) {
+      const t = ctxTokensOf(resultUsage.iterations[i]);
+      if (t > 0) return { tokens: t, trusted: true };
+    }
+  }
+  return { tokens: ctxTokensOf(resultUsage), trusted: false };
+}
+
 // 决策:给当前占用与阈值,返回该触发哪一段。
 //   { level: "none" | "soft" | "hard" }
-export function ctxDecide({ contextTokens, softTokens, hardTokens, softFired }) {
+// trusted=false(只有虚高总和可用)一律不触发:误报比漏报糟,漏报还有阈值到上限的余量。
+export function ctxDecide({ contextTokens, softTokens, hardTokens, softFired, trusted = true }) {
   const t = num(contextTokens);
-  if (t <= 0) return { level: "none" };
+  if (t <= 0 || !trusted) return { level: "none" };
   if (num(hardTokens) > 0 && t >= num(hardTokens)) return { level: "hard" };
   if (num(softTokens) > 0 && t >= num(softTokens) && !softFired) return { level: "soft" };
   return { level: "none" };
+}
+
+// softFired 复位兜底:软线曾(可能误)触发,而后来的可信读数回落到软线九成以下,
+// 说明当时那记是虚的(真实窗口只会单调涨,归档才清零)——放它复位,下次到线还能再提醒。
+export function ctxSoftShouldReset({ contextTokens, softTokens, softFired, trusted = true }) {
+  if (!softFired || !trusted) return false;
+  const t = num(contextTokens), s = num(softTokens);
+  return t > 0 && s > 0 && t < s * 0.9;
 }
 
 // 软线注入文案:先别自己存,先叫她,一起商量存什么(按所有者要求)。

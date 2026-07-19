@@ -71,10 +71,23 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    ≈ 窗口占用,存内存;下一条**真实用户消息**(心跳轮不算)在感官注入处按阈值决策。
    **⚠️ 2026-07-19 修正(ctxWindowTokensOf)**:result 顶层 usage 是整轮所有 API 调用
    的**总和**——模型每调一次工具就重读一遍缓存前缀,工具密的轮会把窗口重复计数倍
-   (实测真实 ~37K 被读成 138934,聊两小时就假撞软线提醒归档)。现改为取
-   `usage.iterations` **末条**(= 该轮最后一次调用,即真实窗口占用;末条脏值往前找,
-   iterations 缺失才回落总和,老版 CLI 行为不变)。截图证据:末条 cache_read+creation
-   = 下一轮的 cache_read,严丝合缝。阈值决策分两段:
+   (实测真实 ~37K 被读成 138934,聊两小时就假撞软线提醒归档)。当时改为取
+   `usage.iterations` 末条,**当晚证实不够**(见下一条)。
+   **⚠️ 2026-07-19(晚)第二次修正(ctxReading,已改码待部署)**:iterations 是
+   **上游 API 的可选字段**,CLI 只透传末次调用给的值、默认空数组(扒 2.1.214/215
+   两版二进制 + 假后端实测,行为一致,和 CLI 版本无关)——第六次部署后线上它一直为空,
+   ctxWindowTokensOf 静默回落到虚高总和,37% 就 softFired,误报原样复发。现改为三级取数
+   (ctxguard.mjs `ctxReading`):**首选 shim 自己从流事件抓的该轮最后一次 message_start/
+   message_delta 合并 usage**(server.js 的 handleEvent 里存 turn.lastCallUsage;
+   `--include-partial-messages` 本来就开着,数据现成、不依赖上游、零额外 token);
+   次选 iterations 末条;两级可信源都空时顶层总和只作 /debug 展示(trusted:false),
+   **不触发守卫**——宁可漏报(硬线到 20 万上限还有余量)不误报(硬线误归档是最坏结果)。
+   另加 `ctxSoftShouldReset`:软线曾触发而后续可信读数回落到软线九成以下,自动复位
+   softFired(真实窗口只会单调涨,回落=当时那记是虚的)。/debug 的 ctxGuard 增显
+   trusted 字段。附带把 package.json 的 claude-code 钉死 2.1.215(原 ^2.1.206 浮动,
+   排查时的干扰项)。test-ctxguard 45→66 项;另在沙盒用真 server.js + 真 2.1.215
+   二进制 + 假 Anthropic 后端整链路重演过误报场景(工具轮总和 40510/真实 20505,
+   软线 3 万:不误报、真超才提醒、回落复位、超硬线注归档,全对)。阈值决策分两段:
    - **软线**(默认 140K):注入【系统·上下文】提示晏——**先别自己存**,先叫所有者、
      和她一起商量这段里什么值得记进记忆库(所有者明确要的行为)。一个窗口只触发一次
      (`ctxSoftFired`)。
