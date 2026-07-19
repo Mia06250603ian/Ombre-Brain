@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import fs from "fs";
 import { isWeatherAsk, buildWeatherNote, detectPeriodEvent, buildPeriodNote } from "./senses.mjs";
 import { kaDecide, kaPrompt, kaSilent } from "./keepalive.mjs";
-import { ctxTokensOf, ctxDecide, ctxSoftNote, ctxHardNote, ctxPct } from "./ctxguard.mjs";
+import { ctxWindowTokensOf, ctxDecide, ctxSoftNote, ctxHardNote, ctxPct } from "./ctxguard.mjs";
 
 const PORT = process.env.PORT || 8080;
 const SHIM_KEY = process.env.SHIM_KEY || "";            // Kelivo 要填的 API Key,自己编
@@ -126,7 +126,9 @@ function handleEvent(ev) {
   }
   if (ev.type === "result") {
     lastUsage = ev.usage || null;
-    if (ev.usage) { const t = ctxTokensOf(ev.usage); if (t > 0) ctxTokens = t; }  // 更新窗口占用,供下条消息的守卫判定
+    // 更新窗口占用,供下条消息的守卫判定。取 iterations 末条(单次调用)而非顶层总和:
+    // 总和把一轮里每次工具调用重读的前缀全加在一起,工具密的轮会虚高数倍、假撞软/硬线。
+    if (ev.usage) { const t = ctxWindowTokensOf(ev.usage); if (t > 0) ctxTokens = t; }
     if (ev.subtype && ev.subtype !== "success") {
       log("[result-error]", ev.subtype);
       if (!turn.fullText) turn.sse?.text(`⚠️[shim] ${ev.subtype}`);

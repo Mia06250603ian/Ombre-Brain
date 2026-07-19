@@ -7,9 +7,14 @@
 //   硬线:兜底。注入归档指令并换窗口——把交接从「静默压缩」强制成「经记忆库留信」,
 //         保证永远走不到自动压缩那一步。硬线优先于软线。
 //
-// contextTokens = 本回合读入的整份 prompt 规模 ≈ 当前窗口占用:
+// contextTokens = 单次 API 调用读入的整份 prompt 规模 ≈ 当前窗口占用:
 //   input_tokens + cache_read_input_tokens + cache_creation_input_tokens
 // (缓存命中时 cache_read 是大头,input 只是本轮新增未缓存部分。)
+//
+// ⚠️ result 事件顶层的 usage 是**整轮所有 API 调用的总和**:模型每调一次工具就多一次
+// 调用,每次都重读同一段缓存前缀,总和会把窗口重复计好几倍(2026-07-19 实测:真实
+// 窗口 ~37K,一轮调了几次工具,总和读到 138934,凭空撞了软线)。窗口占用要取
+// usage.iterations 的**最后一条**(= 该轮最后一次调用),用 ctxWindowTokensOf。
 
 function num(x) { return Number.isFinite(+x) ? +x : 0; }
 
@@ -17,6 +22,21 @@ function num(x) { return Number.isFinite(+x) ? +x : 0; }
 export function ctxTokensOf(usage) {
   if (!usage || typeof usage !== "object") return 0;
   return num(usage.input_tokens) + num(usage.cache_read_input_tokens) + num(usage.cache_creation_input_tokens);
+}
+
+// 从 result 事件的 usage 算**当前窗口占用**:优先取 iterations 末条(单次调用),
+// 末条为 0/脏值时往前找最近一条有效的;iterations 缺失/为空才回落顶层总和
+// (老版 CLI 没有 iterations 时行为同旧版,不会更糟)。
+export function ctxWindowTokensOf(usage) {
+  if (!usage || typeof usage !== "object") return 0;
+  const it = usage.iterations;
+  if (Array.isArray(it)) {
+    for (let i = it.length - 1; i >= 0; i--) {
+      const t = ctxTokensOf(it[i]);
+      if (t > 0) return t;
+    }
+  }
+  return ctxTokensOf(usage);
 }
 
 // 决策:给当前占用与阈值,返回该触发哪一段。
