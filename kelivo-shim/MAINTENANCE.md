@@ -140,7 +140,7 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    下次部署以此为准。v14 相对 v13 除拆分/重编号外另有两处内容改动(所有者指定):
    I 节删 tool_search limit=20 旧话(工具在 CLI 环境直接就绪,该修法已过时);
    II 节 "She is an adult." 前加「佳佳 does not share my surname. Never call her 许佳佳.」。
-   另加 `.gitignore`(ian.md/profile-instructions.md/mcp-servers.json)防私密文件误入库。
+   **不要**在本目录放 .gitignore 挡这三个文件——zeabur 上传会遵循它,文件直接不进容器(踩坑 15)。
 
 ## 架构
 
@@ -293,6 +293,17 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
     这是 Zeabur 节点/镜像仓库侧的坑,与代码无关。判断法:`deployment log` 若长时间(~10 分钟)
     只有 Pulling 一条、无新行且无报错,就是卡死。处理:直接重新 `deploy`(老容器全程兜底,无风险),
     卡死那条去网页控制台手动 Cancel(CLI 无 cancel:deployment 子命令只有 get/list/log)。
+
+15. **`.gitignore` 会让 zeabur 上传静默丢文件(2026-07-20 实翻的车)**:第九次部署时为防
+    私密文件误入库,在本目录加了 `.gitignore`(列 ian.md/profile-instructions.md/
+    mcp-servers.json),结果 zeabur CLI 打包遵循 .gitignore,这三个文件**全都没进容器**——
+    上线的容器代码齐全但没有人设、没有 MCP 配置,晏短暂处于"失忆裸奔"状态,靠部署后
+    踩坑 9 的逐文件 md5 验证当场抓到,删掉 .gitignore 立即重新部署修复(两次部署间隔
+    约 15 分钟)。教训:**本目录(部署目录)里永远不要放 .gitignore**;防误提交用
+    **仓库根目录的 .gitignore**(已列这三个文件)——zeabur 从 kelivo-shim/ 发起上传,
+    看不到仓库根的 .gitignore,所以根级忽略是安全的,目录级忽略会丢文件。这也再次
+    证明踩坑 9 的"逐文件验证"必须包含 ian.md/profile-instructions.md/mcp-servers.json
+    三件,不能只验代码。
 
 ## CLI 版本与升级指南(2026-07-19 起,给所有者和未来会话)
 
