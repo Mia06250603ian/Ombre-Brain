@@ -46,7 +46,7 @@ env -i HOME="$WORK" PATH="$PATH" \
   ANTHROPIC_BASE_URL=http://127.0.0.1:8501 ANTHROPIC_AUTH_TOKEN=fake \
   MCP_CONFIG=mcp-empty.json MCP_WARMUP_MS=300 KA_ON=0 TIME_HINT=0 \
   BUILTIN_TOOLS=Read ALLOWED_TOOLS=Read \
-  CTX_SOFT_TOKENS=30000 CTX_HARD_TOKENS=60000 \
+  CTX_SOFT_TOKENS=30000 CTX_HARD_TOKENS=60000 CTX_ARCHIVE_EVERY_TOKENS=20000 \
   DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
   node "$WORK/server.js" >shim.log 2>&1 &
 SPID=$!
@@ -61,6 +61,7 @@ msg() {
 }
 : > debug-snaps.jsonl
 msg "hello one"; msg "hello two"; msg "hello three"; msg "hello four"; msg "hello five"
+msg "hello six"; msg "hello seven"; msg "hello eight"; msg "hello nine"
 sleep 1
 
 # ---- 断言 ----
@@ -72,30 +73,46 @@ const seen = JSON.parse(fs.readFileSync(`${W}/seen.json`, "utf8"));
 let bad = 0;
 const ok = (c, name) => { if (!c) { bad++; console.error("FAIL:", name); } };
 
-// 每条消息后的 /debug:tokens=真实末次调用值、trusted、softFired
+// 每条消息后的 /debug:[tokens, softFired, lastArchiveTokens, compactions]
 const want = [
-  [20505, false, "msg1 工具轮:读真实 20505(总和 40510 是老 bug),不误报"],
-  [35515, false, "msg2 后窗口 35515(下一条才注软提示)"],
-  [20005, false, "msg3 带软提示;结果回落 20005 → softFired 已自动复位"],
-  [65010, false, "msg4 后窗口 65010(下一条才注硬提示)"],
-  [65115, false, "msg5 带硬提示归档"],
+  [20505, false, 0, 0, "msg1 工具轮:读真实 20505(总和 40510 是老 bug),不误报"],
+  [35515, false, 0, 0, "msg2 后窗口 35515(下一条才注软提示)"],
+  [20005, false, 0, 0, "msg3 带软提示;结果回落 20005 → softFired 已自动复位"],
+  [65010, false, 0, 0, "msg4 后窗口 65010(下一条才注硬提示)"],
+  [65115, false, 65010, 0, "msg5 带硬提示归档(不换窗),归档基线记 65010"],
+  [86000, true, 65010, 0, "msg6 带第二轮软提示(复位后重臂),硬线间隔未满不催"],
+  [21000, false, 0, 1, "msg7 带增量归档提示;读数暴跌 → 判定压缩,守卫记账复位"],
+  [31000, false, 0, 1, "msg8 压缩后新周期,未到软线无提示"],
+  [31200, true, 0, 1, "msg9 带第二轮周期的软提示(压缩后守卫复活)"],
 ];
-ok(snaps.length === 5, `5 份 /debug 快照(got ${snaps.length})`);
-want.forEach(([tok, fired, name], i) => {
+ok(snaps.length === 9, `9 份 /debug 快照(got ${snaps.length})`);
+want.forEach(([tok, fired, arch, comp, name], i) => {
   const s = snaps[i]; if (!s) return ok(false, name);
   ok(s.contextTokens === tok, `${name}(tokens got ${s.contextTokens}, want ${tok})`);
   ok(s.ctxGuard.trusted === true, `${name}(trusted 应为 true)`);
   ok(s.ctxGuard.softFired === fired, `${name}(softFired got ${s.ctxGuard.softFired}, want ${fired})`);
+  ok(s.ctxGuard.lastArchiveTokens === arch, `${name}(lastArchiveTokens got ${s.ctxGuard.lastArchiveTokens}, want ${arch})`);
+  ok(s.ctxGuard.compactions === comp, `${name}(compactions got ${s.ctxGuard.compactions}, want ${comp})`);
 });
 
-// 各次 API 调用的 prompt:软提示只在 call4,硬提示只在 call6
-ok(seen.length === 6, `共 6 次 API 调用(msg1 两次 + 其余各一,got ${seen.length})`);
+// 各次 API 调用的 prompt:软提示在 call4/call7/call10,硬提示在 call6/call8
+ok(seen.length === 10, `共 10 次 API 调用(msg1 两次 + 其余各一,got ${seen.length})`);
 seen.forEach((s, i) => {
   const soft = s.includes("先别自己动手存"), hard = s.includes("archive_session");
   if (i === 3) { ok(soft && !hard, "call4 应带软提示"); }
-  else if (i === 5) { ok(hard && !soft, "call6 应带硬提示归档指令"); }
+  else if (i === 5) { ok(hard && !soft, "call6 应带硬提示归档指令(首归)"); }
+  else if (i === 6) { ok(soft && !hard, "call7 应带第二轮软提示(复位重臂)"); }
+  else if (i === 7) { ok(hard && !soft, "call8 应带增量归档提示(涨满间隔)"); }
+  else if (i === 9) { ok(soft && !hard, "call10 应带压缩后新周期的软提示"); }
   else ok(!s.includes("【系统·上下文】"), `call${i + 1} 不应带上下文提示`);
 });
+
+// 归档提示不换窗:整个流程 claude 进程只 spawn 一次,从无 [window] restart
+const slog = fs.readFileSync(`${W}/shim.log`, "utf8");
+ok(!slog.includes("[window] restart"), "全程不应出现 [window] restart(守卫不换窗)");
+ok((slog.match(/\[claude\] spawned/g) || []).length === 1, "claude 进程只 spawn 一次(窗口全程存活)");
+// 新守卫的硬文案不再教他收尾/换窗口
+ok(!seen.some((s) => s.includes("下一句起就是新窗口")), "任何 prompt 不再出现「下一句起就是新窗口」");
 
 if (bad) { console.error(`\n${bad} 项断言失败(shim.log/fake.log 在工作目录里)`); process.exit(1); }
 console.log("E2E ALL PASS");

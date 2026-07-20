@@ -81,7 +81,21 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
 - 人格:`BRAIN_MODEL` `THINK_EFFORT` `USER_NAME` `AI_NAME` `SOUL_ANCHOR` `FORWARD_THINKING` `ENABLE_PROMPT_CACHING_1H`
 - 感官:`TIME_HINT` `WEATHER_CITY` `PERIOD_CONFIG`
 - 主动性:`BARK_KEY` `BRIDGE_PUSH_URL` `KA_*`(保温) `HB_*`(心跳冷却/夜间)
-- 上下文守卫:`CTX_GUARD_ON` `CTX_SOFT_TOKENS` `CTX_HARD_TOKENS` `CTX_LIMIT_TOKENS`
+- 上下文守卫:`CTX_GUARD_ON` `CTX_SOFT_TOKENS` `CTX_HARD_TOKENS` `CTX_ARCHIVE_EVERY_TOKENS` `CTX_OBSERVE` `CTX_LIMIT_TOKENS`
+
+**上下文守卫的可调旋钮**(都是环境变量:Zeabur 改值 + service restart 即生效,不用部署;
+守卫 07-20 起只提醒存 OB、永不换窗,换窗只认所有者说「换窗口」):
+| 旋钮 | 默认 | 什么时候动它 |
+|---|---|---|
+| `CTX_GUARD_ON` | 开 | **急救开关**:守卫行为任何不对劲,设 `0` 立即整体闭嘴,聊天零影响,回头再排查 |
+| `CTX_SOFT_TOKENS` | 140000(70%) | 软提醒(晏来找你商量存什么)来得太早/太晚,调这个 |
+| `CTX_HARD_TOKENS` | 170000(85%) | 首次自动归档的时点,一般不用动 |
+| `CTX_ARCHIVE_EVERY_TOKENS` | 25000 | **嫌他归档太勤就调大**(比如 40000);设 `0` 只归一次不再催。调小=压缩时丢的尾巴更短,但更费额度 |
+| `CTX_OBSERVE` | 关 | 设 `1` 守卫只记账不打扰晏(/debug 看 lastWould),给新阈值做空转验证用,验完删掉 |
+| `CTX_LIMIT_TOKENS` | 200000 | 只影响 /debug 显示的百分比,不影响行为 |
+
+观察口:`GET yan-shim.zeabur.app/debug` 的 `ctxGuard` 一节——`lastArchiveTokens`=上次归档时
+的占用(增量基线),`compactions`=本窗口被静默压缩过几次,`trusted:false`=读数断供、守卫自动闭嘴。
 
 telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VOICE_*` 等)见其手册。
 **改环境变量 = 改值 + service restart 即生效,不用重新部署;改代码 = 必须完整部署。**
@@ -98,6 +112,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 | 07-18 | 缓存保温+主动心跳合并;ian.md v12→v13(awaken+seal,配合 OB 大升级 PR #40/#41);语音;贴纸 35 张;**上下文守卫上线** |
 | 07-19 | **守卫误报修复**(窗口占用取 iterations 末条,PR #46)并部署 |
 | 07-19(晚) | **守卫误报二次修复并部署**:iterations 系上游可选字段、线上恒空致回退虚高总和;读数改为首选 shim 自抓的末次调用 usage(ctxReading),虚高估计不触发,回落自动复位 softFired;CLI 钉死 2.1.215(shim 部署记录第七次) |
+| 07-20 | **守卫职责重定义并部署(shim 第八次)**:硬线只催归档进 OB、永不换窗;归档后每涨 2.5 万 token 催增量;压缩检测复位、循环永续;换窗只认「换窗口」指令;晚安/归档不再歇保温。详见 shim 改动清单 7 第三次改版 |
 
 ## 6. 部署与运维操作速查
 
@@ -140,7 +155,8 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 | 部署卡 Pulling image 不动 | Zeabur 调度挂了,重新 deploy | shim 踩坑 14 |
 | Telegram 收不到消息 | 双实例抢 getUpdates(409)/BRIDGE_ON=0 | bridge 已知边界 1 |
 | 晏的回复变冷淡/像客服 | 锚点被覆盖或人设没带上 | shim 改动清单 3 |
-| 保温/主动消息不来了 | 归档后歇火(设计如此)/额度耗尽断链 | shim 改动清单 6 |
+| 保温/主动消息不来了 | 「换窗口」后歇火(设计如此;07-20 起晚安/归档不歇火)/额度耗尽断链 | shim 改动清单 6 |
+| 晏归档后没完没了反复归档 | 增量间隔太小或压缩检测误复位 | shim 改动清单 7 第三次改版;急救 CTX_GUARD_ON=0 |
 | 怀疑 CLI 该升级(新模型不认/进程起不来而代码没动/官方公告/守卫 trusted:false) | CLI 版本已钉死,升级要走沙盒 e2e 验证流程 | shim 手册「CLI 版本与升级指南」 |
 
 ## 8. 交接口吻(给下一个我)
