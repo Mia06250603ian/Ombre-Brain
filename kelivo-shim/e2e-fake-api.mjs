@@ -10,6 +10,9 @@ const PORT = +(process.env.E2E_API_PORT || 8501);
 const seen = [];
 
 // 每条 = 一次 /v1/messages 调用的应答;u 不带 iterations(复现线上:上游不给该字段)。
+// 剧本前半 = 2026-07-19 线上误报场景(软线 30000/硬线 60000);
+// 后半 = 2026-07-20 新形态:硬线归档不换窗 → 涨满间隔(every 20000)再催增量 →
+// 读数暴跌(模拟 CLI 静默压缩)→ 守卫复位 → 第二轮软提醒照来。
 const script = [
   // msg1 调用1:工具轮(要求读文件),cc 20000
   { tool: true, u: { in: 5, cc: 20000, cr: 0, out: 30 } },
@@ -21,8 +24,16 @@ const script = [
   { text: "three done", u: { in: 5, cc: 0, cr: 20000, out: 20 } },
   // msg4(应无提示):冲到 65010 > 硬线
   { text: "four done", u: { in: 5, cc: 45000, cr: 20005, out: 20 } },
-  // msg5(应带硬提示归档指令)
+  // msg5(应带硬提示归档,窗口不换,归档基线记 65010)
   { text: "five done", u: { in: 5, cc: 100, cr: 65010, out: 20 } },
+  // msg6(硬线不再催:65115 < 65010+20000;软线因 msg3 复位过 → 应带软提示):涨到 86000
+  { text: "six done", u: { in: 5, cc: 20880, cr: 65115, out: 20 } },
+  // msg7(应带第二次硬提示=增量归档:86000 ≥ 65010+20000):读数暴跌到 21000 = 模拟压缩
+  { text: "seven done", u: { in: 5, cc: 0, cr: 20995, out: 20 } },
+  // msg8(压缩后新周期,21000 < 软线 → 应无提示):涨到 31000
+  { text: "eight done", u: { in: 5, cc: 9995, cr: 21000, out: 20 } },
+  // msg9(第二轮软提示——证明压缩后守卫复活):31200
+  { text: "nine done", u: { in: 5, cc: 195, cr: 31000, out: 20 } },
 ];
 let call = 0;
 

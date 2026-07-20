@@ -1,6 +1,6 @@
 // test-ctxguard.mjs — 上下文守卫决策单测,部署前跑一遍:node test-ctxguard.mjs
 // 全绿输出 "ALL PASS";不碰网络、不碰 claude 进程。
-import { ctxTokensOf, ctxWindowTokensOf, ctxReading, ctxDecide, ctxSoftNote, ctxHardNote, ctxPct, ctxSoftShouldReset } from "./ctxguard.mjs";
+import { ctxTokensOf, ctxWindowTokensOf, ctxReading, ctxDecide, ctxCompacted, ctxSoftNote, ctxHardNote, ctxPct, ctxSoftShouldReset } from "./ctxguard.mjs";
 
 let n = 0, bad = 0;
 function ok(cond, name) {
@@ -120,6 +120,34 @@ eq(ctxDecide({ contextTokens: 999999, softTokens: 0, hardTokens: 0, softFired: f
 eq(ctxDecide({ contextTokens: 150000, softTokens: 0, hardTokens: HARD, softFired: false }).level, "none", "软阈值 0 = 只留硬线(未到硬线)");
 eq(ctxDecide({ contextTokens: 175000, softTokens: 0, hardTokens: HARD, softFired: false }).level, "hard", "软阈值 0 仍能触发硬线");
 
+// ============ 增量归档(2026-07-20):归过档后涨到 max(硬线, 上次+every) 再催 ============
+const EVERY = 25000;
+function decInc(t, last, every = EVERY, softFired = true) {
+  return ctxDecide({ contextTokens: t, softTokens: SOFT, hardTokens: HARD, archiveEveryTokens: every, softFired, lastArchiveTokens: last }).level;
+}
+eq(decInc(175000, 170000), "none", "刚在 170K 归过档,175K 未到下一档 → none");
+eq(decInc(194999, 170000), "none", "增量线下一格(194999)→ none");
+eq(decInc(195000, 170000), "hard", "涨满一个间隔(170K+25K)→ 再催增量归档");
+eq(decInc(220000, 195000), "hard", "第三档(195K+25K)照样催,循环不封顶");
+eq(decInc(170000, 60000), "hard", "手动早归档(60K)不提前吃掉首催:硬线 170K 照催");
+eq(decInc(169999, 60000), "none", "手动早归档:硬线之前不打扰");
+eq(decInc(185000, 160000), "hard", "手动晚归档(160K):催点是 max(170K, 185K)=185K");
+eq(decInc(170000, 160000), "none", "手动晚归档:170K 不足 185K → none(不紧跟着再催)");
+eq(decInc(999999, 170000, 0), "none", "every=0 = 关增量:归过一次不再催");
+eq(decInc(150000, 145000, EVERY, false), "soft", "归档基线不挡软线:softFired 复位后软区间照常提醒");
+eq(dec(170000), "hard", "老调用方不传 last/every:首催行为与旧版一致");
+
+// ============ ctxCompacted:可信读数从软线以上暴跌过半 = CLI 静默压缩,守卫该复位 ============
+ok(ctxCompacted({ contextTokens: 40000, prevTokens: 190000, softTokens: SOFT }), "190K→40K 暴跌 → 认定压缩");
+ok(ctxCompacted({ contextTokens: 95000, prevTokens: 190000, softTokens: SOFT }), "恰跌到一半(95K)→ 认定压缩(<=)");
+ok(!ctxCompacted({ contextTokens: 95001, prevTokens: 190000, softTokens: SOFT }), "跌不过半 → 不算压缩");
+ok(!ctxCompacted({ contextTokens: 40000, prevTokens: 139999, softTokens: SOFT }), "prev 在软线之下 → 低位抖动不算压缩");
+ok(ctxCompacted({ contextTokens: 60000, prevTokens: 140000, softTokens: SOFT }), "prev 恰在软线 → 参与判定");
+ok(!ctxCompacted({ contextTokens: 40000, prevTokens: 190000, softTokens: SOFT, trusted: false }), "读数不可信 → 不判压缩");
+ok(!ctxCompacted({ contextTokens: 0, prevTokens: 190000, softTokens: SOFT }), "新读数 0(无数据)→ 不判");
+ok(!ctxCompacted({ contextTokens: 40000, prevTokens: 0, softTokens: SOFT }), "prev 0(新窗/前值不可信)→ 不判");
+ok(!ctxCompacted({ contextTokens: 40000, prevTokens: 190000, softTokens: 0 }), "软阈值 0 → 检测关闭");
+
 // ============ 文案 ============
 ok(ctxSoftNote("佳佳").startsWith("【系统·上下文】"), "软文案带系统标注");
 ok(ctxSoftNote("佳佳").includes("先别自己动手存"), "软文案:先别自己存");
@@ -128,7 +156,9 @@ ok(ctxSoftNote().includes("她"), "软文案缺省称呼=她");
 ok(!ctxSoftNote("佳佳").includes("archive_session"), "软文案不含归档指令");
 ok(ctxHardNote().startsWith("【系统·上下文】"), "硬文案带系统标注");
 ok(ctxHardNote().includes("archive_session"), "硬文案含归档工具名");
-ok(ctxHardNote().includes("新窗口"), "硬文案说明换窗口");
+ok(!ctxHardNote().includes("新窗口"), "硬文案不再提换窗口(2026-07-20 起守卫不换窗)");
+ok(ctxHardNote().includes("窗口不换"), "硬文案言明窗口不换、继续聊");
+ok(ctxHardNote().includes("上次之后"), "硬文案交代增量归档(归过就补新内容)");
 
 // ============ ctxPct ============
 eq(ctxPct(140000, 200000), 70, "140k/200k = 70%");

@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import fs from "fs";
 import { isWeatherAsk, buildWeatherNote, detectPeriodEvent, buildPeriodNote } from "./senses.mjs";
 import { kaDecide, kaPrompt, kaSilent } from "./keepalive.mjs";
-import { ctxReading, ctxDecide, ctxSoftNote, ctxHardNote, ctxPct, ctxSoftShouldReset } from "./ctxguard.mjs";
+import { ctxReading, ctxDecide, ctxCompacted, ctxSoftNote, ctxHardNote, ctxPct, ctxSoftShouldReset } from "./ctxguard.mjs";
 
 const PORT = process.env.PORT || 8080;
 const SHIM_KEY = process.env.SHIM_KEY || "";            // Kelivo 要填的 API Key,自己编
@@ -35,11 +35,13 @@ const SOUL_ANCHOR = process.env.SOUL_ANCHOR ||
 const BUILTIN_TOOLS = process.env.BUILTIN_TOOLS ?? "WebSearch,WebFetch";
 const ALLOWED = process.env.ALLOWED_TOOLS || "WebSearch,WebFetch";
 
-// 窗口上下文守卫(两段式,见 ctxguard.mjs)。阈值改了 restart 即可,不用重部署。
+// 窗口上下文守卫(只提醒存 OB,不换窗口,见 ctxguard.mjs)。阈值改了 restart 即可,不用重部署。
 const CTX_GUARD_ON = process.env.CTX_GUARD_ON !== "0";
 const CTX_SOFT_TOKENS = +(process.env.CTX_SOFT_TOKENS || 140000);
 const CTX_HARD_TOKENS = +(process.env.CTX_HARD_TOKENS || 170000);
+const CTX_ARCHIVE_EVERY_TOKENS = +(process.env.CTX_ARCHIVE_EVERY_TOKENS || 25000); // 硬线首归后,每再涨这么多催一次增量归档;0=只催一次
 const CTX_LIMIT_TOKENS = +(process.env.CTX_LIMIT_TOKENS || 200000);  // 仅用于 /debug 显示百分比
+const CTX_OBSERVE = process.env.CTX_OBSERVE === "1";  // 观察模式:守卫照常判定并记 /debug,但不注入提示(上线初期空转验证用)
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 
@@ -54,11 +56,16 @@ let turn = null;
 let lastUsage = null;
 // 上下文守卫状态:随每个新窗口(新进程)清零,见 spawnClaude / 窗口重启处。
 // ctxTrusted=false 表示当前读数只是虚高总和估计(见 ctxguard.mjs 头注),不触发守卫。
+// ctxArchivedAt = 上次归档(守卫催的/她说「归档」/晏自发调工具)时的窗口占用,增量归档的基线;
+// ctxCompactions = 本窗口被 CLI 静默压缩的次数(检测到暴跌就 +1 并复位守卫记账);
+// ctxLastWould = 观察模式下最近一次"本来要触发"的记录(只进 /debug,不打扰晏)。
 let ctxTokens = 0, ctxSoftFired = false, ctxTrusted = true;
+let ctxArchivedAt = 0, ctxCompactions = 0, ctxLastWould = null;
 
 function spawnClaude(kelivoSystem) {
   spawnedSystem = kelivoSystem || "";
   ctxTokens = 0; ctxSoftFired = false; ctxTrusted = true;   // 新进程=空上下文,守卫状态清零(覆盖世界书切换/窗口重启/崩溃复活各路径)
+  ctxArchivedAt = 0; ctxCompactions = 0; ctxLastWould = null;
   // 锚点放在整段 append 的最末尾(世界书之后),占住系统提示词的绝对末位
   const append = spawnedSystem ? `【场景设定/世界书】\n${spawnedSystem}\n\n${SOUL_ANCHOR}` : SOUL_ANCHOR;
   const args = [
@@ -119,8 +126,9 @@ function handleEvent(ev) {
       const cb = e.content_block || {};
       if (cb.type === "tool_use" && typeof cb.name === "string" && cb.name.startsWith("mcp__")) {
         turn.sse?.thinking(`\n〔🔧 ${cb.name.replace(/^mcp__/, "")}〕\n`);
-        // 他自己动手归档(晚安措辞没被 detectReset 认出时):该轮结束照样换新窗口
-        if (cb.name.endsWith("__archive_session")) turn.newWindow = true;
+        // 归档不再触发换窗口(2026-07-20 所有者定:换窗只认「换窗口」指令)。
+        // 这里只把归档记成增量基线,守卫别紧跟着再催一遍。
+        if (cb.name.endsWith("__archive_session")) ctxArchivedAt = Math.max(ctxArchivedAt, ctxTokens);
       }
     }
     if (e.type === "content_block_delta") {
@@ -135,7 +143,14 @@ function handleEvent(ev) {
     // 次选 iterations 末条;只剩虚高总和时 trusted=false,只展示不触发(见 ctxguard.mjs 头注)。
     if (ev.usage || turn.lastCallUsage) {
       const r = ctxReading({ streamUsage: turn.lastCallUsage, resultUsage: ev.usage });
-      if (r.tokens > 0) { ctxTokens = r.tokens; ctxTrusted = r.trusted; }
+      if (r.tokens > 0) {
+        // 可信读数从高位暴跌过半 = CLI 刚静默压缩过:守卫记账复位,下一轮涨起来照样提醒
+        if (ctxCompacted({ contextTokens: r.tokens, prevTokens: ctxTrusted ? ctxTokens : 0, softTokens: CTX_SOFT_TOKENS, trusted: r.trusted })) {
+          ctxCompactions++; ctxSoftFired = false; ctxArchivedAt = 0;
+          log("[ctx] compaction detected", ctxTokens, "->", r.tokens, "(guard re-armed, total", ctxCompactions + ")");
+        }
+        ctxTokens = r.tokens; ctxTrusted = r.trusted;
+      }
       if (ctxSoftShouldReset({ contextTokens: ctxTokens, softTokens: CTX_SOFT_TOKENS, softFired: ctxSoftFired, trusted: ctxTrusted })) {
         ctxSoftFired = false; log("[ctx] softFired reset", ctxTokens);   // 之前那记是虚的,放它复位
       }
@@ -152,7 +167,7 @@ function handleEvent(ev) {
     turn.done = true;
     turn.sse?.finish(usage, turn.fullText);
     turn = null; busy = false;
-    if (wasNewWindow) windowCleared = true;        // 晚安/归档:保温歇火,等她再出现
+    if (wasNewWindow) windowCleared = true;        // 换窗口指令:保温歇火,等她在新窗口出现(晚安/归档不再走到这,保温一直在岗)
     if (wasNewWindow && proc) { log("[window] restart"); try { proc.kill(); } catch {} proc = null; }
     pump();
   }
@@ -233,7 +248,9 @@ app.get("/debug", (_q, r) => r.json({
   lastUsage,
   contextTokens: ctxTokens,
   contextPct: ctxPct(ctxTokens, CTX_LIMIT_TOKENS),
-  ctxGuard: { on: CTX_GUARD_ON, soft: CTX_SOFT_TOKENS, hard: CTX_HARD_TOKENS, softFired: ctxSoftFired, trusted: ctxTrusted },
+  ctxGuard: { on: CTX_GUARD_ON, soft: CTX_SOFT_TOKENS, hard: CTX_HARD_TOKENS, every: CTX_ARCHIVE_EVERY_TOKENS,
+              softFired: ctxSoftFired, trusted: ctxTrusted, lastArchiveTokens: ctxArchivedAt,
+              compactions: ctxCompactions, observe: CTX_OBSERVE, lastWould: ctxLastWould },
 }));
 
 // Kelivo「模型」页拉这个列表,没有它选不了模型
@@ -250,7 +267,8 @@ app.get("/models", listModels);
 // 提示语给他「想说就发一条」的出口(经 BRIDGE_PUSH_URL 落进 Telegram 对话,
 // 否则 Bark);其余次一律静默回「。」。断链检测:距上次成功回合超 KA_DEAD_MIN
 // 分钟=缓存已死,歇火(再 ping 全价,比不 ping 还亏);ping 失败进 KA_RETRY_MIN
-// 分钟抢救节奏(订阅额度回血后自动续上)。晚安/归档后歇火直到所有者再出现;
+// 分钟抢救节奏(订阅额度回血后自动续上)。「换窗口」指令后歇火直到所有者在新窗口
+// 出现(2026-07-20 起晚安/归档不再歇火:窗口还活着,缓存值得一直温着);
 // 连续闲置 KA_CAP_HOURS 小时封顶。KA_ON=0 全关(连带主动消息一起关)。
 const BARK_KEY = process.env.BARK_KEY || "";
 const BRIDGE_PUSH_URL = process.env.BRIDGE_PUSH_URL || "";
@@ -266,7 +284,7 @@ const HB_NIGHT_END = +(process.env.HB_NIGHT_END || 8);
 let lastUserAt = Date.now(), lastProactiveAt = 0;
 let lastTurnOkAt = 0;      // 上次成功回合=缓存链的存活锚点;0=还没有活缓存
 let kaFailedAt = 0;        // 上次保温 ping 失败时间;非 0 = 抢救节奏
-let windowCleared = true;  // 晚安/归档后 true:歇火等她。开机也算(新进程无缓存可保)
+let windowCleared = true;  // 「换窗口」后 true:歇火等她在新窗口发第一条。开机也算(新进程无缓存可保)
 function bjHour() { return (new Date().getUTCHours() + 8) % 24; }
 async function barkPush(text) {
   const r = await fetch("https://api.day.app/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ device_key: BARK_KEY, title: AI_NAME, body: text.slice(0, 1800) }) });
@@ -449,13 +467,15 @@ app.post("/period", (req, res) => {
   res.json({ ok: true, effective: { ...periodEnv, ...cfg } });
 });
 
-// ---- 重置词 ----
+// ---- 重置词(2026-07-20 分工:换窗只认 SWITCH_WORDS,晚安/归档都不再换窗) ----
 const GOODNIGHT_WORDS = ["晚安"];
-const ARCHIVE_WORDS = ["归档", "换窗口", "开新窗口", "新窗口"];
+const ARCHIVE_WORDS = ["归档"];
+const SWITCH_WORDS = ["换窗口", "开新窗口", "新窗口"];
 function stripEnds(s) { return (s || "").trim().replace(/^[\s，,。.!！~～、]+|[\s，,。.!！~～、]+$/g, ""); }
 function detectReset(text) {
   const t = stripEnds(text);
   for (const w of GOODNIGHT_WORDS) if (t === w || (t.length <= 6 && t.startsWith(w))) return "goodnight";
+  for (const w of SWITCH_WORDS) if (t === w || (t.length <= 8 && t.includes(w))) return "switch";
   for (const w of ARCHIVE_WORDS) if (t === w || (t.length <= 8 && t.includes(w))) return "archive";
   return null;
 }
@@ -487,9 +507,13 @@ function handleMessages(req, res) {
   const reset = images.length ? null : detectReset(text);
   let newWindow = false;
   if (reset === "goodnight") {
-    newWindow = true;
-    text = `${text}\n\n【系统·今天收尾】对方说晚安要睡了。先像平时那样简短道句晚安,然后(若挂了记忆工具)归档今天,之后不用多说。`;
+    // 晚安只道别+归档,不换窗口:明早还在这个窗口接着聊(2026-07-20 起)
+    text = `${text}\n\n【系统·今天收尾】对方说晚安要睡了。先像平时那样简短道句晚安,然后(若挂了记忆工具)归档今天,之后不用多说。窗口不换,明天还在这继续。`;
   } else if (reset === "archive") {
+    // 「归档」只存不换:窗口留着继续聊
+    text = `【系统指令】立刻归档当前窗口(若挂了记忆工具),成功后只回一句「📦 归档好了」。窗口不换,接着聊。`;
+  } else if (reset === "switch") {
+    // 「换窗口」是唯一换窗入口:先归档再换
     newWindow = true;
     text = `【系统指令】立刻归档当前窗口(若挂了记忆工具),成功后只回一句「📦 归档好了,新窗口见」。`;
   }
@@ -501,18 +525,26 @@ function handleMessages(req, res) {
   if (!reset) {
     try { const w = weatherHint(text); if (w) hints.push(w); } catch (e) { log("[wx-hint]", e.message); }
     try { const p = periodHint(text); if (p) hints.push(p); } catch (e) { log("[period-hint]", e.message); }
-    // 上下文守卫:软线提醒晏叫她一起商量存什么(一窗一次);硬线注入归档指令并换窗口兜底。
+    // 上下文守卫:软线提醒晏叫她一起商量存什么(一轮压缩周期一次);硬线催归档进 OB
+    // (首催在硬线,之后每涨 CTX_ARCHIVE_EVERY_TOKENS 催一次增量)。守卫不换窗口。
+    // 观察模式(CTX_OBSERVE=1):同样走记账,但只记 /debug 不注入,供上线初期空转验证。
     if (CTX_GUARD_ON) {
       try {
-        const d = ctxDecide({ contextTokens: ctxTokens, softTokens: CTX_SOFT_TOKENS, hardTokens: CTX_HARD_TOKENS, softFired: ctxSoftFired, trusted: ctxTrusted });
-        if (d.level === "soft") { hints.push(ctxSoftNote(USER_NAME)); ctxSoftFired = true; log("[ctx] soft", ctxTokens); }
-        else if (d.level === "hard") { hints.push(ctxHardNote()); newWindow = true; log("[ctx] hard→archive", ctxTokens); }
+        const d = ctxDecide({ contextTokens: ctxTokens, softTokens: CTX_SOFT_TOKENS, hardTokens: CTX_HARD_TOKENS,
+                              archiveEveryTokens: CTX_ARCHIVE_EVERY_TOKENS, softFired: ctxSoftFired,
+                              lastArchiveTokens: ctxArchivedAt, trusted: ctxTrusted });
+        if (d.level !== "none") {
+          if (!CTX_OBSERVE) hints.push(d.level === "soft" ? ctxSoftNote(USER_NAME) : ctxHardNote());
+          else ctxLastWould = { level: d.level, tokens: ctxTokens, at: new Date().toISOString() };
+          if (d.level === "soft") ctxSoftFired = true; else ctxArchivedAt = ctxTokens;
+          log("[ctx]", CTX_OBSERVE ? "observe-would" : "fire", d.level, ctxTokens);
+        }
       } catch (e) { log("[ctx-hint]", e.message); }
     }
   }
   if (hints.length) text = `${hints.join("\n")}\n\n${text}`;
   lastUserAt = Date.now();
-  windowCleared = false;  // 她出现了:保温重新上岗(若这条是晚安/归档,回合结束会再置回 true)
+  windowCleared = false;  // 她出现了:保温重新上岗(若这条是「换窗口」,回合结束会再置回 true)
   log("[req]", { len: text.length, imgs: images.length, sysLen: system.length, stream, reset: reset || "-" });
   const sse = stream ? makeSSE(res) : makeCollector(res);
   enqueue({ text, images, system, sse, newWindow });
