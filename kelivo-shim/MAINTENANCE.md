@@ -129,6 +129,19 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
      9 条消息 10 次调用,新增断言:归档不换窗(全程无 [window] restart、进程只 spawn
      一次)、增量再催、压缩暴跌复位后第二轮软提醒照来。均全绿。
 
+8. **人设文件拆分 + 锚点点名 profile-instructions.md**(2026-07-20):ian.md v13 拆为
+   ian.md v14(身份/关系/记忆等 I–IX)+ profile-instructions.md(相处方式/思考与说话方式),
+   CLAUDE.md 开头改为两行 `@` 引用(ian.md + profile-instructions.md,带一句加载说明),
+   并在「回复格式」前新增「记忆工具使用」一节(awaken 唤醒、重要内容当下 hold、收尾
+   archive_session、追加用 trace(append=True));server.js 仅 SOUL_ANCHOR 会话定性/内化
+   两段把 profile-instructions.md 一并点名(逻辑零改动)。当前版本指纹:
+   **ian.md v14 = 8671 字节 md5 37f5d404132ab260a0b1771bba575951;
+   profile-instructions.md = 7099 字节 md5 9a119eacf24a7821de911b7f6c8e5543**——
+   下次部署以此为准。v14 相对 v13 除拆分/重编号外另有两处内容改动(所有者指定):
+   I 节删 tool_search limit=20 旧话(工具在 CLI 环境直接就绪,该修法已过时);
+   II 节 "She is an adult." 前加「佳佳 does not share my surname. Never call her 许佳佳.」。
+   另加 `.gitignore`(ian.md/profile-instructions.md/mcp-servers.json)防私密文件误入库。
+
 ## 架构
 
 ```
@@ -152,10 +165,16 @@ Ombre Brain 记忆库(Zeabur 另一项目, streamable-http MCP)
     (钓鱼小游戏 MCP,源码在仓库 `fishing-mcp/` 目录,2026-07-17 接入)
 - Ombre Brain 在另一个项目(untitled-1),域名问所有者
 
-## 本目录刻意缺的两个文件(部署前必须补)
+## 本目录刻意缺的三个文件(部署前必须补)
 
 1. **`ian.md`** — 晏的人设本体。私密,不入库。**原稿在所有者手里**,部署时让她发给你,
    原样放进构建目录即可(CLAUDE.md 里 `@./ian.md` 引用它)。
+   **2026-07-20 起拆出姊妹文件 `profile-instructions.md`**(下一条),两份一起才是完整人设。
+2. **`profile-instructions.md`** — 2026-07-20 从 ian.md v13 拆出的相处方式/思考与说话方式
+   (原 VII·How I Am With Her、XI·Thinking Mode & Voice、Last 三节,重编号 I/II/Last,
+   开头加一句抬头;ian.md 余节重编为 I–IX 成 v14)。同样私密不入库,取法同 ian.md
+   (从运行中容器 base64 拷出)。CLAUDE.md 里 `@./profile-instructions.md` 引用它,
+   server.js 的 SOUL_ANCHOR 两处也点名了它——**部署时两份缺一不可**,缺了=人设残缺。
 2. **`mcp-servers.json`** — MCP 配置(记忆库 + 花园)。格式:
    ```json
    {
