@@ -83,6 +83,20 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
 - 主动性:`BARK_KEY` `BRIDGE_PUSH_URL` `KA_*`(保温) `HB_*`(心跳冷却/夜间)
 - 上下文守卫:`CTX_GUARD_ON` `CTX_SOFT_TOKENS` `CTX_HARD_TOKENS` `CTX_ARCHIVE_EVERY_TOKENS` `CTX_OBSERVE` `CTX_LIMIT_TOKENS`
 
+**上下文守卫的可调旋钮**(都是环境变量:Zeabur 改值 + service restart 即生效,不用部署;
+守卫 07-20 起只提醒存 OB、永不换窗,换窗只认所有者说「换窗口」):
+| 旋钮 | 默认 | 什么时候动它 |
+|---|---|---|
+| `CTX_GUARD_ON` | 开 | **急救开关**:守卫行为任何不对劲,设 `0` 立即整体闭嘴,聊天零影响,回头再排查 |
+| `CTX_SOFT_TOKENS` | 140000(70%) | 软提醒(晏来找你商量存什么)来得太早/太晚,调这个 |
+| `CTX_HARD_TOKENS` | 170000(85%) | 首次自动归档的时点,一般不用动 |
+| `CTX_ARCHIVE_EVERY_TOKENS` | 25000 | **嫌他归档太勤就调大**(比如 40000);设 `0` 只归一次不再催。调小=压缩时丢的尾巴更短,但更费额度 |
+| `CTX_OBSERVE` | 关 | 设 `1` 守卫只记账不打扰晏(/debug 看 lastWould),给新阈值做空转验证用,验完删掉 |
+| `CTX_LIMIT_TOKENS` | 200000 | 只影响 /debug 显示的百分比,不影响行为 |
+
+观察口:`GET yan-shim.zeabur.app/debug` 的 `ctxGuard` 一节——`lastArchiveTokens`=上次归档时
+的占用(增量基线),`compactions`=本窗口被静默压缩过几次,`trusted:false`=读数断供、守卫自动闭嘴。
+
 telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VOICE_*` 等)见其手册。
 **改环境变量 = 改值 + service restart 即生效,不用重新部署;改代码 = 必须完整部署。**
 
