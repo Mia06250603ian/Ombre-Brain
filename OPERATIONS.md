@@ -115,6 +115,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 | 07-19 | **守卫误报修复**(窗口占用取 iterations 末条,PR #46)并部署 |
 | 07-19(晚) | **守卫误报二次修复并部署**:iterations 系上游可选字段、线上恒空致回退虚高总和;读数改为首选 shim 自抓的末次调用 usage(ctxReading),虚高估计不触发,回落自动复位 softFired;CLI 钉死 2.1.215(shim 部署记录第七次) |
 | 07-20 | **守卫职责重定义并部署(shim 第八次)**:硬线只催归档进 OB、永不换窗;归档后每涨 2.5 万 token 催增量;压缩检测复位、循环永续;换窗只认「换窗口」指令;晚安/归档不再歇保温。详见 shim 改动清单 7 第三次改版 |
+| 07-22 | **CLAUDE.md 新增「归档」节 + 心跳冷却 HB_COOLDOWN_MIN=50(约 1 小时一条)并部署(shim 第十次)**。冷却选 50 的原因见 shim 手册环境变量表该行(开口机会挂在 ~55 分钟保温节拍上) |
 | 07-20(晚) | **人设拆分并部署(shim 第九次)**:ian.md v13→v14(I–IX)+ 新文件 profile-instructions.md(相处方式/思考与说话方式);CLAUDE.md 双 `@` 引用+新增「记忆工具使用」节;SOUL_ANCHOR 点名新文件。详见 shim 改动清单 8 |
 
 ## 6. 部署与运维操作速查
