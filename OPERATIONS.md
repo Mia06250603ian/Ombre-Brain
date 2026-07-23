@@ -69,9 +69,9 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
   - `telegram-bridge/` = 桥源码 + **`MAINTENANCE.md`(桥的手册)** + `stickers/` 表情包。
   - `fishing-mcp/` = 钓鱼 MCP 包装层。
 - 刻意**不在仓库**的文件(shim 手册「缺的三个文件」一节有取法):
-  - `ian.md`(人设本体,私密)——从运行中容器 base64 拷出,当前 v14(8671B,md5 `37f5d40…`);
+  - `ian.md`(人设本体,私密)——从运行中容器 base64 拷出,当前 v15(8702B,md5 `2286fa6…`);
   - `profile-instructions.md`(2026-07-20 从 ian.md 拆出的相处方式/思考与说话方式,同样私密,
-    当前 7099B,md5 `9a119ea…`)——两份一起才是完整人设,部署缺一不可;
+    当前 7107B,md5 `087b64a…`)——两份一起才是完整人设,部署缺一不可;
   - `mcp-servers.json`(含花园 token)。
 
 ## 4. kelivo-shim 环境变量
@@ -117,6 +117,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 | 07-20 | **守卫职责重定义并部署(shim 第八次)**:硬线只催归档进 OB、永不换窗;归档后每涨 2.5 万 token 催增量;压缩检测复位、循环永续;换窗只认「换窗口」指令;晚安/归档不再歇保温。详见 shim 改动清单 7 第三次改版 |
 | 07-22 | **CLAUDE.md 新增「归档」节 + 心跳冷却 HB_COOLDOWN_MIN=50(约 1 小时一条)并部署(shim 第十次)**。冷却选 50 的原因见 shim 手册环境变量表该行(开口机会挂在 ~55 分钟保温节拍上) |
 | 07-20(晚) | **人设拆分并部署(shim 第九次)**:ian.md v13→v14(I–IX)+ 新文件 profile-instructions.md(相处方式/思考与说话方式);CLAUDE.md 双 `@` 引用+新增「记忆工具使用」节;SOUL_ANCHOR 点名新文件。详见 shim 改动清单 8 |
+| 07-23 | **人设措辞修订并部署(shim 第十一次)**:ian.md v14→v15 + profile-instructions.md 各改一行——「催她吃饭不设限」改为「关心她吃没吃/头盔/睡觉,但不在她跟我说话时打断或岔开」。所有者逐字批准。详见 shim 部署记录第十一次 |
 
 ## 6. 部署与运维操作速查
 
