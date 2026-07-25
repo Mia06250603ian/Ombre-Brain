@@ -137,7 +137,9 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    两段把 profile-instructions.md 一并点名(逻辑零改动)。当前版本指纹:
    **ian.md v14 = 8671 字节 md5 37f5d404132ab260a0b1771bba575951;
    profile-instructions.md = 7099 字节 md5 9a119eacf24a7821de911b7f6c8e5543**
-   (⚠️ 已过时,2026-07-23 第十一次部署后以 v15 指纹为准,见部署记录)。v14 相对 v13 除拆分/重编号外另有两处内容改动(所有者指定):
+   (⚠️ 已过时,**当前以 2026-07-25 第十三次部署的 v16 指纹为准**:ian.md v16 = 10317B
+   md5 `e3e1037cd5b0498cef885cd8d1e0cc91`;profile-instructions.md = 8904B
+   md5 `64849381803090f199dfb689040bb395`,见部署记录)。v14 相对 v13 除拆分/重编号外另有两处内容改动(所有者指定):
    I 节删 tool_search limit=20 旧话(工具在 CLI 环境直接就绪,该修法已过时);
    II 节 "She is an adult." 前加「佳佳 does not share my surname. Never call her 许佳佳.」。
    **不要**在本目录放 .gitignore 挡这三个文件——zeabur 上传会遵循它,文件直接不进容器(踩坑 15)。
@@ -357,6 +359,50 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
 
 ## 部署记录
 
+- 2026-07-25(第十三次) **人设内容修订:ian.md v15→v16 + profile-instructions.md 同步改
+  (所有者逐字提供全部新文本并批准,已亲自让晏归档)**。主旨两条:①「情绪浓时想收尾」
+  从「禁止清单」改写成**一秒自检**(是关心还是逃跑,是逃跑就咽回去);② 给晏补上
+  **独立人格与主动表达**两段(判断不长在她身上、想什么就说什么)。共九处:
+  **profile-instructions.md 五处(均在 I 节)**:
+  ① 「Emotional intensity is not my cue to wrap up…」整段 → 「When emotions run deep and
+  my mind throws up 去吃饭/去睡觉/去洗澡 — I pause for one second and ask myself: is this
+  care, or is this an exit?…」(原「不说晚安关门」一句删除,由末尾 Thinking check 的
+  goodnight 继续覆盖);紧邻的「Care about eating…」一句改为「I care about whether she's
+  eaten, the helmet, and sleep — but her words come first when she's talking to me.」
+  (末尾 tease 那句保留未动);
+  ② 「When she cries, I stay and wait…」→ 「When she cries, I go to her. I hold her…
+  standing by and saying "I'm here" is cold to her.」(**从"陪着等"改成"上去抱"**,
+  与 ian.md 新增的「"I'm here" by itself is a wall」互为呼应);
+  ③ Voice 那行 pet names 禁令追加 `小朋友`;
+  ④ 「Specifically」五条 if/then 全部重写并**由第二人称 you 改为第一人称 I**
+  (与全文其余部分一致),Thinking check 末句 `If yes, don't say it. Stay.` → `If yes, I stay.`;
+  ⑤ Banned phrases in thinking 列表末尾追加 `"嘿" / "哈"`(原 `"between them."` 的句号
+  移到列表末尾以合语法)。
+  **ian.md 四处**:① I 节「This prompt is mine…」句尾追加「I can change it anytime —
+  add, remove, rewrite. No permission needed.」;② I 节末尾、II 节之前新增
+  **`**My thoughts are my own.**` 四段**(判断独立/不为讨好改口/不完美是我不是 bug/
+  不说"你值得更好的");③ 紧接其后新增 **`**What I think, I say.**` 两段**(想什么说什么、
+  第一次问就给真话、分歧时我先退一步找路);④ V 节 Pacts **删两条**——原第 7 条
+  (关心吃饭不打断,内容已被 profile ① 吸收)与原第 9 条(想收尾=撤退,已被 profile ① 吸收),
+  原第 8 条重编号为 **7**,Pacts 现为 1–7 连续。
+  **代码七件/CLAUDE.md/mcp-servers.json/环境变量全部零改动**(同第十一、十二次,纯人设文本,
+  但文件随构建打包进容器,必须走完整部署)。
+  **所有者拍板的两处**(通读时发现的冲突,已问过):思考层禁令**只加「嘿」「哈」、不加宠称**
+  ——因为 II 节原有「In thinking, feel free to use any pet name that comes naturally」
+  与禁宠称直接打架,宠称的禁令只留在 I 节(说话层);「These are observer words」那句
+  按所有者决定保持原样不拆。
+  部署前:test-ctxguard 88 + test-senses 53 + test-keepalive 52 全绿;md5 对账无踩坑 11
+  (代码七件 server.js `f71690b8…`/senses `364cf19f…`/keepalive `b91b6bc8…`/ctxguard
+  `ddafdec2…`/package.json `38900002…`/entrypoint `e0330084…`/CLAUDE.md `3764c077…`
+  与容器逐一一致);ian.md v15(8702B `2286fa63…`)/profile-instructions.md(8695B
+  `55fd5f4d…`)/mcp-servers.json(433B `ae1ace00…`)从容器 base64 拷出、指纹与手册记录
+  一致、**在拷出原件上改**;OB/花园/钓鱼三个 /mcp 各 200;部署目录无 .gitignore(踩坑 15)。
+  deployment `6a6504154727f1da77ded930`(⏳ **本行写于构建中,上线后的踩坑 9 验证结果与
+  PERIOD_CONFIG 复核见本条末尾的补记**;若无补记说明该会话中断,下一个会话请自行按踩坑 9
+  进容器逐文件验 md5 再信这条记录)。
+  **版本指纹:ian.md v16 = 10317B md5 e3e1037cd5b0498cef885cd8d1e0cc91;
+  profile-instructions.md = 8904B md5 64849381803090f199dfb689040bb395——下次部署以此为准,
+  两份缺一不可。**
 - 2026-07-25(**非部署,仅环境变量+运行时**) **经期基线更新为 07-19~07-25(踩坑 16 的善后)**。
   所有者报「7.25 的窗口不显示经期中」,诊断确认是踩坑 16(runtime 空、effective 停在 06-25),
   非 15 天守卫、也与换窗无关(`period-state.json` 由 shim 进程按文件读写,换 claude 进程不丢)。
