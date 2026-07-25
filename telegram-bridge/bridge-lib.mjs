@@ -137,6 +137,25 @@ export function bubblesFor(text, { split = true, maxLen = 200 } = {}) {
   return splitBubbles(t);
 }
 
+// ---- ears 语音分析结果 → 一句绑定在这条消息上的文字 ----
+// 镜像 ears 结果卡「复制键」的格式(ears static/index.html):哪个AI读了都懂。
+// 只描述这一条,不做全局漂浮注入(ears README 的实战教训)。
+// 输出永远带「（…）」注解、长度必超重置词匹配窗口(≤8 字):语音转写出「归档/晚安」
+// 在 bridge 和 shim 两侧的 detectReset 都不会触发——归档指令必须所有者亲手打字
+// (呼应 shim 踩坑 13:重大指令不代发。测试里有这两条守护用例,别删)。
+export function formatEarsResult(d) {
+  const said = ((d || {}).text || "").trim();
+  if (!said) return null;
+  const parts = [];
+  if (d.emotion) parts.push(`语气：${d.emotion}`);
+  if (d.hint) parts.push(String(d.hint).trim());
+  const rel = d.relative && Object.keys(d.relative).length
+    ? "和平时比" + Object.entries(d.relative).map(([k, v]) => k + v).join("、") : "";
+  if (rel) parts.push(rel);
+  if (!parts.length) parts.push("语气分析还在认识她的声音");
+  return `[语音] ${said}（${parts.join("，")}）`;
+}
+
 // ---- Telegram 文件路径 → Anthropic image block 的 media_type ----
 const MEDIA = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif" };
 export function mediaTypeOf(filePath) {

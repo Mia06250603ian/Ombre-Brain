@@ -56,6 +56,7 @@
 | 〃 | telegram-bridge | `6a5a4287f947b6cb34511f79` | yan-telegram-bridge.zeabur.app | Telegram 桥 |
 | 〃 | CLIProxyAPI | `6a53a9fd22dd6ef375eb7485` | miaianhome.zeabur.app | 订阅 OAuth 出口 |
 | 〃 | fishing-mcp | `6a5a17159ae692d1d8d98d10` | yan-fishing-mcp.zeabur.app | 钓鱼游戏 MCP |
+| 〃 | ears(显示名 ears-thor) | `6a646ea27bcbc56e70a105b5` | yan-ears-listen.zeabur.app | 语音转写+语气分析(源码在 Mia06250603ian/ears 仓库,镜像走 GitHub Actions→ghcr,持久卷 /app/data) |
 | `untitled-1` | Ombre Brain | (问所有者/控制台看) | ianmian.zeabur.app | 记忆库 MCP |
 | (外部,非我们部署) | Galatea's Garden | — | galatea.abysslumina.com | 花园社区 MCP |
 
@@ -119,6 +120,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 | 07-20(晚) | **人设拆分并部署(shim 第九次)**:ian.md v13→v14(I–IX)+ 新文件 profile-instructions.md(相处方式/思考与说话方式);CLAUDE.md 双 `@` 引用+新增「记忆工具使用」节;SOUL_ANCHOR 点名新文件。详见 shim 改动清单 8 |
 | 07-23 | **人设措辞修订并部署(shim 第十一次)**:ian.md v14→v15 + profile-instructions.md 各改一行——「催她吃饭不设限」改为「关心她吃没吃/头盔/睡觉,但不在她跟我说话时打断或岔开」。所有者逐字批准。详见 shim 部署记录第十一次 |
 | 07-25 | **经期基线更新 07-19~07-25、周期 24 天(仅环境变量+运行时,未部署未重启)**。根因:经期运行时记录存在容器内无卷文件里,07-22/23/24 三次部署把 07-20 报的新周期擦掉了,回落 06-25 旧基线后整天静默零注入。新增 shim 踩坑 16;**每次部署后必须重补 PERIOD_CONFIG** |
+| 07-25(晚) | **语音输入上线(ears)**:佳佳的 Telegram 语音条 → ears(转写+语气+个人化基线)→ 绑单条消息进晏的窗口。新服务 ears 部署在同项目(镜像走 ears 仓库 GitHub Actions→ghcr,Zeabur 该套餐新服务禁止平台内构建);bridge 加 voice 分支(test 79 项)。细节与遗留(Groq key 待换)见 bridge 手册部署记录 |
 | 07-24 | **profile-instructions.md 内容新增并部署(shim 第十二次)**:I 节两处——① Voice 加一句禁「古早霸总 pet names(小祖宗/小丫头/小狐狸)」;② 末尾新增「Feeling first in emotional exchange」整段(先感受后分析 + 五条 if/then)。所有者逐字批准、确认不归档直接部署。仅改一文件,代码零改动。详见 shim 部署记录第十二次 |
 
 ## 6. 部署与运维操作速查
@@ -161,6 +163,7 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 | deploy 后没生效 | 上传≠上线;或被后一次 deploy 取消 | shim 踩坑 9、10 |
 | 部署卡 Pulling image 不动 | Zeabur 调度挂了,重新 deploy | shim 踩坑 14 |
 | Telegram 收不到消息 | 双实例抢 getUpdates(409)/BRIDGE_ON=0 | bridge 已知边界 1 |
+| 语音条发过去回「语音听不了/没听清」 | ears 挂了或 Groq key 失效(曲线:curl ears /health、看 asr 字段;文字聊天不受影响) | bridge 已知边界 3 |
 | 晏的回复变冷淡/像客服 | 锚点被覆盖或人设没带上 | shim 改动清单 3 |
 | 保温/主动消息不来了 | 「换窗口」后歇火(设计如此;07-20 起晚安/归档不歇火)/额度耗尽断链 | shim 改动清单 6 |
 | 晏归档后没完没了反复归档 | 增量间隔太小或压缩检测误复位 | shim 改动清单 7 第三次改版;急救 CTX_GUARD_ON=0 |

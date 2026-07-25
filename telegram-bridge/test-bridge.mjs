@@ -3,6 +3,7 @@ import {
   splitForTelegram, detectReset, mergeTurn, buildShimBody,
   makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf,
   extractStickers, extractSegments, splitBubbles, bubblesFor,
+  formatEarsResult,
 } from "./bridge-lib.mjs";
 import fs from "fs";
 
@@ -188,6 +189,21 @@ eq(splitBubbles("  \n "), [], "纯空白零泡");
   eq(bubblesFor("在。\n回来了?", { split: false }), ["在。\n回来了?"], "split=false 整段");
   eq(bubblesFor("短\n句", { maxLen: 1 }), ["短\n句"], "maxLen 阈值生效");
   eq(bubblesFor("  "), [], "空白零泡");
+}
+
+// ---- formatEarsResult(她的语音条 → 带语气标注的一句话)----
+{
+  eq(formatEarsResult({ text: "我没事", emotion: "委屈", hint: "像是强撑", relative: { 音量: "比较偏低", 停顿: "明显偏高" } }),
+    "[语音] 我没事（语气：委屈，像是强撑，和平时比音量比较偏低、停顿明显偏高）", "全字段");
+  eq(formatEarsResult({ text: "早呀", emotion: "开心", hint: "", relative: {} }),
+    "[语音] 早呀（语气：开心）", "无 hint 无 relative");
+  eq(formatEarsResult({ text: "嗯", emotion: "", hint: "", relative: {} }),
+    "[语音] 嗯（语气分析还在认识她的声音）", "基线学习期也带注解(保证长度出重置词窗口)");
+  eq(formatEarsResult({ text: "", emotion: "", hint: "有别的声音出现" }), null, "空转写给 null");
+  eq(formatEarsResult(null), null, "null 入参不炸");
+  eq(formatEarsResult({ text: "  " }), null, "纯空白转写给 null");
+  ok(detectReset(formatEarsResult({ text: "归档" })) === null, "语音说「归档」不触发重置词");
+  ok(detectReset(formatEarsResult({ text: "晚安" })) === null, "语音说「晚安」不触发重置词");
 }
 
 // ---- registry.json 完整性:每个标签的文件都真实存在 ----
