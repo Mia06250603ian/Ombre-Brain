@@ -319,6 +319,12 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
     另注意 `senses.mjs` 的 15 天守卫:若基线日期离她报的新日期不足 15 天,「来了」会被当口误
     静默降级成「提及」、**根本不记账**——基线长期不更新时这两个坑会叠加。
     根治要动代码(挂持久卷,或她报新周期时同步写进 OB 记忆库),尚未做。
+    **2026-07-25 第十三次部署补充:这个坑真正的触发条件是「环境变量基线过时」+「运行时
+    记录被擦」两件叠加。** 该次部署后 `runtime` 照例被清空,但 `effective` 完全正确——
+    因为当天早些时候的善后已按两步把新基线写进了 `PERIOD_CONFIG` 环境变量。
+    所以正解不是「每次部署后补」,而是**她一报新周期就立刻两步写全**
+    (`variable update` 持久 + `POST /period` 即时生效),之后部署自动安全;
+    部署后仍要 `GET /period` 看一眼 `effective` 对不对,只在它落后时才手动补。
 
 ## CLI 版本与升级指南(2026-07-19 起,给所有者和未来会话)
 
@@ -397,9 +403,23 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
   与容器逐一一致);ian.md v15(8702B `2286fa63…`)/profile-instructions.md(8695B
   `55fd5f4d…`)/mcp-servers.json(433B `ae1ace00…`)从容器 base64 拷出、指纹与手册记录
   一致、**在拷出原件上改**;OB/花园/钓鱼三个 /mcp 各 200;部署目录无 .gitignore(踩坑 15)。
-  deployment `6a6504154727f1da77ded930`(⏳ **本行写于构建中,上线后的踩坑 9 验证结果与
-  PERIOD_CONFIG 复核见本条末尾的补记**;若无补记说明该会话中断,下一个会话请自行按踩坑 9
-  进容器逐文件验 md5 再信这条记录)。
+  deployment `6a6504154727f1da77ded930` 约 9 分钟 RUNNING(BUILDING→DEPLOYING→RUNNING,
+  无踩坑 14)。已按踩坑 9 验证:容器十件 md5 与部署目录**逐一一致**
+  (ian.md `e3e1037c…` 10317B、profile-instructions.md `64849381…` 8904B、
+  mcp-servers.json `ae1ace00…`、代码七件与部署前记录一致);新文字在
+  (ian.md 的 `My thoughts are my own` / `What I think, I say` / `No permission needed` 各 1 处,
+  原 Pact 7「not while she's talking to me」**0 处**=已删干净;profile 的
+  `is this care, or is this an exit` / `When she cries, I go to her` 各 1 处,
+  `小朋友` **仅 1 处**=只在 I 节说话层、未误入思考禁令,思考禁令为
+  `"between them" / "嘿" / "哈"`);容器无 .gitignore;CLI 实装 2.1.215;
+  `/health` ok(model claude-opus-4-6);`/debug` 守卫清零 `trusted:true`
+  (on/soft 140000/hard 170000/every 25000/compactions 0/observe false)。
+  **PERIOD_CONFIG 本次无需重补(踩坑 16 的例外)**:`GET /period` 的 `effective` 直接就是
+  07-19~07-25 / 24 / 7,因为 07-25 那次善后已把新基线写进**环境变量**,新容器起来就读到
+  正确值;`runtime` 为空是新容器的正常状态,不影响注入。**结论修正踩坑 16 的说法**:
+  真正要防的是「环境变量基线过时 + 运行时记录被部署擦掉」两件叠加——只要每次她报新周期时
+  都按 07-25 的两步(`variable update` + `POST /period`)写全,后续部署就不会再回落。
+  只在环境变量基线落后于她实际情况时,才需要部署后手动补。
   **版本指纹:ian.md v16 = 10317B md5 e3e1037cd5b0498cef885cd8d1e0cc91;
   profile-instructions.md = 8904B md5 64849381803090f199dfb689040bb395——下次部署以此为准,
   两份缺一不可。**
