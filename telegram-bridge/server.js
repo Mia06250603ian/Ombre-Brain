@@ -7,6 +7,7 @@ import path from "path";
 import {
   splitForTelegram, detectReset, mergeTurn, buildShimBody,
   makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf, extractSegments, bubblesFor,
+  formatEarsResult,
 } from "./bridge-lib.mjs";
 
 const PORT = process.env.PORT || 8080;
@@ -20,6 +21,11 @@ const DEBOUNCE_MS = +(process.env.DEBOUNCE_MS || 4000);
 const TG_THINKING = process.env.TG_THINKING === "1";  // 思考折叠引用,默认关
 const BRIDGE_ON = process.env.BRIDGE_ON !== "0";      // 总开关:设 0 只留 /health
 const TURN_TIMEOUT_MS = +(process.env.TURN_TIMEOUT_MS || 15 * 60000);
+// ears:她的语音条 → 转写+语气分析(独立服务,见 ears 仓库与其部署指南)。两个变量都配了才开。
+const EARS_URL = (process.env.EARS_URL || "").replace(/\/$/, "");
+const EARS_TOKEN = process.env.EARS_TOKEN || "";
+const EARS_ON = !!(EARS_URL && EARS_TOKEN);
+const EARS_TIMEOUT_MS = +(process.env.EARS_TIMEOUT_MS || 60000);
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 
@@ -41,6 +47,25 @@ async function tgFileToImage(fileId) {
   if (!r.ok) return null;
   const b64 = Buffer.from(await r.arrayBuffer()).toString("base64");
   return { type: "image", source: { type: "base64", media_type: mt, data: b64 } };
+}
+// 她的语音条:下载 → 发 ears 分析,拿回「转写+语气」。任何失败抛错,调用方兜底提示。
+async function earsListen(fileId) {
+  const f = await tg("getFile", { file_id: fileId });
+  const p = f.result?.file_path;
+  if (!p) throw new Error("getFile 失败");
+  const r = await fetch(`https://api.telegram.org/file/bot${BOT}/${p}`);
+  if (!r.ok) throw new Error(`下载语音 HTTP ${r.status}`);
+  const buf = Buffer.from(await r.arrayBuffer());
+  const ext = (p.split(".").pop() || "oga").toLowerCase();
+  const form = new FormData();
+  form.append("file", new Blob([buf]), `voice.${ext}`);
+  const resp = await fetch(`${EARS_URL}/api/listen`, {
+    method: "POST", headers: { "x-token": EARS_TOKEN }, body: form,
+    signal: AbortSignal.timeout(EARS_TIMEOUT_MS),
+  });
+  const d = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(d.error || `ears HTTP ${resp.status}`);
+  return d;
 }
 async function sendReply(chatId, text) {
   for (const chunk of splitForTelegram(text)) await tg("sendMessage", { chat_id: chatId, text: chunk });
@@ -232,8 +257,23 @@ async function onMessage(msg) {
         if (img) { images.push(img); text = text || `(她发来一个贴纸)`; }
         else text = text || `(她发来一个贴纸:${msg.sticker.emoji || "🙂"})`;
       }
+    } else if (msg.voice && EARS_ON) {
+      // 语音条走 ears:转写+语气,绑在这一条消息上进晏的窗口
+      try {
+        const d = await earsListen(msg.voice.file_id);
+        const line = formatEarsResult(d);
+        if (!line) {
+          await tg("sendMessage", { chat_id: chatId, text: `⚠️[bridge] 语音没听清${d?.error ? `(${d.error})` : ""},再说一次?` });
+          return;
+        }
+        text = text ? `${text}\n${line}` : line;
+      } catch (e) {
+        log("[ears-err]", e.message);
+        await tg("sendMessage", { chat_id: chatId, text: `⚠️[bridge] 语音听不了(${e.message}),打字告诉他吧` });
+        return;
+      }
     } else if (msg.voice || msg.audio || msg.video || msg.document) {
-      await tg("sendMessage", { chat_id: chatId, text: "⚠️[bridge] 这类消息暂时传不过去(先支持文字/图片/贴纸)" });
+      await tg("sendMessage", { chat_id: chatId, text: "⚠️[bridge] 这类消息暂时传不过去(支持文字/图片/贴纸/语音条)" });
       return;
     }
   } catch (e) { log("[media-err]", e.message); }
@@ -282,7 +322,7 @@ app.post("/push", async (req, res) => {
   try { await sendOutput(lastChatId, text); res.json({ ok: true }); }
   catch (e) { log("[push-err]", e.message); res.status(502).json({ ok: false, error: e.message }); }
 });
-app.get("/health", (_q, r) => r.json({ ok: true, on: BRIDGE_ON, polling, inflight, buffered: buffer.length, queued: turnQueue.length, stickers: stickerTags.length }));
+app.get("/health", (_q, r) => r.json({ ok: true, on: BRIDGE_ON, polling, inflight, buffered: buffer.length, queued: turnQueue.length, stickers: stickerTags.length, ears: EARS_ON }));
 app.listen(PORT, () => log(`telegram-bridge on :${PORT} shim=${SHIM_URL} on=${BRIDGE_ON}`));
 
 if (!BRIDGE_ON) log("[bridge] BRIDGE_ON=0,只留 /health");

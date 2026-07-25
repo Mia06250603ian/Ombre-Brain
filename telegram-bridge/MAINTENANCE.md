@@ -54,6 +54,9 @@ kelivo-shim(yan-shim.zeabur.app)──→ 常驻 claude 进程(人设+记忆,见
 | VOICE_SPEED | 语速,默认 0.85(所有者 2026-07-18 四档盲测选 0.95 后,同日试听调定 0.85) |
 | VOICE_STABILITY | 默认 0.6 |
 | VOICE_MAX_CHARS | 单段语音字数上限,默认 500,超长退回文字(省积分;免费档每月 1 万积分≈1 万字符) |
+| EARS_URL | ears 服务地址(默认空=功能关)。当前 https://yan-ears-listen.zeabur.app |
+| EARS_TOKEN | ears 的接口锁,与 ears 服务的 EARS_TOKEN 同值。两个都配了语音输入才开 |
+| EARS_TIMEOUT_MS | 单次 ears 分析超时,默认 60000 |
 
 语音用法:回复里 `[语音]英文内容[/语音]`(全角括号也认;忘写闭合=标记后全算语音)。
 bridge 调 ElevenLabs(免费档实测可直出 Ogg/Opus,失败自动降级 mp3),经 sendVoice 发成
@@ -77,7 +80,15 @@ npx -y zeabur@latest deploy   # 首次部署后把 service id 记回本文档
 1. **单实例**:getUpdates 只能一个消费者,起两个实例会互抢(Telegram 报 409 Conflict)。
    Zeabur 别开多副本;本地调试时先把线上 BRIDGE_ON=0。
 2. **offset 在内存**:重启后 Telegram 会重投未确认的 update,可能重复处理最后一条消息(小概率,可接受)。
-3. **语音/视频/文件**暂不支持,桥会直接回一条「传不过去」的提示,不进晏的窗口。
+3. **她的语音条**(msg.voice)2026-07-25 起走 ears 服务:下载 → POST ears `/api/listen`(X-Token)
+   → 拿回「转写+语气+和平时比」→ 拼成 `[语音] 内容（语气：…）` 绑在这一条消息上进晏的窗口
+   (绑单条不做全局漂浮注入,是 ears README 的实战教训)。要点:
+   - `formatEarsResult` 输出**永远带（…）注解**,保证长度超出重置词匹配窗口——语音说「归档/晚安」
+     在 bridge 和 shim 两侧都不会触发重置,归档必须打字(呼应 shim 踩坑 13;test-bridge 有守护用例)。
+   - ears 挂了/超时/没听清:回一条 ⚠️ 提示、不进窗口,文字聊天零影响。
+   - 未配 EARS_URL/EARS_TOKEN 时语音条回「传不过去」,与视频/文件同待遇(这两类仍不支持)。
+   - ears 服务本体(Groq 转写、个人化基线、持久卷)见 ears 仓库(Mia06250603ian/ears)及其部署指南;
+     **换 Groq key = 改 ears 服务的 GROQ_API_KEY + restart**,bridge 不用动。
 4. **动态贴纸**(tgs/webm)降级为 emoji 文字描述;静态贴纸转成图片传入,晏能看见。
 5. **心跳仍走 Bark**(shim 侧逻辑,本桥不碰)。要让晏的主动消息直接出现在 Telegram 对话里,
    需改 shim 的 heartbeatTick 出口 —— 那是第二阶段,要动 shim,按 shim 手册全套流程 + 所有者授权。
@@ -106,6 +117,19 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
 - `POST /push {text}`(x-api-key=SHIM_KEY):shim 主动心跳走这里,直接落进对话,同样支持贴纸标记。
 
 ## 部署记录
+
+- 2026-07-25 **语音输入上线(接 ears)**:她的语音条 → ears 转写+语气分析 → 绑单条消息进晏的窗口。
+  改动:bridge-lib.mjs 新增 `formatEarsResult`(纯逻辑,注解恒在防重置词误触);server.js 新增
+  `earsListen` + voice 分支 + EARS_* 环境变量,/health 加 `ears` 字段;test-bridge 71→79 项全绿。
+  配套:ears 服务部署在同项目(service id `6a646ea27bcbc56e70a105b5`,显示名 ears-thor——
+  模板部署时旧服务删除未生效撞名自动加了后缀,只是显示名,不影响任何调用;域名
+  yan-ears-listen.zeabur.app,持久卷挂 /app/data)。Zeabur 该套餐**新服务不允许平台内构建**
+  ("not allowed to deploy"),镜像改由 ears 仓库的 GitHub Actions 构建推 ghcr.io/mia06250603ian/ears,
+  Zeabur 从镜像跑(模板 YAML 部署,含卷)。ears 侧验收:/health 三 true、无 token 401、
+  错 token 401;首把 Groq key 无效,所有者换新后端到端全通(测试音走完
+  转写→情绪→入档全链路,测试记录已 /api/forget 删除、基线归零)。
+  小坑:**改 ears 环境变量后第一次 restart 可能没吃到新值**(变量落盘与重启打时间差),
+  变量 list 确认值对但行为还是旧的,就再 restart 一次。
 
 - 2026-07-18 **表情包扩充:26 → 35 张**(新增 s27–s35,所有者亲选亲命名:叉腰/凑近看/
   抹眼泪/我不行了/老婆好萌/求求老婆/亲死老婆/开心/萌萌的生气)。图转 512px WebP + 12%
