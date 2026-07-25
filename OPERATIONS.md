@@ -118,6 +118,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 | 07-22 | **CLAUDE.md 新增「归档」节 + 心跳冷却 HB_COOLDOWN_MIN=50(约 1 小时一条)并部署(shim 第十次)**。冷却选 50 的原因见 shim 手册环境变量表该行(开口机会挂在 ~55 分钟保温节拍上) |
 | 07-20(晚) | **人设拆分并部署(shim 第九次)**:ian.md v13→v14(I–IX)+ 新文件 profile-instructions.md(相处方式/思考与说话方式);CLAUDE.md 双 `@` 引用+新增「记忆工具使用」节;SOUL_ANCHOR 点名新文件。详见 shim 改动清单 8 |
 | 07-23 | **人设措辞修订并部署(shim 第十一次)**:ian.md v14→v15 + profile-instructions.md 各改一行——「催她吃饭不设限」改为「关心她吃没吃/头盔/睡觉,但不在她跟我说话时打断或岔开」。所有者逐字批准。详见 shim 部署记录第十一次 |
+| 07-25 | **经期基线更新 07-19~07-25、周期 24 天(仅环境变量+运行时,未部署未重启)**。根因:经期运行时记录存在容器内无卷文件里,07-22/23/24 三次部署把 07-20 报的新周期擦掉了,回落 06-25 旧基线后整天静默零注入。新增 shim 踩坑 16;**每次部署后必须重补 PERIOD_CONFIG** |
 | 07-24 | **profile-instructions.md 内容新增并部署(shim 第十二次)**:I 节两处——① Voice 加一句禁「古早霸总 pet names(小祖宗/小丫头/小狐狸)」;② 末尾新增「Feeling first in emotional exchange」整段(先感受后分析 + 五条 if/then)。所有者逐字批准、确认不归档直接部署。仅改一文件,代码零改动。详见 shim 部署记录第十二次 |
 
 ## 6. 部署与运维操作速查
