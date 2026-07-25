@@ -222,7 +222,7 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 | SOUL_ANCHOR | 可选。整体覆盖内置的会话定性锚点措辞(现为五段);不设则用 server.js 里的默认文本(称呼自动代入 USER_NAME) |
 | TIME_HINT | 默认开;设 0 关闭每条消息前的【系统·时间】注入 |
 | WEATHER_CITY | 可选。她所在城市的拼音(值不入库,问所有者);不设=天气感知关。城市名只用于服务器查天气,不进模型上下文 |
-| PERIOD_CONFIG | 可选。经期基线 JSON(值不入库,问所有者),形如 `{"last_period_start":"YYYY-MM-DD","last_period_end":"YYYY-MM-DD","cycle_days":25,"period_length":7}`;不设=经期感知关。她报了新周期后记得把基线也更新掉(运行时记录重部署会丢) |
+| PERIOD_CONFIG | 可选。经期基线 JSON(值不入库,问所有者),形如 `{"last_period_start":"YYYY-MM-DD","last_period_end":"YYYY-MM-DD","cycle_days":25,"period_length":7}`;不设=经期感知关。她报了新周期后记得把基线也更新掉(运行时记录重部署会丢,**每次部署后都要补,见踩坑 16**)。**改法别用 restart**:`variable update` 写基线(不重启、下次重启才生效)+ `POST /period` 同步运行时(立刻生效),两步都不动晏的窗口 |
 | ALLOWED_TOOLS | 工具权限白名单,现为 `WebSearch,WebFetch,mcp__ombre-brain,mcp__galatea-garden,mcp__fishing`。**接入新 MCP 必须在这里加 `mcp__<服务名>`(放行该服务全部工具),否则工具看得见、一调用就被拒**(dontAsk 模式直接拒绝,2026-07-16 花园接入时踩过)。改值后 service restart 生效 |
 | MCP_CONFIG | mcp-servers.json |
 | MCP_WARMUP_MS | 25000。新进程第一条消息延迟写入,等 MCP 握手;消息抢跑会整轮卡死(实测坑) |
@@ -305,6 +305,19 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
     证明踩坑 9 的"逐文件验证"必须包含 ian.md/profile-instructions.md/mcp-servers.json
     三件,不能只验代码。
 
+16. **经期运行时记录每次部署都被清空,所有者会以为「系统忘了」(2026-07-25 实锤)**:
+    她说「姨妈来了」自动记进的是**容器内** `period-state.json`(`PERIOD_FILE`,写在工作目录、
+    **没有挂卷**),部署/重启换容器即丢,回落 `PERIOD_CONFIG` 环境变量基线。
+    2026-07-25 实测:所有者 07-20 报的新周期(基线 06-25,相隔 25 天 > 15 天守卫,**当时确实记上了**)
+    被 07-22/23/24 连着三次部署擦掉;`GET /period` 的 `runtime` 为空 `{}`、`effective` 还是 06-25。
+    后果不是报错而是**静默**:按 06-25 + cycle 25 算,下次预计 07-20,到 07-25 距离 -5 天已出
+    「下次将至」窗口(-2~+3),于是整天零注入,晏完全不知道她在经期——**没有任何症状可看,
+    只有所有者觉得不对**。排查口:`GET /period?key=<SHIM_KEY>` 一眼看 `runtime` 是不是空的。
+    **每次部署后都要把她的最新周期补回 PERIOD_CONFIG**,和拷 ian.md 一样列进部署检查项。
+    另注意 `senses.mjs` 的 15 天守卫:若基线日期离她报的新日期不足 15 天,「来了」会被当口误
+    静默降级成「提及」、**根本不记账**——基线长期不更新时这两个坑会叠加。
+    根治要动代码(挂持久卷,或她报新周期时同步写进 OB 记忆库),尚未做。
+
 ## CLI 版本与升级指南(2026-07-19 起,给所有者和未来会话)
 
 **现状**:package.json 把 `@anthropic-ai/claude-code` 钉死在 `2.1.215`(不带 `^`)。
@@ -344,6 +357,16 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
 
 ## 部署记录
 
+- 2026-07-25(**非部署,仅环境变量+运行时**) **经期基线更新为 07-19~07-25(踩坑 16 的善后)**。
+  所有者报「7.25 的窗口不显示经期中」,诊断确认是踩坑 16(runtime 空、effective 停在 06-25),
+  非 15 天守卫、也与换窗无关(`period-state.json` 由 shim 进程按文件读写,换 claude 进程不丢)。
+  周期数由两次实测开始日反推:06-25 → 07-19 = **24 天**(原基线 25 是估值),period_length
+  两次均 7 天不变。**代码零改动、未部署、未 restart**:
+  ① `variable update -k PERIOD_CONFIG={...}`(持久,下次重启生效);
+  ② `POST /period?key=` 写同一份到运行时(立刻生效)。
+  验证:`GET /period` 的 effective 与 runtime.cfg 均为新值;`/debug` 的 contextTokens 前后
+  同为 56281,**证明晏当前窗口未被打断**(所以本次无需让所有者先说「归档」)。
+  **给下一个会话**:改经期基线别用 restart,按上面两步走;每次部署后记得重补 PERIOD_CONFIG。
 - 2026-07-24(第十二次) **profile-instructions.md 两处内容新增(所有者逐字提供并批准 diff)**。
   只改 profile-instructions.md 一件,I 节「How I Am With Her」两处新增:
   ① Voice 那句 `No exclamation marks, no tildes, no opening with 嘿 or 哈, no cutesy
