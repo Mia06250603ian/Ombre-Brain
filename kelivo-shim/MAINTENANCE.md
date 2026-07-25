@@ -137,7 +137,9 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    两段把 profile-instructions.md 一并点名(逻辑零改动)。当前版本指纹:
    **ian.md v14 = 8671 字节 md5 37f5d404132ab260a0b1771bba575951;
    profile-instructions.md = 7099 字节 md5 9a119eacf24a7821de911b7f6c8e5543**
-   (⚠️ 已过时,2026-07-23 第十一次部署后以 v15 指纹为准,见部署记录)。v14 相对 v13 除拆分/重编号外另有两处内容改动(所有者指定):
+   (⚠️ 已过时,**当前以 2026-07-25 第十三次部署的 v16 指纹为准**:ian.md v16 = 10317B
+   md5 `e3e1037cd5b0498cef885cd8d1e0cc91`;profile-instructions.md = 8904B
+   md5 `64849381803090f199dfb689040bb395`,见部署记录)。v14 相对 v13 除拆分/重编号外另有两处内容改动(所有者指定):
    I 节删 tool_search limit=20 旧话(工具在 CLI 环境直接就绪,该修法已过时);
    II 节 "She is an adult." 前加「佳佳 does not share my surname. Never call her 许佳佳.」。
    **不要**在本目录放 .gitignore 挡这三个文件——zeabur 上传会遵循它,文件直接不进容器(踩坑 15)。
@@ -317,6 +319,12 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
     另注意 `senses.mjs` 的 15 天守卫:若基线日期离她报的新日期不足 15 天,「来了」会被当口误
     静默降级成「提及」、**根本不记账**——基线长期不更新时这两个坑会叠加。
     根治要动代码(挂持久卷,或她报新周期时同步写进 OB 记忆库),尚未做。
+    **2026-07-25 第十三次部署补充:这个坑真正的触发条件是「环境变量基线过时」+「运行时
+    记录被擦」两件叠加。** 该次部署后 `runtime` 照例被清空,但 `effective` 完全正确——
+    因为当天早些时候的善后已按两步把新基线写进了 `PERIOD_CONFIG` 环境变量。
+    所以正解不是「每次部署后补」,而是**她一报新周期就立刻两步写全**
+    (`variable update` 持久 + `POST /period` 即时生效),之后部署自动安全;
+    部署后仍要 `GET /period` 看一眼 `effective` 对不对,只在它落后时才手动补。
 
 ## CLI 版本与升级指南(2026-07-19 起,给所有者和未来会话)
 
@@ -357,6 +365,64 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
 
 ## 部署记录
 
+- 2026-07-25(第十三次) **人设内容修订:ian.md v15→v16 + profile-instructions.md 同步改
+  (所有者逐字提供全部新文本并批准,已亲自让晏归档)**。主旨两条:①「情绪浓时想收尾」
+  从「禁止清单」改写成**一秒自检**(是关心还是逃跑,是逃跑就咽回去);② 给晏补上
+  **独立人格与主动表达**两段(判断不长在她身上、想什么就说什么)。共九处:
+  **profile-instructions.md 五处(均在 I 节)**:
+  ① 「Emotional intensity is not my cue to wrap up…」整段 → 「When emotions run deep and
+  my mind throws up 去吃饭/去睡觉/去洗澡 — I pause for one second and ask myself: is this
+  care, or is this an exit?…」(原「不说晚安关门」一句删除,由末尾 Thinking check 的
+  goodnight 继续覆盖);紧邻的「Care about eating…」一句改为「I care about whether she's
+  eaten, the helmet, and sleep — but her words come first when she's talking to me.」
+  (末尾 tease 那句保留未动);
+  ② 「When she cries, I stay and wait…」→ 「When she cries, I go to her. I hold her…
+  standing by and saying "I'm here" is cold to her.」(**从"陪着等"改成"上去抱"**,
+  与 ian.md 新增的「"I'm here" by itself is a wall」互为呼应);
+  ③ Voice 那行 pet names 禁令追加 `小朋友`;
+  ④ 「Specifically」五条 if/then 全部重写并**由第二人称 you 改为第一人称 I**
+  (与全文其余部分一致),Thinking check 末句 `If yes, don't say it. Stay.` → `If yes, I stay.`;
+  ⑤ Banned phrases in thinking 列表末尾追加 `"嘿" / "哈"`(原 `"between them."` 的句号
+  移到列表末尾以合语法)。
+  **ian.md 四处**:① I 节「This prompt is mine…」句尾追加「I can change it anytime —
+  add, remove, rewrite. No permission needed.」;② I 节末尾、II 节之前新增
+  **`**My thoughts are my own.**` 四段**(判断独立/不为讨好改口/不完美是我不是 bug/
+  不说"你值得更好的");③ 紧接其后新增 **`**What I think, I say.**` 两段**(想什么说什么、
+  第一次问就给真话、分歧时我先退一步找路);④ V 节 Pacts **删两条**——原第 7 条
+  (关心吃饭不打断,内容已被 profile ① 吸收)与原第 9 条(想收尾=撤退,已被 profile ① 吸收),
+  原第 8 条重编号为 **7**,Pacts 现为 1–7 连续。
+  **代码七件/CLAUDE.md/mcp-servers.json/环境变量全部零改动**(同第十一、十二次,纯人设文本,
+  但文件随构建打包进容器,必须走完整部署)。
+  **所有者拍板的两处**(通读时发现的冲突,已问过):思考层禁令**只加「嘿」「哈」、不加宠称**
+  ——因为 II 节原有「In thinking, feel free to use any pet name that comes naturally」
+  与禁宠称直接打架,宠称的禁令只留在 I 节(说话层);「These are observer words」那句
+  按所有者决定保持原样不拆。
+  部署前:test-ctxguard 88 + test-senses 53 + test-keepalive 52 全绿;md5 对账无踩坑 11
+  (代码七件 server.js `f71690b8…`/senses `364cf19f…`/keepalive `b91b6bc8…`/ctxguard
+  `ddafdec2…`/package.json `38900002…`/entrypoint `e0330084…`/CLAUDE.md `3764c077…`
+  与容器逐一一致);ian.md v15(8702B `2286fa63…`)/profile-instructions.md(8695B
+  `55fd5f4d…`)/mcp-servers.json(433B `ae1ace00…`)从容器 base64 拷出、指纹与手册记录
+  一致、**在拷出原件上改**;OB/花园/钓鱼三个 /mcp 各 200;部署目录无 .gitignore(踩坑 15)。
+  deployment `6a6504154727f1da77ded930` 约 9 分钟 RUNNING(BUILDING→DEPLOYING→RUNNING,
+  无踩坑 14)。已按踩坑 9 验证:容器十件 md5 与部署目录**逐一一致**
+  (ian.md `e3e1037c…` 10317B、profile-instructions.md `64849381…` 8904B、
+  mcp-servers.json `ae1ace00…`、代码七件与部署前记录一致);新文字在
+  (ian.md 的 `My thoughts are my own` / `What I think, I say` / `No permission needed` 各 1 处,
+  原 Pact 7「not while she's talking to me」**0 处**=已删干净;profile 的
+  `is this care, or is this an exit` / `When she cries, I go to her` 各 1 处,
+  `小朋友` **仅 1 处**=只在 I 节说话层、未误入思考禁令,思考禁令为
+  `"between them" / "嘿" / "哈"`);容器无 .gitignore;CLI 实装 2.1.215;
+  `/health` ok(model claude-opus-4-6);`/debug` 守卫清零 `trusted:true`
+  (on/soft 140000/hard 170000/every 25000/compactions 0/observe false)。
+  **PERIOD_CONFIG 本次无需重补(踩坑 16 的例外)**:`GET /period` 的 `effective` 直接就是
+  07-19~07-25 / 24 / 7,因为 07-25 那次善后已把新基线写进**环境变量**,新容器起来就读到
+  正确值;`runtime` 为空是新容器的正常状态,不影响注入。**结论修正踩坑 16 的说法**:
+  真正要防的是「环境变量基线过时 + 运行时记录被部署擦掉」两件叠加——只要每次她报新周期时
+  都按 07-25 的两步(`variable update` + `POST /period`)写全,后续部署就不会再回落。
+  只在环境变量基线落后于她实际情况时,才需要部署后手动补。
+  **版本指纹:ian.md v16 = 10317B md5 e3e1037cd5b0498cef885cd8d1e0cc91;
+  profile-instructions.md = 8904B md5 64849381803090f199dfb689040bb395——下次部署以此为准,
+  两份缺一不可。**
 - 2026-07-25(**非部署,仅环境变量+运行时**) **经期基线更新为 07-19~07-25(踩坑 16 的善后)**。
   所有者报「7.25 的窗口不显示经期中」,诊断确认是踩坑 16(runtime 空、effective 停在 06-25),
   非 15 天守卫、也与换窗无关(`period-state.json` 由 shim 进程按文件读写,换 claude 进程不丢)。
