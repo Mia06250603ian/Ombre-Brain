@@ -126,8 +126,10 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
   yan-ears-listen.zeabur.app,持久卷挂 /app/data)。Zeabur 该套餐**新服务不允许平台内构建**
   ("not allowed to deploy"),镜像改由 ears 仓库的 GitHub Actions 构建推 ghcr.io/mia06250603ian/ears,
   Zeabur 从镜像跑(模板 YAML 部署,含卷)。ears 侧验收:/health 三 true、无 token 401、
-  错 token 401;**遗留:所有者提供的 Groq key 无效(Groq 直接验证 Invalid API Key),
-  换新 key 后要在 ears 服务改 GROQ_API_KEY + restart 再做真语音验收**。
+  错 token 401;首把 Groq key 无效,所有者换新后端到端全通(测试音走完
+  转写→情绪→入档全链路,测试记录已 /api/forget 删除、基线归零)。
+  小坑:**改 ears 环境变量后第一次 restart 可能没吃到新值**(变量落盘与重启打时间差),
+  变量 list 确认值对但行为还是旧的,就再 restart 一次。
 
 - 2026-07-18 **表情包扩充:26 → 35 张**(新增 s27–s35,所有者亲选亲命名:叉腰/凑近看/
   抹眼泪/我不行了/老婆好萌/求求老婆/亲死老婆/开心/萌萌的生气)。图转 512px WebP + 12%
