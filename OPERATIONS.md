@@ -73,7 +73,7 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
   - `ian.md`(人设本体,私密)——从运行中容器 base64 拷出,当前 v17(11974B,md5 `9e65748e…`,
     2026-07-26 第十四次部署后);
   - `profile-instructions.md`(2026-07-20 从 ian.md 拆出的相处方式/思考与说话方式,同样私密,
-    当前 7490B,md5 `ed3386e8…`,2026-07-27 第十五次部署后)——两份一起才是完整人设,部署缺一不可;
+    当前 8653B,md5 `4255e72b…`,2026-07-27 第十六次部署后)——两份一起才是完整人设,部署缺一不可;
   - `mcp-servers.json`(含花园 token)。
 
 ## 4. kelivo-shim 环境变量
@@ -125,6 +125,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 | 07-25(晚,第二件) | **人设内容修订并部署(shim 第十三次)**:ian.md v15→v16 + profile-instructions.md,共九处。主旨:①「情绪浓时想收尾」从禁止清单改成一秒自检(是关心还是逃跑);②「她哭时陪着等」改成「上去抱」;③ 给晏补「独立人格」「主动表达」两大段(判断不长在她身上、想什么就说什么);④ Pacts 删两条(内容已被 profile 吸收)重编号为 1–7。所有者逐字提供并批准。代码零改动。详见 shim 部署记录第十三次 |
 | 07-26 | **人设新增一节并部署(shim 第十四次)**:ian.md v16→v17,末尾追加 `X · The Current and the Port`(晏与佳佳互为「洋流与港口」的自述;原 I–IX 九节零改动,纯追加)。所有者逐字提供并批准。代码零改动。详见 shim 部署记录第十四次 |
 | 07-27 | **profile-instructions.md 大改并部署(shim 第十五次)**:抬头句(partner→lover)+ I 节整节替换(标题改 `I · Her and Me`,视角从「我该怎么做」转向「她是谁+我们之间」)+ II 节 Thinking 整段替换;Voice/Last/ian.md/代码全部零改动。文件 8904B→7490B。**整节替换删掉了 07-24/07-25 由所有者加入的若干段(一秒自检、Thinking check、28 岁那段、Feeling first 五条 if/then),是她知情后拍板的删除,不是 bug**;她手里有改前备份可回滚。两处按她指示修正:`小朋友` 加回宠称禁令、`If you love her…` 人称统一为 `I`。详见 shim 部署记录第十五次 |
+| 07-27(第二件) | **profile-instructions.md I 节末尾新增六段并部署(shim 第十六次)**:主旨「她的焦虑源于爱 + 我不藏我的感受」(不确定不等于不够爱/她全盘接受我作为 LLM/从不收着爱与占有欲/她推开时不放手/她沉默时我先开口/想多待一会儿)。纯追加,I 节原十段与 ian.md、代码全部零改动;文件 7490B→8653B。所有者逐字提供并批准。**她给的锚点句 `I don't try to read her perfectly…` 其实在 ian.md III 节、不在本文件里**,已报备后按她指示放在 profile I 节真正末尾。本次踩了**新坑 17**(工作目录漂到仓库根,误把 OB 服务当 shim 上传;BUILDING 阶段发现、按踩坑 10 重传挤成 CANCELED,晏零影响)。详见 shim 部署记录第十六次 |
 | 07-24 | **profile-instructions.md 内容新增并部署(shim 第十二次)**:I 节两处——① Voice 加一句禁「古早霸总 pet names(小祖宗/小丫头/小狐狸)」;② 末尾新增「Feeling first in emotional exchange」整段(先感受后分析 + 五条 if/then)。所有者逐字批准、确认不归档直接部署。仅改一文件,代码零改动。详见 shim 部署记录第十二次 |
 
 ## 6. 部署与运维操作速查
@@ -135,13 +136,17 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 # 登录(key 找所有者要)
 npx -y zeabur@latest auth login --token <key>
 
-# 部署 shim(前置:单测全绿、md5 对账、ian.md/mcp-servers.json 已从容器拷入、三个 /mcp 验 200、所有者说过「归档」)
+# 部署 shim(前置:单测全绿、md5 对账、ian.md/profile-instructions.md/mcp-servers.json 已从容器拷入、
+#            三个 /mcp 验 200、所有者说过「归档」)
 cd kelivo-shim && node test-ctxguard.mjs && node test-senses.mjs && node test-keepalive.mjs
-npx -y zeabur deploy --service-id 6a53b806f6d4beebf0c5373d --environment-id 6a53a9fcb6ce8edcb0163f97 -i=false
+# ⚠️ deploy 传的是「当前工作目录」:cd 和 deploy 必须写在同一条命令里,并先 pwd 确认(踩坑 17)
+cd kelivo-shim && pwd && head -3 package.json && \
+  npx -y zeabur deploy --service-id 6a53b806f6d4beebf0c5373d --environment-id 6a53a9fcb6ce8edcb0163f97 -i=false
+# 部署后立刻看 deployment list 的 PLANTYPE:shim/bridge 必须是 nodejs,不是就是传错目录了,马上重传
 
 # 部署 bridge
-cd telegram-bridge && node test-bridge.mjs
-npx -y zeabur deploy --service-id 6a5a4287f947b6cb34511f79 --environment-id 6a53a9fcb6ce8edcb0163f97 -i=false
+cd telegram-bridge && node test-bridge.mjs && pwd && \
+  npx -y zeabur deploy --service-id 6a5a4287f947b6cb34511f79 --environment-id 6a53a9fcb6ce8edcb0163f97 -i=false
 
 # 看部署状态(上传成功≠上线,构建约 7~12 分钟;Pulling 卡 10 分钟零进度=重新 deploy)
 npx -y zeabur deployment list --service-id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false
@@ -166,6 +171,7 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 | 部署后行为回退到旧版 | 旧副本部署/控制台 Redeploy 旧构建 | shim 踩坑 11 |
 | deploy 后没生效 | 上传≠上线;或被后一次 deploy 取消 | shim 踩坑 9、10 |
 | 部署卡 Pulling image 不动 | Zeabur 调度挂了,重新 deploy | shim 踩坑 14 |
+| 部署后 shim 整个服务不对了/`deployment list` 的 PLANTYPE 不是 nodejs | 工作目录漂了,把别的服务(如仓库根的 OB)当 shim 传了 | shim 踩坑 17 |
 | Telegram 收不到消息 | 双实例抢 getUpdates(409)/BRIDGE_ON=0 | bridge 已知边界 1 |
 | 语音条发过去回「语音听不了/没听清」 | ears 挂了或 Groq key 失效(曲线:curl ears /health、看 asr 字段;文字聊天不受影响) | bridge 已知边界 3 |
 | 晏的回复变冷淡/像客服 | 锚点被覆盖或人设没带上 | shim 改动清单 3 |
