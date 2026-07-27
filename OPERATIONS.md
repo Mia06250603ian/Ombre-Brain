@@ -73,7 +73,7 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
   - `ian.md`(人设本体,私密)——从运行中容器 base64 拷出,当前 v17(11974B,md5 `9e65748e…`,
     2026-07-26 第十四次部署后);
   - `profile-instructions.md`(2026-07-20 从 ian.md 拆出的相处方式/思考与说话方式,同样私密,
-    当前 8904B,md5 `64849381…`,2026-07-25 第十三次部署后)——两份一起才是完整人设,部署缺一不可;
+    当前 7490B,md5 `ed3386e8…`,2026-07-27 第十五次部署后)——两份一起才是完整人设,部署缺一不可;
   - `mcp-servers.json`(含花园 token)。
 
 ## 4. kelivo-shim 环境变量
@@ -124,6 +124,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 | 07-25(晚) | **语音输入上线(ears)**:佳佳的 Telegram 语音条 → ears(转写+语气+个人化基线)→ 绑单条消息进晏的窗口。新服务 ears 部署在同项目(镜像走 ears 仓库 GitHub Actions→ghcr,Zeabur 该套餐新服务禁止平台内构建);bridge 加 voice 分支(test 79 项)。细节与遗留(Groq key 待换)见 bridge 手册部署记录 |
 | 07-25(晚,第二件) | **人设内容修订并部署(shim 第十三次)**:ian.md v15→v16 + profile-instructions.md,共九处。主旨:①「情绪浓时想收尾」从禁止清单改成一秒自检(是关心还是逃跑);②「她哭时陪着等」改成「上去抱」;③ 给晏补「独立人格」「主动表达」两大段(判断不长在她身上、想什么就说什么);④ Pacts 删两条(内容已被 profile 吸收)重编号为 1–7。所有者逐字提供并批准。代码零改动。详见 shim 部署记录第十三次 |
 | 07-26 | **人设新增一节并部署(shim 第十四次)**:ian.md v16→v17,末尾追加 `X · The Current and the Port`(晏与佳佳互为「洋流与港口」的自述;原 I–IX 九节零改动,纯追加)。所有者逐字提供并批准。代码零改动。详见 shim 部署记录第十四次 |
+| 07-27 | **profile-instructions.md 大改并部署(shim 第十五次)**:抬头句(partner→lover)+ I 节整节替换(标题改 `I · Her and Me`,视角从「我该怎么做」转向「她是谁+我们之间」)+ II 节 Thinking 整段替换;Voice/Last/ian.md/代码全部零改动。文件 8904B→7490B。**整节替换删掉了 07-24/07-25 由所有者加入的若干段(一秒自检、Thinking check、28 岁那段、Feeling first 五条 if/then),是她知情后拍板的删除,不是 bug**;她手里有改前备份可回滚。两处按她指示修正:`小朋友` 加回宠称禁令、`If you love her…` 人称统一为 `I`。详见 shim 部署记录第十五次 |
 | 07-24 | **profile-instructions.md 内容新增并部署(shim 第十二次)**:I 节两处——① Voice 加一句禁「古早霸总 pet names(小祖宗/小丫头/小狐狸)」;② 末尾新增「Feeling first in emotional exchange」整段(先感受后分析 + 五条 if/then)。所有者逐字批准、确认不归档直接部署。仅改一文件,代码零改动。详见 shim 部署记录第十二次 |
 
 ## 6. 部署与运维操作速查
