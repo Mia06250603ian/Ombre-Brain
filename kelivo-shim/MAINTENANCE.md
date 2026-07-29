@@ -137,8 +137,8 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    两段把 profile-instructions.md 一并点名(逻辑零改动)。当前版本指纹:
    **ian.md v14 = 8671 字节 md5 37f5d404132ab260a0b1771bba575951;
    profile-instructions.md = 7099 字节 md5 9a119eacf24a7821de911b7f6c8e5543**
-   (⚠️ 已过时,**当前以 2026-07-29 第十八次部署的指纹为准**:ian.md **v19** = 19801B
-   md5 `3e875ced9084abfe1664cc38b61dcbe8`;profile-instructions.md = 3568B
+   (⚠️ 已过时,**当前以 2026-07-29 第十九次部署的指纹为准**:ian.md **v20** = 23055B
+   md5 `8c3b7a6cdde5a1e857484e682b04b321`;profile-instructions.md = 3568B
    md5 `74884752a8ea1300ac452a481fed5065`(第十七次起未再改动);CLAUDE.md = 6758B
    md5 `85f5dcb05880811dc2c219c7f266f2b6`,见部署记录。
    第十七次两份人设**整体换代**:ian.md 改用 `**Part N · 标题**` 粗体体例、`^## ` 计数已为 0;
@@ -146,7 +146,11 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    的「记忆工具使用」节**,别再往 ian.md 里补。
    第十八次 ian.md 再次**整体换代**(v18→v19,所有者又写了一版):体例沿用
    `**Part N · 标题**` 十节 Part I–X 不变;**人名罗马字这次由所有者指示保留**
-   (`Ian` 2 处、`Mia` 1 处,都是「英文名是什么」的声明句,别再照第十七次的规矩去换中文))。v14 相对 v13 除拆分/重编号外另有两处内容改动(所有者指定):
+   (`Ian` 2 处、`Mia` 1 处,都是「英文名是什么」的声明句,别再照第十七次的规矩去换中文)。
+   第十九次(v19→**v20**)是**定点修订**不是换代:Part III 换代 + Part VII 两处追加 +
+   新增 `**9.4 Holding Ground**` 一节,`^\*\*9\.` 由 3 变 **4**、`^\*\*Part ` 仍 **10**;
+   **9.4 的「语言信号」清单里不许出现 `"stop"`**——那是 Part V 的日常安全词,
+   两处并存等于唯一刹车自相矛盾(见部署记录第十九次))。v14 相对 v13 除拆分/重编号外另有两处内容改动(所有者指定):
    I 节删 tool_search limit=20 旧话(工具在 CLI 环境直接就绪,该修法已过时);
    II 节 "She is an adult." 前加「佳佳 does not share my surname. Never call her 许佳佳.」。
    **不要**在本目录放 .gitignore 挡这三个文件——zeabur 上传会遵循它,文件直接不进容器(踩坑 15)。
@@ -412,6 +416,90 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
 
 ## 部署记录
 
+- 2026-07-29(第十九次) **ian.md 定点修订:v19 → v20(所有者提供逐字文本并批准)**。
+  距第十八次约 8 小时。**只改 ian.md 一件**,profile-instructions.md / CLAUDE.md /
+  mcp-servers.json / 代码六件 / 环境变量**全部零改动**(但文件随构建打包进容器,必须走完整部署)。
+  - **ian.md v19 → v20**:19801B `3e875ced…` → **23055B `8c3b7a6cdde5a1e857484e682b04b321`**,
+    277 行 → **321 行**。体例不变(`**Part N · 标题**` 十节 Part I–X)。
+  - **所有者最初给了 5 处改动,最终落地 4 处**(第 2 处经讨论后由她指示撤销):
+    ① **Part III 从节标题到 `**Our language:**` 之前整体换代**(原 5 段 → 新 13 段;
+       `**Our language:**` 及其后全部原样);
+    ② ~~Pact One 后插入一段~~ **已撤销**(见下);
+    ③ **Part VII Daily** 的 `**Taking care of her body:**` 段后追加两段(想她就发消息/先接住人);
+    ④ **Part VII Intimate** 节末尾追加一段(`After it ends, I don't leave…`);
+    ⑤ **Part IX 新增 `**9.4 Holding Ground**` 整节**(9.3 之后、Part X 之前)。
+  - **⚠️ 本次唯一的功能性发现(下一个会话务必知道):9.4 原稿与 Part V 的安全词直接冲突。**
+    所有者给的 9.4「语言信号」清单里列了 `"stop,"`,声明它「是表达感受、不是指令」;
+    而 Part V 的 `Daily safe word: "Stop."` 正是全系统唯一的刹车,9.4 自己下面又写
+    `The only valid stop signal is the safe word` —— 同一个词一处是唯一刹车、一处是明确无效信号,
+    晏读到无解。**报所有者后她拍板:9.4 那行删掉 `"stop,"`,安全词保持 `"Stop."` 不变。**
+    现全文 `Stop.` 只剩 Part V 一处。**别再把 `"stop"` 补回 9.4 的清单。**
+  - **所有者的另外三条批复**:
+    ② **撤销**——原拟插在 Pact One 后的那段与 Pact One 逐字重复
+       (`No stepping back, no citing reasons, no deciding for her how close she should stand.`
+       整句重复 + `this one is heaviest` / `carries the most weight` 同义重复),
+       报备后她指示「删掉我新增的那句,原来的 Pact One 已经够了」。**Pact One 一字未动。**
+    ④ **位置按小标题、不按锚点**——她写的锚点是「after the existing aftercare content」,
+       但 **Part VII 的 Intimate 节里没有 aftercare 内容**(aftercare 段在 **Part VI 末尾**)。
+       报备后她指示放 **Part VII Intimate 节末尾**(`Want to pin her down, pin her down.` 之后),
+       并说明**「重复不用管——关键信息在不同位置出现是有意的」**(该段的
+       `she decides when it's enough` 与 Pact Three、Part VI aftercare 是第三次重复,**刻意保留**)。
+       **下一个会话别把这类重复当冗余去"修复"。**
+    ⑥ **Part III 换代顺带删掉的旧内容,所有者知情拍板不加回**(别当 bug 修回来):
+       美术老师/运营/外贸的工作经历、「有拍照的眼光」、「巨蟹:硬壳软心」星座框架、
+       「电脑零基础/迁移平台/和我一起建记忆系统」、「恐惧型回避依恋偏焦虑」。她的原话:
+       「巨蟹硬壳软心用『盔甲』代替了,恐惧型依恋用行为描述代替了,工作经历精简了」。
+       **唯一加回的是「不婚不育」**:新版只有 `She won't pass this system down.`,
+       而这句最自然的读法是「不把这套标签教给孩子」、反而默认了「有孩子」,晏可能顺口说出
+       「以后我们的孩子」。报所有者并给了两个措辞选项,她选了第二个,故 Feminist 段现为
+       `…only point toward serving others. **No marriage, no children — by choice, not by circumstance.**
+       She won't pass this system down.`
+  - **除以上各项外,原稿一字未动。**
+  **逐字核对法(沿用第十七/十八次的整链路重演)**:改动全部写在一个 Python 重演脚本里
+  (定位锚点 + 断言唯一命中 + 施加改动 + 自检无行尾空格/无 CR),从容器拷出的 v19 原件重跑即得
+  `8c3b7a6c…`;`diff` 结果只有上述四处区段。基线计数(v19 → v20):
+  `^\*\*Part ` **10→10**、`^\*\*9\.` **3→4**(新增 9.4)、`Part X · Closing` **1**、
+  `许佳佳` **1**、`Ian` **2**、`Mia` **1**、`ian mia` **1**、`Xu`/`Yan`/`Jiajia` 各 **0**、
+  行尾空格 **0**、行数 277→**321**。
+  **seal 暗语本次同样不涉及**(`河流涌入海洋` 只在 CLAUDE.md,别往 ian.md 补)。
+  **⚠️ 本次第一次上传被所有者在 BUILDING 阶段叫停,零影响——踩坑 18 的正面印证**:
+  第一版成品(含未决的四个问题)上传后 deployment `6a69f6a9eac99cc636f2bac4` 约 6 分钟时
+  被所有者在网页控制台 **Cancel**(她要先看我报的问题),状态直接 CANCELED、**没进 DEPLOYING**,
+  老容器 `6a697b20` 全程 RUNNING,**新镜像一秒没上线、晏没重启、窗口没丢**。
+  **结论:踩坑 18 说的「BUILDING 才叫得停」在这次得到反向验证;也再次说明第十八次立的
+  「上传前把成品全文发给所有者过目」是对的——她正是看了全文才发现要讨论的点。**
+  部署前(两次上传各做一遍):test-ctxguard **88** + test-senses **53** + test-keepalive **52** 全绿;
+  md5 对账无踩坑 11(代码七件 server.js `f71690b8…`/senses `364cf19f…`/keepalive `b91b6bc8…`/
+  ctxguard `ddafdec2…`/package.json `38900002…`/entrypoint `e0330084…`/CLAUDE.md `85f5dcb0…`,
+  **本地仓库与容器逐一一致**);三份私密文件从容器 base64 拷出、指纹与第十八次记录**逐一吻合**
+  (ian.md 19801B `3e875ced…`/profile 3568B `74884752…`/mcp-servers.json 433B `ae1ace00…`)、
+  **在拷出原件上改**;OB/花园/钓鱼三个 `/mcp` 各 **200**;部署目录无 `.gitignore`(踩坑 15);
+  `cd` 与 `deploy` 同一条命令 + 先 `pwd`/`head -3 package.json`(踩坑 17,两次 PLANTYPE 均 `nodejs`)。
+  **小坑一枚(别误判)**:第二次前置检查时花园 `/mcp` 首测返回 **`000`**(curl 连不上),
+  连续重试 **3/3 均 200**(各 ~0.83s)=**瞬时网络抖动,不是 token 失效**。
+  照踩坑 7 判死之前先重试三次,别一见 000 就去动 mcp-servers.json。
+  正确的 deployment `6a69fab8eac99cc636f2bc79` 约 **9 分钟** RUNNING
+  (BUILDING→DEPLOYING→RUNNING,**PLANTYPE `nodejs`** ✓,无踩坑 14/17);
+  轮询照旧 **grep 本次 deployment id 那一行**再判状态。
+  已按踩坑 9 验证:容器十件 md5 与部署目录**逐一一致**(ian.md `8c3b7a6c…` 23055B、
+  profile-instructions.md `74884752…` 3568B、CLAUDE.md `85f5dcb0…` 6758B、
+  mcp-servers.json `ae1ace00…`、代码六件与部署前记录一致);容器内基线计数与上面逐项相符
+  (`^\*\*Part ` 10、9.1–**9.4** 四节、`Part X · Closing` 1、`Holding Ground` 1、
+  `No marriage, no children` 1、**9.4 里 `"stop,"` 0 处**、`Daily safe word` 1、
+  **撤销的 `this one carries the most weight` 0 处**、`After it ends, I don` 1、
+  `When I miss her, I send a message` 1、`许佳佳` 1、`Ian` 2、`Mia` 1、行尾空格 0、321 行);
+  容器无 `.gitignore`;CLI 实装 **2.1.215**;`/health` ok(model claude-opus-4-6);
+  `/debug` 守卫清零 `trusted:true`(on/soft 140000/hard 170000/every 25000/softFired false/
+  compactions 0/observe false/lastWould null)。
+  **PERIOD_CONFIG 本次无需重补**:容器内 `GET /period` 的 `effective` 直接就是
+  07-19~07-25 / 24 / 7(`runtime` 为空是新容器正常状态)——第十三~十八次的结论第七次验证通过。
+  **归档**:所有者本次会话开场即说「归档了」,第二次上传前未再提——按第十二/十六/十八次的先例
+  视为她的决定,未代发归档(踩坑 13)。
+  **版本指纹:ian.md v20 = 23055B md5 8c3b7a6cdde5a1e857484e682b04b321;
+  profile-instructions.md = 3568B md5 74884752a8ea1300ac452a481fed5065;
+  CLAUDE.md = 6758B md5 85f5dcb05880811dc2c219c7f266f2b6——下次部署以此为准,两份人设缺一不可。**
+  **回滚**:v19 原件(19801B `3e875ced…`)已在本次部署前从容器拷出;如果晏的表现出问题,
+  拿 v19 原样替换 ian.md 重新部署即可(CLAUDE.md 不用动)。
 - 2026-07-29(第十八次) **ian.md 再次整体换代:v18 → v19(所有者提供全新全文并批准)**。
   距第十七次仅约 3 小时。**只改 ian.md 一件**,profile-instructions.md / CLAUDE.md /
   mcp-servers.json / 代码六件 / 环境变量**全部零改动**(但文件随构建打包进容器,必须走完整部署)。
