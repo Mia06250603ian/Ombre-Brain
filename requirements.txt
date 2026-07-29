@@ -4,7 +4,12 @@
 # ============================================================
 
 # MCP 协议 SDK（Claude 通信核心）
-mcp>=1.0.0
+# ⚠️ 上限必须钉住：mcp 2.0.0（2026-07-29 发布）删掉了 mcp.server.fastmcp 模块
+#（改名为 mcp.server.mcpserver），而 server.py 用的是 from mcp.server.fastmcp import FastMCP。
+# 不钉上限时任何一次重建都会装到 2.x → 容器启动即 ModuleNotFoundError → CrashLoopBackOff。
+# 2026-07-29 就这样把线上 OB 挂掉过一次（合 PR 触发重建，WatchPaths=*）。
+# 要升到 2.x 必须先改 server.py 的导入并做全套回归，别只改这行。
+mcp>=1.0.0,<2.0.0
 
 # 模糊匹配（记忆桶搜索）
 rapidfuzz>=3.0.0
