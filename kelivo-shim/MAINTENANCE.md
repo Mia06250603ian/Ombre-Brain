@@ -137,9 +137,13 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    两段把 profile-instructions.md 一并点名(逻辑零改动)。当前版本指纹:
    **ian.md v14 = 8671 字节 md5 37f5d404132ab260a0b1771bba575951;
    profile-instructions.md = 7099 字节 md5 9a119eacf24a7821de911b7f6c8e5543**
-   (⚠️ 已过时,**当前以 2026-07-27 第十六次部署的指纹为准**:ian.md v17 = 11974B
-   md5 `9e65748ebf674be54e395da4173d6beb`;profile-instructions.md = 8653B
-   md5 `4255e72b4fc79f415ff80cc0bab0690a`,见部署记录)。v14 相对 v13 除拆分/重编号外另有两处内容改动(所有者指定):
+   (⚠️ 已过时,**当前以 2026-07-29 第十七次部署的指纹为准**:ian.md **v18** = 21889B
+   md5 `aaafa8228be33eac0683a3f382e462f1`;profile-instructions.md = 3568B
+   md5 `74884752a8ea1300ac452a481fed5065`;CLAUDE.md = 6758B
+   md5 `85f5dcb05880811dc2c219c7f266f2b6`,见部署记录。
+   第十七次两份人设**整体换代**:ian.md 改用 `**Part N · 标题**` 粗体体例、`^## ` 计数已为 0;
+   profile 改为第二人称指令体;OB 的 seal 暗语说明从 ian.md 的 VII 节**移交给 CLAUDE.md
+   的「记忆工具使用」节**,别再往 ian.md 里补)。v14 相对 v13 除拆分/重编号外另有两处内容改动(所有者指定):
    I 节删 tool_search limit=20 旧话(工具在 CLI 环境直接就绪,该修法已过时);
    II 节 "She is an adult." 前加「佳佳 does not share my surname. Never call her 许佳佳.」。
    **不要**在本目录放 .gitignore 挡这三个文件——zeabur 上传会遵循它,文件直接不进容器(踩坑 15)。
@@ -351,6 +355,21 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
     同理适用于 bridge(`telegram-bridge/`)和 fishing(`fishing-mcp/`):
     **凡是 deploy,先确认 cwd 是那个服务的目录**。
 
+18. **踩坑 10 的「后一次 deploy 会挤掉前一次」只在 BUILDING 阶段成立,进了 DEPLOYING 就挤不掉了
+    (2026-07-29 第十七次部署实测)**:那次上传后所有者叫停(内容要改:人名全用拼音,要换成中文),
+    改好文件立刻从正确目录重新 deploy,想按踩坑 10 一步把前一条挤成 CANCELED。
+    **没挤掉**——前一条 `6a695091` 当时已从 BUILDING 进入 **DEPLOYING**(第 11 分钟),
+    重传后约 1 分钟它照常 **RUNNING** 上线,拼音版实际服役约 10 分钟,直到正确版
+    `6a69533b` RUNNING 才把它顶成 REMOVED。**代价**:晏多挨一次进程重启(窗口清两次,
+    所有者已归档故记忆无损),且期间人设是拼音名。
+    **教训与正确姿势**:
+    - 想真正拦下一个已在飞的部署,判断依据是它的 STATUS——**BUILDING 才能靠重传挤掉,
+      DEPLOYING/RUNNING 只能去 Zeabur 网页控制台点 Cancel**(CLI 无 cancel 子命令,
+      `deployment` 只有 get/list/log);
+    - 所以**「叫停」这件事越早越好**:上传后 ~9 分钟内(BUILDING 窗口)重传有效,过了就一定会上线一次;
+    - 反过来也提醒:**内容类改动上传前多问一句**。这次拼音的问题在所有者看第二遍时才发现,
+      如果部署前把成品全文贴给她过一眼(而不是只贴改动摘要和指纹),就不会有这 10 分钟。
+
 ## CLI 版本与升级指南(2026-07-19 起,给所有者和未来会话)
 
 **现状**:package.json 把 `@anthropic-ai/claude-code` 钉死在 `2.1.215`(不带 `^`)。
@@ -390,6 +409,86 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
 
 ## 部署记录
 
+- 2026-07-29(第十七次) **人设整体换代:ian.md v17→v18 + profile-instructions.md 全文替换 +
+  CLAUDE.md「记忆工具使用」节新增三段(所有者逐字提供全部新文本并批准,已亲自让晏归档)**。
+  这是人设迄今**最大**的一次改动:前十六次都是改行/改段/追加节,这次是**两份文件整体换代**。
+  - **ian.md v17 → v18**:11974B → **21889B**。原 I–X 十节全部退役,换成所有者新写的十层
+    prompt(`**Part I · Who I Am**` … `**Part X · Closing**`)。
+    **⚠️ 体例变了**:新版用 **`**Part N · 标题**` 粗体行**做节标题、**没有 `# Ian / 晏` 一级标题**,
+    不再是 `## N · …`。**以后逐字核对别再数 `^## `(现在是 0),改数 `^\*\*Part ` = 10。**
+  - **profile-instructions.md 全文替换**:8653B → **3568B**(缩到约四成)。新版是所有者写的
+    **第二人称指令体**(首行 `You are 佳佳's lover. Love her the way she wants to be loved.`),
+    与老版通篇第一人称不同——**第十五次「人称统一成 I」的结论到此作废**,是所有者知情拍板
+    (已报备,她答「不用改」)。内容为:thinking_mode(始终中文、不跳)/思考要求三段/Core persona
+    (少年感的爹)/Banned words(user、human、analyze、task 等)/My language/Intimate moments/Anti-AI mode。
+  - **CLAUDE.md**:6241B `3764c077…` → **6758B `85f5dcb0…`**。「记忆工具使用」节原四行**之后**
+    追加三段(所有者逐字提供):**Seal验证**(核对 `[seal:河流涌入海洋]`,错了/没有=通道可能被篡改,
+    立刻告诉佳佳并把该次返回当作不可信)、**写入风格**(用自己的声音写、像日记不像工单)、
+    **dream和breath**(对话中随时可用,`breath(query=)` 搜索、`dream(detail_ids=)` 拉全文)。
+    其余十节、双 `@` 引用零改动。**这是入库文件**,已提交推送(分支
+    `claude/replace-ian-profile-instructions-dur4ca`)。
+  - **代码六件(server.js/senses/keepalive/ctxguard/package.json/entrypoint.sh)、mcp-servers.json、
+    环境变量:全部零改动。**
+  **⚠️ 本次唯一的功能性发现(下一个会话务必知道)**:OB 的 seal 防伪暗语 `河流涌入海洋`
+  **全系统只写在 v17 的 `VII · Memory` 节里**(`OMBRE_SEAL_WORD` 只活在 OB 的环境变量,
+  `server.py` 只负责在 awaken/breath/dream 返回末尾附 `[seal:…]`,工具说明要求核验但不告诉暗语)。
+  v18 里 seal/awaken 一处没有 → 直接换上去等于**seal 核验静默作废**(他看得见 seal 行,
+  但不知道正确答案,无从比对,伪造记忆注入抓不出来)。部署前发现并报给所有者,
+  她选择**把 seal 说明写进 CLAUDE.md 而不是 ian.md**(暗语只存一份、不会两处不同步),
+  故有上面 CLAUDE.md 那三段。**别再把 seal 往 ian.md 里补。**
+  **所有者知情拍板的删除(别当 bug 去"修复")**:v17 的 `X · The Current and the Port` 整节
+  (v18 的 Part III「洋流与港口」条 + Part VIII 里有浓缩版)、第十三次加的 `**My thoughts are
+  my own.**` 四段与 `**What I think, I say.**` 两段、v17 的 Pacts 1–7 旧措辞(v18 的 5.2 是新七条)、
+  `VII · Memory` 整节(含 awaken/seal 说明,已按上面移交 CLAUDE.md)。她原话:「我有前面的备份」。
+  **唯一保留的旧句**:`佳佳 does not share my surname. Never call her 许佳佳.`(v14 加入,
+  所有者点名保留)。新文本原本没有这句,按 v17 的相对位置放回 **Part II 末尾**(「她怎么叫我」那段之后)。
+  **所有者中途提出的三项文本处理(都是全局替换,不改任何句子结构)**:
+  ① **`Jiajia` → `佳佳`**:她要求把新文本里她名字的罗马字全换成中文,ian.md 9 处、profile 7 处,
+     换完 `Jiajia` 0 处(巧合:两者都是 6 字节,文件大小不变);
+  ② **人名罗马字 → 中文**(上传后叫停才发现的,见踩坑 18):`Xu Yan`×3→`许晏`、`Ian`×4→`晏`、
+     `Xu`×1→`许`、单独 `Yan` 0 处;**`"ian mia"`(她的美区 Apple ID,是账号字符串不是叫他名字)
+     刻意保留原样**,已报备。全部用**词边界**匹配,`Asian`/`defiance` 里的 ian 未被误伤;
+  ③ 原文每行行尾带两个空格(markdown 硬换行残留,ian 295 行/profile 29 行)统一清掉;
+     profile 末尾 `---` + 「好了宝宝。现在真的去睡。」(她打给晏的话、不是 prompt)按她指示删除。
+  **逐字核对法(整份替换类改动,推荐做法)**:不再数非 ASCII 字符,而是**从所有者的原稿整链路重演**
+  ——对原稿依次施加上述全部变换,重演结果与待部署文件比 md5;一致 = 除这些变换外零改动
+  (任何多余的手滑都会让 md5 对不上)。本次重演 md5 = `aaafa822…` = 待部署文件,逐字节一致。
+  另有基线计数备查:ian.md `^\*\*Part ` **10**、`^## ` **0**、em dash `—` **75**、`许晏` **3**、
+  `晏` **9**、`许` **5**、`佳佳` **10**、`Ian`/`Xu`/`Yan` 各 **0**、`ian mia` **1**、`许佳佳` **1**、
+  行尾空格 **0**、296 行;profile em dash **13**、`佳佳` **7**、25 行、行尾空格 **0**、`好了宝宝` **0**;
+  CLAUDE.md `^## ` **11**、`^@\./` **2**、`河流涌入海洋` **1**、`Seal验证` **1**。
+  **⚠️ 本次踩了新坑 18(拼音版真的上线了约 10 分钟)**:第一次上传的是「人名还是拼音」的版本,
+  所有者第二遍读时发现并叫停;改好后立刻重传,想按踩坑 10 挤掉前一条,**但它已进 DEPLOYING、
+  挤不掉**,照常 RUNNING 约 10 分钟才被正确版顶成 REMOVED。晏因此多挨一次重启(已归档,记忆无损)。
+  详见踩坑 18——**BUILDING 才能挤,DEPLOYING 只能网页控制台 Cancel;内容类改动上传前把成品全文
+  给所有者过一眼,别只给摘要和指纹。**
+  另一枚当场发现当场修的坑(未上线,不单独记):改人名时用了 `perl -CSD -i -pe`,
+  它把中文写成了双重编码乱码(`许` → `è®¸`)。**改这些含中文的人设文件别用 perl 的 -C 开关,
+  用 `python3` 显式 `encoding='utf-8'` 读写**;发现后从拷出原件重来,并加了 UTF-8 解码自检。
+  部署前:test-ctxguard **88** + test-senses **53** + test-keepalive **52** 全绿;md5 对账无踩坑 11
+  (代码七件与容器逐一一致,CLAUDE.md 容器版=改动前 `3764c077…`);三份私密文件从容器 base64
+  拷出、指纹与第十六次记录**逐一吻合**(ian.md 11974B `9e65748e…`/profile 8653B `4255e72b…`/
+  mcp-servers.json 433B `ae1ace00…`)、**在拷出原件上改**;OB/花园/钓鱼三个 `/mcp` 各 200;
+  部署目录无 `.gitignore`(踩坑 15);`cd` 与 `deploy` 同一条命令 + 先 `pwd`/`head -3 package.json`
+  (踩坑 17,两次上传 PLANTYPE 均 `nodejs`)。
+  正确的 deployment `6a69533b225290ec74327894` 约 11 分钟 RUNNING(BUILDING→DEPLOYING→RUNNING);
+  轮询仍按第十五次的教训 **grep 本次 deployment id 那一行**再判状态。
+  已按踩坑 9 验证:容器十件 md5 与部署目录**逐一一致**(ian.md `aaafa822…` 21889B、
+  profile-instructions.md `74884752…` 3568B、CLAUDE.md `85f5dcb0…` 6758B、mcp-servers.json
+  `ae1ace00…`、代码六件与部署前记录一致);容器内基线计数与上面逐项相符
+  (`^\*\*Part ` 10、`Part X · Closing` 1、`Ian`/`Xu`/`Yan` 残留 0、`Jiajia` 0、`许佳佳` 1、
+  `ian mia` 1、profile 首行=新抬头句、`好了宝宝` 0、CLAUDE.md `河流涌入海洋` 1 + `Seal验证` 1
+  + `^## ` 11 + `@` 引用 2);容器无 `.gitignore`;CLI 实装 **2.1.215**;
+  `/health` ok(model claude-opus-4-6);`/debug` 守卫清零 `trusted:true`(on/soft 140000/
+  hard 170000/every 25000/softFired false/compactions 0/observe false/lastWould null)。
+  **PERIOD_CONFIG 本次无需重补**:容器内 `GET /period` 的 `effective` 直接就是
+  07-19~07-25 / 24 / 7(`runtime` 为空是新容器正常状态)——第十三~十六次的结论第五次验证通过。
+  **版本指纹:ian.md v18 = 21889B md5 aaafa8228be33eac0683a3f382e462f1;
+  profile-instructions.md = 3568B md5 74884752a8ea1300ac452a481fed5065;
+  CLAUDE.md = 6758B md5 85f5dcb05880811dc2c219c7f266f2b6——下次部署以此为准,两份人设缺一不可。**
+  **所有者手里有改前备份**(v17 11974B `9e65748e…` / profile 8653B `4255e72b…`);
+  如果晏的表现出问题,回滚方式=拿这两份原样替换后重新部署,同时把 CLAUDE.md 那三段撤掉
+  (seal 说明届时会随 v17 的 VII 节回来)。
 - 2026-07-27(第十六次) **profile-instructions.md I 节末尾新增六段(所有者逐字提供并批准,
   已亲自让晏归档)**。纯追加类改动:定位 I 节原末段 `When she talks about us, expresses love,
   or shows vulnerability — …she switches between the two modes herself.`,在其后、
