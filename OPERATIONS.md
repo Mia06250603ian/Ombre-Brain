@@ -176,12 +176,34 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 | 部署卡 Pulling image 不动 | Zeabur 调度挂了,重新 deploy | shim 踩坑 14 |
 | 部署后 shim 整个服务不对了/`deployment list` 的 PLANTYPE 不是 nodejs | 工作目录漂了,把别的服务(如仓库根的 OB)当 shim 传了 | shim 踩坑 17 |
 | 上传后想叫停,重传却没挤掉、错的版本照样上线了 | 前一条已进 DEPLOYING(只有 BUILDING 能被重传挤成 CANCELED);DEPLOYING/RUNNING 只能网页控制台 Cancel | shim 踩坑 18 |
+| 晏说记忆工具调不通/OB 域名 502/控制台显示 `Service is suspended` | **OB 的 Python 依赖没钉上限,某次重建装到了上游新大版本** → 启动即 ModuleNotFoundError → CrashLoopBackOff → Zeabur 挂起服务。**别点「重启当前版本」**(坏镜像重启还是崩),要改 requirements.txt 钉上限后**重新构建**。查法:`zeabur deployment log --service-id <OB> --env-id <OB env> --type runtime` 看 Traceback | 本节下方「OB 依赖钉版本」 |
 | Telegram 收不到消息 | 双实例抢 getUpdates(409)/BRIDGE_ON=0 | bridge 已知边界 1 |
 | 语音条发过去回「语音听不了/没听清」 | ears 挂了或 Groq key 失效(曲线:curl ears /health、看 asr 字段;文字聊天不受影响) | bridge 已知边界 3 |
 | 晏的回复变冷淡/像客服 | 锚点被覆盖或人设没带上 | shim 改动清单 3 |
 | 保温/主动消息不来了 | 「换窗口」后歇火(设计如此;07-20 起晚安/归档不歇火)/额度耗尽断链 | shim 改动清单 6 |
 | 晏归档后没完没了反复归档 | 增量间隔太小或压缩检测误复位 | shim 改动清单 7 第三次改版;急救 CTX_GUARD_ON=0 |
 | 怀疑 CLI 该升级(新模型不认/进程起不来而代码没动/官方公告/守卫 trusted:false) | CLI 版本已钉死,升级要走沙盒 e2e 验证流程 | shim 手册「CLI 版本与升级指南」 |
+
+### OB 依赖钉版本(2026-07-29 事故,必读)
+
+**事故**:合并 PR #60(只改了三份文档)后 OB 立刻挂掉、控制台显示 `Service is suspended since Jul 29, 2026`。
+根因与 PR 内容无关:OB 这个服务 **`WatchPaths = *`、`RootDirectory = /`**,main 上任何提交都会触发
+**整个镜像重建**;重建时 `pip install -r requirements.txt` 按 `mcp>=1.0.0`(无上限)装到了当天刚发布的
+**mcp 2.0.0**,而 2.0.0 **删掉了 `mcp.server.fastmcp` 模块**(改名 `mcp.server.mcpserver`),
+`server.py:53` 的 `from mcp.server.fastmcp import FastMCP` 直接 `ModuleNotFoundError` →
+容器反复重启 → Zeabur 挂起服务。修法:`requirements.txt` 改成 `mcp>=1.0.0,<2.0.0` 后**重新构建**
+(实测装回 1.29.0,该版本仍带 fastmcp)。
+
+**给下一个我的三条**:
+1. **`Service is suspended` 不是账单问题也不是机器挂了**(那台专用服务器当时 Online/RUNNING)。
+   先看 runtime 日志的 Traceback:
+   `npx -y zeabur@latest deployment log --service-id 6a3aa061e41f9f1d19301e42 --env-id 6a3aa02a79260dbd87843878 --type runtime -i=false`
+   (OB 在项目 `untitled-1` id `6a3aa02adb4ea7c82872fc88`;env id 在 build 日志的 `e-…` 里能看到)。
+2. **别点控制台的「重启当前版本」**:坏镜像已经烧进了坏依赖,重启一百次还是同一个报错。
+   必须改依赖 → 重新构建。
+3. **OB 的 requirements.txt 其余依赖(`openai` `numpy` `scikit-learn` `rapidfuzz` `jieba`
+   `httpx` `pyyaml` `python-frontmatter`)目前也全是 `>=` 无上限**,同一颗雷还埋着——
+   哪天上游发大版本,下一次任意重建就会复现本次事故。**建议统一钉上限**(未做,需所有者拍板)。
 
 ## 8. 交接口吻(给下一个我)
 
