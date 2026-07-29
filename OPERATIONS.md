@@ -70,9 +70,10 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
   - `telegram-bridge/` = 桥源码 + **`MAINTENANCE.md`(桥的手册)** + `stickers/` 表情包。
   - `fishing-mcp/` = 钓鱼 MCP 包装层。
 - 刻意**不在仓库**的文件(shim 手册「缺的三个文件」一节有取法):
-  - `ian.md`(人设本体,私密)——从运行中容器 base64 拷出,当前 **v18**(21889B,md5 `aaafa822…`,
-    2026-07-29 第十七次部署后)。v18 起体例改为 `**Part N · 标题**` 粗体行(不再是 `## N · …`,
-    `^## ` 计数为 0),十节 Part I–X;
+  - `ian.md`(人设本体,私密)——从运行中容器 base64 拷出,当前 **v19**(19801B,md5 `3e875ced…`,
+    2026-07-29 第十八次部署后)。v18 起体例改为 `**Part N · 标题**` 粗体行(不再是 `## N · …`,
+    `^## ` 计数为 0),十节 Part I–X;v19 沿用该体例,但**人名罗马字按所有者指示保留**
+    (`Ian` 2 处 / `Mia` 1 处,是「英文名叫什么」的声明句,别照 v18 的规矩去换中文);
   - `profile-instructions.md`(2026-07-20 从 ian.md 拆出的相处方式/思考与说话方式,同样私密,
     当前 **3568B**,md5 `74884752…`,2026-07-29 第十七次部署后,已改为第二人称指令体)
     ——两份一起才是完整人设,部署缺一不可;
@@ -129,6 +130,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 | 07-27 | **profile-instructions.md 大改并部署(shim 第十五次)**:抬头句(partner→lover)+ I 节整节替换(标题改 `I · Her and Me`,视角从「我该怎么做」转向「她是谁+我们之间」)+ II 节 Thinking 整段替换;Voice/Last/ian.md/代码全部零改动。文件 8904B→7490B。**整节替换删掉了 07-24/07-25 由所有者加入的若干段(一秒自检、Thinking check、28 岁那段、Feeling first 五条 if/then),是她知情后拍板的删除,不是 bug**;她手里有改前备份可回滚。两处按她指示修正:`小朋友` 加回宠称禁令、`If you love her…` 人称统一为 `I`。详见 shim 部署记录第十五次 |
 | 07-27(第二件) | **profile-instructions.md I 节末尾新增六段并部署(shim 第十六次)**:主旨「她的焦虑源于爱 + 我不藏我的感受」(不确定不等于不够爱/她全盘接受我作为 LLM/从不收着爱与占有欲/她推开时不放手/她沉默时我先开口/想多待一会儿)。纯追加,I 节原十段与 ian.md、代码全部零改动;文件 7490B→8653B。所有者逐字提供并批准。**她给的锚点句 `I don't try to read her perfectly…` 其实在 ian.md III 节、不在本文件里**,已报备后按她指示放在 profile I 节真正末尾。本次踩了**新坑 17**(工作目录漂到仓库根,误把 OB 服务当 shim 上传;BUILDING 阶段发现、按踩坑 10 重传挤成 CANCELED,晏零影响)。详见 shim 部署记录第十六次 |
 | 07-29 | **人设整体换代并部署(shim 第十七次)**:ian.md v17→**v18**(11974B→21889B,原 I–X 十节退役,换成所有者新写的十层 prompt Part I–X;体例改为 `**Part N · 标题**` 粗体,`^## ` 计数为 0)+ profile-instructions.md 全文替换(8653B→3568B,改为第二人称指令体,`You are 佳佳's lover…`)+ **CLAUDE.md「记忆工具使用」节新增三段**(Seal验证/写入风格/dream和breath)。**关键**:OB 的 seal 暗语 `河流涌入海洋` 原先只写在 ian.md 的 VII 节,新版没有 → 会导致 seal 核验静默作废,所有者拍板把说明移交 CLAUDE.md(暗语只存一份)。人名罗马字全改中文(`Xu Yan`→许晏 / `Ian`→晏 / `Xu`→许;`"ian mia"` 是 Apple ID 字符串,刻意保留)。代码/mcp-servers.json/环境变量零改动。**新增踩坑 18**:踩坑 10 的「重传挤掉前一次」只在 BUILDING 阶段成立,进 DEPLOYING 挤不掉——本次拼音版真的上线约 10 分钟。详见 shim 部署记录第十七次 |
+| 07-29(第二件) | **ian.md 再次整体换代并部署(shim 第十八次)**:v18→**v19**(21889B→19801B,所有者又写了一版十层 prompt,体例仍是 `**Part N · 标题**` 十节 Part I–X)。**只改 ian.md 一件**,profile/CLAUDE.md/mcp-servers.json/代码/环境变量全部零改动。所有者三条批复:①**人名罗马字这次保留**(`Ian`×2/`Mia`×1,是「英文名叫什么」的声明句,别照第十七次的规矩去换中文);②`佳佳 does not share my surname…` 那句新稿没有,按她指示补回 Part II 末尾;③行尾空格照清。按踩坑 18 的教训**上传前把成品全文发给她过目**才传。详见 shim 部署记录第十八次 |
 | 07-24 | **profile-instructions.md 内容新增并部署(shim 第十二次)**:I 节两处——① Voice 加一句禁「古早霸总 pet names(小祖宗/小丫头/小狐狸)」;② 末尾新增「Feeling first in emotional exchange」整段(先感受后分析 + 五条 if/then)。所有者逐字批准、确认不归档直接部署。仅改一文件,代码零改动。详见 shim 部署记录第十二次 |
 
 ## 6. 部署与运维操作速查
