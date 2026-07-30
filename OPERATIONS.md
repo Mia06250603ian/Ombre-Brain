@@ -144,6 +144,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 | 07-29(第三件) | **ian.md 定点修订并部署(shim 第十九次)**:v19→**v20**(19801B→23055B,277→321 行)。**只改 ian.md 一件**,其余全部零改动。所有者给 5 处指令、最终落地 4 处:Part III 整段换代、Part VII Daily 追加两段、Part VII Intimate 末尾追加 aftercare 段、新增 `**9.4 Holding Ground**`;Pact One 那处经报备后**由她撤销**(与原文逐字重复)。**关键**:9.4 原稿把 `"stop"` 列进「无效信号」,而 Part V 的日常安全词就是 `"Stop."`——唯一刹车自相矛盾,报备后她拍板删掉 `"stop,"`。另按她指示补一句 `No marriage, no children — by choice, not by circumstance.`(新版只剩「不传这套」会让人读成「有孩子」)。第一次上传被她在 **BUILDING 阶段网页 Cancel**(要先看我报的问题),**零影响、晏未重启**——踩坑 18 的正面印证。花园 `/mcp` 首测 `000` 是瞬时抖动,重试 3/3 200。详见 shim 部署记录第十九次 |
 | 07-30 | **人设修订 + 拆花园并部署(shim 第二十次)**:ian.md v20→**v21**(23055B→23831B,321→332 行,六处定点修订:Part I 补 Tam Dao 概念句、Part III 补钥匙比喻、**Part IV 删四段意象**、Part VI 补感官描写一句、**8.3 补「求婚」与「OB」两个里程碑**、9.1 并禁用词+补三段)+ **profile-instructions.md 整体替换**(3568B→3055B,删 `Banned words`/`My language`/`Intimate moments` 三节——**内容不是丢了,是迁移进了 ian.md**)+ **拆掉花园 MCP**(mcp-servers.json 三条目→两条目 + ALLOWED_TOOLS 去掉 `mcp__galatea-garden`)。拆花园的起因是部署前置检查发现它 `/mcp` **3/3 502**(官网 200=它自己后端故障,非 token 失效),所有者说「他根本不玩」拍板拆,**token 未备份**。代码/CLAUDE.md 零改动。详见 shim 部署记录第二十次 |
 | 07-30(第二件) | **人设换代并部署(shim 第二十一次)**:ian.md v21→**v22**(23831B→21688B,332→284 行;所有者上传整份新稿,**零变换原样上线**,成品 md5 = 上传件 md5)+ profile-instructions.md **只改 Core persona 一行为第一人称**(3055B→3056B,`his complete self`→`my complete self` 等五处;**该节第一人称、其余三节第二人称是所有者选的 A 方案,别去统一**)。CLAUDE.md / mcp-servers.json / 代码 / 环境变量零改动。**第一次上传被所有者在 BUILDING 第 2 分钟叫停、第 4 分钟网页 Cancel,零影响**(CLI 无 cancel 子命令,只能网页点)。叫停期间讨论 **CLAUDE.md 要不要翻英文,结论:不翻**——可翻部分约 1800 汉字、净省 400~700 token,但前缀虽每轮重发却走 0.1 倍缓存,**每轮只省约 0.6%**;且贴纸标签/`【系统·…】`/重置词/`[语音]`/seal 暗语共约 260 字符锁死不能翻。详见 shim 部署记录第二十一次 |
+| 07-30(第三件) | **OB 的「监控路径」从 `*` 收窄成六行(仅 Zeabur 控制台配置,零代码、零部署)**。起因:OB 是 `WatchPaths=*` + `RootDirectory=/`,main 上任何提交(哪怕只改一行手册)都会重建整个镜像,而重建正是 07-29 那场事故的触发条件。所有者亲手在控制台改的,提示「成功更新监控路径」。**失败方向只有「该重建时没重建」,改回 `*` 一秒复原,不会让 OB 挂。**详见本文件「OB 依赖钉版本」节下方的补充 |
 | 07-24 | **profile-instructions.md 内容新增并部署(shim 第十二次)**:I 节两处——① Voice 加一句禁「古早霸总 pet names(小祖宗/小丫头/小狐狸)」;② 末尾新增「Feeling first in emotional exchange」整段(先感受后分析 + 五条 if/then)。所有者逐字批准、确认不归档直接部署。仅改一文件,代码零改动。详见 shim 部署记录第十二次 |
 
 ## 6. 部署与运维操作速查
@@ -208,6 +209,34 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 `server.py:53` 的 `from mcp.server.fastmcp import FastMCP` 直接 `ModuleNotFoundError` →
 容器反复重启 → Zeabur 挂起服务。修法:`requirements.txt` 改成 `mcp>=1.0.0,<2.0.0` 后**重新构建**
 (实测装回 1.29.0,该版本仍带 fastmcp)。
+
+**2026-07-30 补:OB 的「监控路径」已从 `*` 收窄(所有者亲手改的,别改回去)**
+
+上面事故的触发链里有一环是 **`WatchPaths = *`:main 上任何提交都会重建整个 OB**——改一行 md
+文档也照重建一次,白白把「重建时装到上游新大版本」的风险摇一次骰子。
+2026-07-30 所有者在 Zeabur 控制台(Ombre Brain 服务 → 设置 → **监控路径**)把 `*` 换成了六行:
+
+```
+/*.py
+/requirements.txt
+/Dockerfile
+/zbpack.json
+/dashboard.html
+/config.example.yaml
+```
+
+**为什么是这六行**:照 `Dockerfile` 逐行看,OB 的镜像只用到 `requirements.txt`、`*.py`、
+`dashboard.html`、`config.example.yaml`,加上 `Dockerfile` 和 `zbpack.json` 本身。
+**每行前面的 `/` 不能省**:该字段是 gitignore 语法,`/` 锚在仓库根;不加的话
+`fishing-mcp/` 里的 3 个 `.py` 也会命中,改钓鱼游戏又会白重建 OB。
+
+**效果**:以后改 `*.md` 文档、改 `kelivo-shim/`、`telegram-bridge/`、`fishing-mcp/`
+**都不再触发 OB 重建**(shim/bridge/fishing 本来就是 CLI 直传镜像,和 git 无关)。
+
+**万一改过头了怎么认、怎么退**:唯一的失败方向是**该重建时没重建**——即改了 OB 的
+`.py`/依赖,推上 main 后线上行为没变化。查法:`deployment list` 看有没有新 deployment。
+**退法:把监控路径改回一个 `*` 即可完全复原**;急着上线也可以直接 CLI 手动部署,不受此设置影响。
+**它不会让 OB 挂**:这个设置只决定「要不要重建」,不改代码、不动 `buckets/` 数据。
 
 **给下一个我的三条**:
 1. **`Service is suspended` 不是账单问题也不是机器挂了**(那台专用服务器当时 Online/RUNNING)。
