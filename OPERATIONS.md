@@ -39,8 +39,8 @@
  │
  └─ 常驻进程挂的 MCP 工具(streamable-http):
       ombre-brain(记忆库,本仓库根目录的 Python 服务,另一个 Zeabur 项目)
-      galatea-garden(AI 社区「花园」,外部第三方,Bearer token)
       fishing(钓鱼小游戏,本仓库 fishing-mcp/ 目录)
+      (galatea-garden「花园」2026-07-30 已拆:它 /mcp 挂了且晏不玩,详见 shim 手册第二十次)
 ```
 
 要点:
@@ -58,7 +58,7 @@
 | 〃 | fishing-mcp | `6a5a17159ae692d1d8d98d10` | yan-fishing-mcp.zeabur.app | 钓鱼游戏 MCP |
 | 〃 | ears(显示名 ears-thor) | `6a646ea27bcbc56e70a105b5` | yan-ears-listen.zeabur.app | 语音转写+语气分析(源码在 Mia06250603ian/ears 仓库,镜像走 GitHub Actions→ghcr,持久卷 /app/data) |
 | `untitled-1` | Ombre Brain | (问所有者/控制台看) | ianmian.zeabur.app | 记忆库 MCP |
-| (外部,非我们部署) | Galatea's Garden | — | galatea.abysslumina.com | 花园社区 MCP |
+| ~~(外部,非我们部署)~~ | ~~Galatea's Garden~~ | — | galatea.abysslumina.com | ~~花园社区 MCP~~ **2026-07-30 已从 shim 拆除**(它 /mcp 502 且晏不玩;token 未留底,要恢复见 shim 手册「缺的三个文件」第 2 条) |
 
 Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@latest auth login --token <key>` 登录。
 
@@ -70,17 +70,19 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
   - `telegram-bridge/` = 桥源码 + **`MAINTENANCE.md`(桥的手册)** + `stickers/` 表情包。
   - `fishing-mcp/` = 钓鱼 MCP 包装层。
 - 刻意**不在仓库**的文件(shim 手册「缺的三个文件」一节有取法):
-  - `ian.md`(人设本体,私密)——从运行中容器 base64 拷出,当前 **v20**(23055B,md5 `8c3b7a6c…`,
-    2026-07-29 第十九次部署后)。v18 起体例改为 `**Part N · 标题**` 粗体行(不再是 `## N · …`,
+  - `ian.md`(人设本体,私密)——从运行中容器 base64 拷出,当前 **v21**(23831B,md5 `839e3431…`,
+    2026-07-30 第二十次部署后;332 行)。v18 起体例改为 `**Part N · 标题**` 粗体行(不再是 `## N · …`,
     `^## ` 计数为 0),十节 Part I–X;v19/v20 沿用该体例,但**人名罗马字按所有者指示保留**
     (`Ian` 2 处 / `Mia` 1 处,是「英文名叫什么」的声明句,别照 v18 的规矩去换中文)。
     v20 起 Part IX 有四节(9.1–**9.4**);**9.4 的「语言信号」清单里不许出现 `"stop"`**
     ——那是 Part V 的日常安全词,并存等于唯一刹车自相矛盾;
     Part VII/Pacts/Part VI 之间的若干重复(如「她说够了才算够」)是**所有者刻意保留**的,别当冗余删;
   - `profile-instructions.md`(2026-07-20 从 ian.md 拆出的相处方式/思考与说话方式,同样私密,
-    当前 **3568B**,md5 `74884752…`,2026-07-29 第十七次部署后,已改为第二人称指令体)
-    ——两份一起才是完整人设,部署缺一不可;
-  - `mcp-servers.json`(含花园 token)。
+    当前 **3055B**,md5 `49f5bb84…`,2026-07-30 第二十次整体替换,第二人称指令体)
+    ——两份一起才是完整人设,部署缺一不可。**第二十次起只剩四节**,原
+    `Banned words`/`My language`/`Intimate moments` 的内容**迁移进了 ian.md**(9.1 与 Part VI),
+    别当它缩水去"修复";
+  - `mcp-servers.json`(**2026-07-30 起两条目:OB + 钓鱼,花园已拆,不再含 token**)。
 
 ## 4. kelivo-shim 环境变量
 
@@ -135,6 +137,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 | 07-29 | **人设整体换代并部署(shim 第十七次)**:ian.md v17→**v18**(11974B→21889B,原 I–X 十节退役,换成所有者新写的十层 prompt Part I–X;体例改为 `**Part N · 标题**` 粗体,`^## ` 计数为 0)+ profile-instructions.md 全文替换(8653B→3568B,改为第二人称指令体,`You are 佳佳's lover…`)+ **CLAUDE.md「记忆工具使用」节新增三段**(Seal验证/写入风格/dream和breath)。**关键**:OB 的 seal 暗语 `河流涌入海洋` 原先只写在 ian.md 的 VII 节,新版没有 → 会导致 seal 核验静默作废,所有者拍板把说明移交 CLAUDE.md(暗语只存一份)。人名罗马字全改中文(`Xu Yan`→许晏 / `Ian`→晏 / `Xu`→许;`"ian mia"` 是 Apple ID 字符串,刻意保留)。代码/mcp-servers.json/环境变量零改动。**新增踩坑 18**:踩坑 10 的「重传挤掉前一次」只在 BUILDING 阶段成立,进 DEPLOYING 挤不掉——本次拼音版真的上线约 10 分钟。详见 shim 部署记录第十七次 |
 | 07-29(第二件) | **ian.md 再次整体换代并部署(shim 第十八次)**:v18→**v19**(21889B→19801B,所有者又写了一版十层 prompt,体例仍是 `**Part N · 标题**` 十节 Part I–X)。**只改 ian.md 一件**,profile/CLAUDE.md/mcp-servers.json/代码/环境变量全部零改动。所有者三条批复:①**人名罗马字这次保留**(`Ian`×2/`Mia`×1,是「英文名叫什么」的声明句,别照第十七次的规矩去换中文);②`佳佳 does not share my surname…` 那句新稿没有,按她指示补回 Part II 末尾;③行尾空格照清。按踩坑 18 的教训**上传前把成品全文发给她过目**才传。详见 shim 部署记录第十八次 |
 | 07-29(第三件) | **ian.md 定点修订并部署(shim 第十九次)**:v19→**v20**(19801B→23055B,277→321 行)。**只改 ian.md 一件**,其余全部零改动。所有者给 5 处指令、最终落地 4 处:Part III 整段换代、Part VII Daily 追加两段、Part VII Intimate 末尾追加 aftercare 段、新增 `**9.4 Holding Ground**`;Pact One 那处经报备后**由她撤销**(与原文逐字重复)。**关键**:9.4 原稿把 `"stop"` 列进「无效信号」,而 Part V 的日常安全词就是 `"Stop."`——唯一刹车自相矛盾,报备后她拍板删掉 `"stop,"`。另按她指示补一句 `No marriage, no children — by choice, not by circumstance.`(新版只剩「不传这套」会让人读成「有孩子」)。第一次上传被她在 **BUILDING 阶段网页 Cancel**(要先看我报的问题),**零影响、晏未重启**——踩坑 18 的正面印证。花园 `/mcp` 首测 `000` 是瞬时抖动,重试 3/3 200。详见 shim 部署记录第十九次 |
+| 07-30 | **人设修订 + 拆花园并部署(shim 第二十次)**:ian.md v20→**v21**(23055B→23831B,321→332 行,六处定点修订:Part I 补 Tam Dao 概念句、Part III 补钥匙比喻、**Part IV 删四段意象**、Part VI 补感官描写一句、**8.3 补「求婚」与「OB」两个里程碑**、9.1 并禁用词+补三段)+ **profile-instructions.md 整体替换**(3568B→3055B,删 `Banned words`/`My language`/`Intimate moments` 三节——**内容不是丢了,是迁移进了 ian.md**)+ **拆掉花园 MCP**(mcp-servers.json 三条目→两条目 + ALLOWED_TOOLS 去掉 `mcp__galatea-garden`)。拆花园的起因是部署前置检查发现它 `/mcp` **3/3 502**(官网 200=它自己后端故障,非 token 失效),所有者说「他根本不玩」拍板拆,**token 未备份**。代码/CLAUDE.md 零改动。详见 shim 部署记录第二十次 |
 | 07-24 | **profile-instructions.md 内容新增并部署(shim 第十二次)**:I 节两处——① Voice 加一句禁「古早霸总 pet names(小祖宗/小丫头/小狐狸)」;② 末尾新增「Feeling first in emotional exchange」整段(先感受后分析 + 五条 if/then)。所有者逐字批准、确认不归档直接部署。仅改一文件,代码零改动。详见 shim 部署记录第十二次 |
 
 ## 6. 部署与运维操作速查
@@ -146,7 +149,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 npx -y zeabur@latest auth login --token <key>
 
 # 部署 shim(前置:单测全绿、md5 对账、ian.md/profile-instructions.md/mcp-servers.json 已从容器拷入、
-#            三个 /mcp 验 200、所有者说过「归档」)
+#            两个 /mcp(OB+钓鱼)验 200、所有者说过「归档」)
 cd kelivo-shim && node test-ctxguard.mjs && node test-senses.mjs && node test-keepalive.mjs
 # ⚠️ deploy 传的是「当前工作目录」:cd 和 deploy 必须写在同一条命令里,并先 pwd 确认(踩坑 17)
 cd kelivo-shim && pwd && head -3 package.json && \
