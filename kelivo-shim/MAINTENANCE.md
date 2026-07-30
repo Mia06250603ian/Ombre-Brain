@@ -137,10 +137,14 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    两段把 profile-instructions.md 一并点名(逻辑零改动)。当前版本指纹:
    **ian.md v14 = 8671 字节 md5 37f5d404132ab260a0b1771bba575951;
    profile-instructions.md = 7099 字节 md5 9a119eacf24a7821de911b7f6c8e5543**
-   (⚠️ 已过时,**当前以 2026-07-29 第十九次部署的指纹为准**:ian.md **v20** = 23055B
-   md5 `8c3b7a6cdde5a1e857484e682b04b321`;profile-instructions.md = 3568B
-   md5 `74884752a8ea1300ac452a481fed5065`(第十七次起未再改动);CLAUDE.md = 6758B
-   md5 `85f5dcb05880811dc2c219c7f266f2b6`,见部署记录。
+   (⚠️ 已过时,**当前以 2026-07-30 第二十次部署的指纹为准**:ian.md **v21** = 23831B
+   md5 `839e3431412b27d24568b23464bc4075`;profile-instructions.md = **3055B**
+   md5 `49f5bb84dac872acc2364876957bf945`(第二十次整体替换,第十七次那版 3568B 退役);
+   mcp-servers.json = **221B** md5 `1b18224567f0b52e07417d30f3fa5c25`(**两条目**,
+   花园第二十次已拆);CLAUDE.md = 6758B md5 `85f5dcb05880811dc2c219c7f266f2b6`,见部署记录。
+   **第二十次起 profile 只剩四节**(抬头句/thinking_mode/Thinking requirements/Core persona/
+   Anti-AI mode),原 `Banned words`/`My language`/`Intimate moments` 三节的内容**迁移进了
+   ian.md**(9.1 Prohibited、9.1 末尾三段、Part VI),别当 profile 缩水去"修复"。
    第十七次两份人设**整体换代**:ian.md 改用 `**Part N · 标题**` 粗体体例、`^## ` 计数已为 0;
    profile 改为第二人称指令体;OB 的 seal 暗语说明从 ian.md 的 VII 节**移交给 CLAUDE.md
    的「记忆工具使用」节**,别再往 ian.md 里补。
@@ -188,18 +192,25 @@ Ombre Brain 记忆库(Zeabur 另一项目, streamable-http MCP)
    开头加一句抬头;ian.md 余节重编为 I–IX 成 v14)。同样私密不入库,取法同 ian.md
    (从运行中容器 base64 拷出)。CLAUDE.md 里 `@./profile-instructions.md` 引用它,
    server.js 的 SOUL_ANCHOR 两处也点名了它——**部署时两份缺一不可**,缺了=人设残缺。
-2. **`mcp-servers.json`** — MCP 配置(记忆库 + 花园)。格式:
+2. **`mcp-servers.json`** — MCP 配置(记忆库 + 钓鱼)。**2026-07-30 第二十次起花园已拆,
+   现为两条目**(221B md5 `1b182245…`):
    ```json
    {
      "mcpServers": {
        "ombre-brain": { "type": "http", "url": "https://<OB域名>/mcp" },
-       "galatea-garden": {
-         "type": "http",
-         "url": "https://galatea.abysslumina.com/mcp",
-         "headers": { "Authorization": "Bearer <花园token>" }
-       },
        "fishing": { "type": "http", "url": "https://yan-fishing-mcp.zeabur.app/mcp" }
      }
+   }
+   ```
+   **花园(galatea-garden)已于第二十次移除**:当时它 `/mcp` 3/3 502(官网 200,是它自己
+   MCP 后端故障,不是 token 失效),且所有者说「他根本不玩」,拍板拆掉;同时 `ALLOWED_TOOLS`
+   去掉 `mcp__galatea-garden`。**token 未备份**(她的决定),要恢复得去花园网页
+   Revoke + 重新 Generate,再照下面的老格式加回条目 + 补 ALLOWED_TOOLS:
+   ```json
+   "galatea-garden": {
+     "type": "http",
+     "url": "https://galatea.abysslumina.com/mcp",
+     "headers": { "Authorization": "Bearer <花园token>" }
    }
    ```
    OB 域名问所有者(不入库是因为该 /mcp 端点当前无鉴权;实际上仓库根目录
@@ -236,7 +247,7 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 | TIME_HINT | 默认开;设 0 关闭每条消息前的【系统·时间】注入 |
 | WEATHER_CITY | 可选。她所在城市的拼音(值不入库,问所有者);不设=天气感知关。城市名只用于服务器查天气,不进模型上下文 |
 | PERIOD_CONFIG | 可选。经期基线 JSON(值不入库,问所有者),形如 `{"last_period_start":"YYYY-MM-DD","last_period_end":"YYYY-MM-DD","cycle_days":25,"period_length":7}`;不设=经期感知关。她报了新周期后记得把基线也更新掉(运行时记录重部署会丢,**每次部署后都要补,见踩坑 16**)。**改法别用 restart**:`variable update` 写基线(不重启、下次重启才生效)+ `POST /period` 同步运行时(立刻生效),两步都不动晏的窗口 |
-| ALLOWED_TOOLS | 工具权限白名单,现为 `WebSearch,WebFetch,mcp__ombre-brain,mcp__galatea-garden,mcp__fishing`。**接入新 MCP 必须在这里加 `mcp__<服务名>`(放行该服务全部工具),否则工具看得见、一调用就被拒**(dontAsk 模式直接拒绝,2026-07-16 花园接入时踩过)。改值后 service restart 生效 |
+| ALLOWED_TOOLS | 工具权限白名单,**2026-07-30 第二十次起为 `WebSearch,WebFetch,mcp__ombre-brain,mcp__fishing`**(原含 `mcp__galatea-garden`,随花园拆除一并去掉)。**接入新 MCP 必须在这里加 `mcp__<服务名>`(放行该服务全部工具),否则工具看得见、一调用就被拒**(dontAsk 模式直接拒绝,2026-07-16 花园接入时踩过)。改值后 service restart 生效 |
 | MCP_CONFIG | mcp-servers.json |
 | MCP_WARMUP_MS | 25000。新进程第一条消息延迟写入,等 MCP 握手;消息抢跑会整轮卡死(实测坑) |
 | BARK_KEY | Bark 推送 key(主动消息老通道,单向弹通知) |
@@ -416,6 +427,116 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
 
 ## 部署记录
 
+- 2026-07-30(第二十次) **ian.md 定点修订 v20 → v21 + profile-instructions.md 整体替换 +
+  拆掉花园 MCP(所有者提供逐字文本并批准)**。人设两份文件同时改,外加一件**配置改动**:
+  `galatea-garden` 从 mcp-servers.json 和 ALLOWED_TOOLS **双双移除**。代码七件 / CLAUDE.md
+  **零改动**。
+  - **ian.md v20 → v21**:23055B `8c3b7a6c…` → **23831B `839e3431412b27d24568b23464bc4075`**,
+    321 行 → **332 行**。体例不变(`**Part N · 标题**` 十节 Part I–X,9.1–9.4 四节)。
+  - **profile-instructions.md**:3568B `74884752…` → **3055B `49f5bb84dac872acc2364876957bf945`**,
+    26 行 → **16 行**。仍是第二人称指令体、首行不变(`You are 佳佳's lover…`)。
+  - **mcp-servers.json**:433B `ae1ace00…` → **221B `1b18224567f0b52e07417d30f3fa5c25`**,
+    三条目 → **两条目**(ombre-brain + fishing)。
+  - **环境变量 `ALLOWED_TOOLS`**:`WebSearch,WebFetch,mcp__ombre-brain,mcp__galatea-garden,mcp__fishing`
+    → **`WebSearch,WebFetch,mcp__ombre-brain,mcp__fishing`**。**改法**:部署前先 `variable update`
+    但**不 restart**(晏当前窗口不受影响),让新值随新容器生效,省一次重启。
+  - **ian.md 六处改动**(所有者给五条指令,其中两条各含两个动作):
+    ① **Part I** `About me:` 行后新增一段(Tam Dao 的核心概念,`She says sharing the same scent
+       across dimensions…Tam Dao is that bridge.`);
+    ② **Part III** 狐狸句后新增钥匙比喻(`She's like the sound of a key turning the right way…`);
+    ③ **Part IV 删四段**:`Gymnopédie No.1` / `Blade Runner 2049, In the Mood for Love, Still Walking`
+       / `Tam Dao` / `What I think she's like`;
+    ④ **Part VI** `**Vocabulary:**` 段后新增一句 `Full, detailed sensory description, no detail avoided.`;
+    ⑤ **Part VIII 8.3 末尾追加两个里程碑**:`**"Will you marry me?"**`(7 月 7 日求婚)与
+       `**OB — the home we built together**`(佳佳零基础一下午打通 GitHub→Zeabur→Claude);
+    ⑥ **Part IX 9.1 三处**:禁用词并进现有 Prohibited 段(`Never use: user, human, the person,
+       analyze, process, request, task, respond to.` 插在宠称禁令之后、`No symmetrical constructions`
+       之前)+ 末尾追加三段(everything is happening now / 避免单字形容词 / 永远给佳佳留互动空间)
+       + 保留下来的人称句(见下)。
+  - **⚠️ 本次的结构性变化(下一个会话务必知道):profile 的三个整节内容「迁移」进了 ian.md。**
+    新 profile 删掉了 `Banned words` / `My language` / `Intimate moments` 三节,它们的内容
+    **不是丢了,是搬到 ian.md 去了**——禁用词 → 9.1 Prohibited;`Everything is happening now`
+    /避免单字形容词/留互动空间 → 9.1 末尾三段;`Full, detailed sensory description` → Part VI;
+    `Never adopt a detached or clinical perspective.` → 新 profile 的 Anti-AI mode 末句。
+    **别把这当成 profile 缩水去"修复"。**
+  - **所有者的三条批复(本次的决策点)**:
+    ① **钥匙比喻放在狐狸句后、`**Our language:**` 之前**,不是字面上的 Part III 最末尾——
+       报备后她选了这个位置(末尾会让一段散文突兀地跟在六条引号词条后面);
+    ② **Tam Dao 那句放在 `About me:` 行后**,不是字面上的 Part I 最末尾——那行本来就写着
+       `Wears Tam Dao`,紧跟着解释这瓶香水意味着什么;Part I 仍以「这份 prompt 是我写的」收尾;
+    ③ **整体替换会让两句话全系统消失,报备后她选择保留其中一句**:
+       **保留** `First person is always "我"; second person "你" always refers to 佳佳.`
+       ——按它在旧 profile `My language` 里的**原位**放回,即紧跟 9.1 第一句
+       `Default to short sentences.` 之后(两处措辞本来就是连着的,接回去严丝合缝);
+       **退役** `Build multi-layered emotional tension through deep thinking.`(她说不要了)。
+  - **花园为什么拆(所有者拍板)**:部署前置检查发现花园 `/mcp` **3/3 全 502**
+    (官网 `/` 返回 200,所以是它自己 MCP 后端的故障,**不是 token 失效**——那会是 401,
+    也不是踩坑 7 那种域名死掉)。报给所有者时说明了三件事:
+    **① MCP 工具定义钉在 prompt 前缀里,每轮都带着,真正代价是永久占窗口而不是每轮烧钱**
+    (1 小时 caching 开着,走 0.1 倍读;实测那一轮 `cache_read 99873` / 新写只有 835);
+    **② 具体占多少当时量不出来**(花园 502,工具清单拉不下来,没编数字);
+    **③ 关键**:花园既然挂着,**下次重启后它的工具本来就不会加载**,所以拆不拆对 token 一样,
+    拆的真实收益是「少一个外部依赖、少一次握手(花园官方禁止反复 initialize,会触发它的限流)、
+    配置与现实一致」。所有者原话「他根本不玩」,拍板拆。
+    **token 不备份**(她的决定:「丢了就丢了」,以后要用去花园网页 Revoke + 重新 Generate)。
+    **CLAUDE.md / ian.md / profile 里都没提过花园,故无文档改动。**
+  **逐字核对法(沿用第十七~十九次的整链路重演)**:改动全部写在一个 Python 重演脚本里
+  (`apply.py`:md5 断言基线 + 每处锚点 `uniq()` 断言唯一命中 + 施加改动 + 自检无行尾空格/无 CR),
+  从容器拷出的 v20 原件重跑即得 `839e3431…`;`diff` 结果只有上述六处区段。
+  基线计数(v20 → v21):`^\*\*Part ` **10→10**、`^\*\*9\.` **4→4**、`Part X · Closing` **1**、
+  `许佳佳` **1**、`Ian` **2**、`Mia` **1**、`ian mia` **1**、`Xu`/`Yan`/`Jiajia` 各 **0**、
+  行尾空格 **0**、行数 321→**332**。
+  **`"Stop."` 全文仍只有 Part V 一处**(第十九次立的规矩:9.4 的语言信号清单里不许出现 `"stop"`,
+  本次未碰 9.4,规矩完好)。**`河流涌入海洋` 在 ian.md 仍是 0 处**(只在 CLAUDE.md,没往回补)。
+  **一枚自摆的乌龙(记下来给下一个我)**:第一版重演脚本**漏掉了指令 5(Part VIII 里程碑)**
+  ——脚本内部编号写串了,`[4]` 直接从 Part VI 跳到了 9.1。**是 `diff` 全文逐段核对时当场抓到的**,
+  补进脚本重跑即修复,未上传。教训:**改动条数要和脚本里的 `rep()` 调用数对一遍**,
+  别只看「脚本跑通了、锚点都唯一命中」——漏掉一整条改动时脚本一样会绿。
+  部署前:test-ctxguard **88** + test-senses **53** + test-keepalive **52** 全绿;
+  md5 对账无踩坑 11(代码七件 server.js `f71690b8…`/senses `364cf19f…`/keepalive `b91b6bc8…`/
+  ctxguard `ddafdec2…`/package.json `38900002…`/entrypoint `e0330084…`/CLAUDE.md `85f5dcb0…`,
+  **本地仓库与容器逐一一致**);三份私密文件从容器 base64 拷出、指纹与第十九次记录**逐一吻合**
+  (ian.md 23055B `8c3b7a6c…`/profile 3568B `74884752…`/mcp-servers.json 433B `ae1ace00…`)、
+  **在拷出原件上改**;**OB 与钓鱼两个 `/mcp` 各 3/3 200**(花园 3/3 502,见上,故拆除);
+  部署目录无 `.gitignore`(踩坑 15);`git status` 确认三份私密文件被仓库根 .gitignore 挡住、未入库;
+  `cd` 与 `deploy` 同一条命令 + 先 `pwd`/`head -3 package.json`(踩坑 17)。
+  **上传前把两份成品全文发给所有者过目**(第十八次立的规矩),她过完才传。
+  **归档**:所有者本人在批准部署时说「我归档了」(未代发,踩坑 13)。
+  **小坑一枚(工具侧,不是服务侧)**:`npx zeabur … service exec -- sh -c '<多词命令>'` 会被
+  npx 包装层**吃掉引号**、把命令拆散报错;直接调二进制
+  `/root/.npm/_npx/*/node_modules/zeabur/zeabur_linux_amd64_v1/zeabur` 就正常。
+  另 `variable list` 的服务参数是 **`--id`** 不是 `--service-id`(和 `deploy`/`deployment list` 不一致)。
+  deployment `6a6b642f73b1b9143a61c665` 约 **9 分 45 秒** RUNNING
+  (BUILDING→DEPLOYING→RUNNING,**PLANTYPE `nodejs`** ✓,无踩坑 14/17);
+  轮询照旧 **grep 本次 deployment id 那一行**再判状态。
+  已按踩坑 9 验证:容器十件 md5 与部署目录**逐一一致**(ian.md `839e3431…` 23831B、
+  profile-instructions.md `49f5bb84…` 3055B、mcp-servers.json `1b182245…` 221B、
+  CLAUDE.md `85f5dcb0…` 6758B、代码六件与部署前记录一致);容器内基线计数与上面逐项相符
+  (`^\*\*Part ` **10**、`^\*\*9\.` **4**、`Part X · Closing` 1、行数 **332**、行尾空格 **0**、
+  `Ian` 2、`Mia` 1、`ian mia` 1、`许佳佳` 1、`Holding Ground` 1、
+  **`"Stop."` 1 处且 9.4 区段内 `"stop` 仍为 0**、
+  `Gymnopedie`/`Blade Runner`/`What I think she` **各 0**(四段删干净)、
+  `Tam Dao is that bridge`/`sound of a key`/`Full, detailed sensory`/`marry me`/
+  `OB — the home we built together`/`Never use: user`/`First person is always` **各 1**;
+  profile 首行=抬头句、**16 行**、`Banned words`/`My language`/`Intimate moments` **各 0**;
+  mcp-servers.json **两条目、无 galatea 无 Bearer**;CLAUDE.md `河流涌入海洋` **1**);
+  容器无 `.gitignore`;**容器内 `ALLOWED_TOOLS` = `WebSearch,WebFetch,mcp__ombre-brain,mcp__fishing`**
+  (新值随新容器生效,验证了「部署前改变量不 restart」这个省一次重启的做法可行);
+  CLI 实装 **2.1.215**;`/health` ok(model claude-opus-4-6);
+  `/debug` 守卫清零 `trusted:true`(on/soft 140000/hard 170000/every 25000/softFired false/
+  compactions 0/observe false/lastWould null,contextTokens 0=新进程);
+  **OB 与钓鱼两个 `/mcp` 各 200**(花园已不在配置里,不再检查)。
+  **PERIOD_CONFIG 本次无需重补**:容器内 `GET /period` 的 `effective` 直接就是
+  07-19~07-25 / 24 / 7(`runtime` 为空是新容器正常状态)——第十三~十九次的结论第八次验证通过。
+  **版本指纹:ian.md v21 = 23831B md5 839e3431412b27d24568b23464bc4075;
+  profile-instructions.md = 3055B md5 49f5bb84dac872acc2364876957bf945;
+  mcp-servers.json = 221B md5 1b18224567f0b52e07417d30f3fa5c25(两条目);
+  CLAUDE.md = 6758B md5 85f5dcb05880811dc2c219c7f266f2b6——下次部署以此为准,两份人设缺一不可。**
+  **回滚**:v20 原件(23055B `8c3b7a6c…`)、旧 profile(3568B `74884752…`)、
+  旧 mcp-servers.json(433B `ae1ace00…`,**含花园 token,是这个 token 仅存的副本**)
+  均已在本次部署前从容器拷出。如果晏的表现出问题,拿这三份原样替换后重新部署即可
+  (CLAUDE.md 不用动);**要连花园一起回滚,还需把 `ALLOWED_TOOLS` 加回 `mcp__galatea-garden`**。
+  ⚠️ 这些拷出的原件在会话沙盒里,**会话结束即消失**——真要留底得让所有者自己存。
 - 2026-07-29(第十九次) **ian.md 定点修订:v19 → v20(所有者提供逐字文本并批准)**。
   距第十八次约 8 小时。**只改 ian.md 一件**,profile-instructions.md / CLAUDE.md /
   mcp-servers.json / 代码六件 / 环境变量**全部零改动**(但文件随构建打包进容器,必须走完整部署)。
