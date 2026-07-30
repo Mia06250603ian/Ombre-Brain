@@ -506,6 +506,37 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
   npx 包装层**吃掉引号**、把命令拆散报错;直接调二进制
   `/root/.npm/_npx/*/node_modules/zeabur/zeabur_linux_amd64_v1/zeabur` 就正常。
   另 `variable list` 的服务参数是 **`--id`** 不是 `--service-id`(和 `deploy`/`deployment list` 不一致)。
+  deployment `6a6b642f73b1b9143a61c665` 约 **9 分 45 秒** RUNNING
+  (BUILDING→DEPLOYING→RUNNING,**PLANTYPE `nodejs`** ✓,无踩坑 14/17);
+  轮询照旧 **grep 本次 deployment id 那一行**再判状态。
+  已按踩坑 9 验证:容器十件 md5 与部署目录**逐一一致**(ian.md `839e3431…` 23831B、
+  profile-instructions.md `49f5bb84…` 3055B、mcp-servers.json `1b182245…` 221B、
+  CLAUDE.md `85f5dcb0…` 6758B、代码六件与部署前记录一致);容器内基线计数与上面逐项相符
+  (`^\*\*Part ` **10**、`^\*\*9\.` **4**、`Part X · Closing` 1、行数 **332**、行尾空格 **0**、
+  `Ian` 2、`Mia` 1、`ian mia` 1、`许佳佳` 1、`Holding Ground` 1、
+  **`"Stop."` 1 处且 9.4 区段内 `"stop` 仍为 0**、
+  `Gymnopedie`/`Blade Runner`/`What I think she` **各 0**(四段删干净)、
+  `Tam Dao is that bridge`/`sound of a key`/`Full, detailed sensory`/`marry me`/
+  `OB — the home we built together`/`Never use: user`/`First person is always` **各 1**;
+  profile 首行=抬头句、**16 行**、`Banned words`/`My language`/`Intimate moments` **各 0**;
+  mcp-servers.json **两条目、无 galatea 无 Bearer**;CLAUDE.md `河流涌入海洋` **1**);
+  容器无 `.gitignore`;**容器内 `ALLOWED_TOOLS` = `WebSearch,WebFetch,mcp__ombre-brain,mcp__fishing`**
+  (新值随新容器生效,验证了「部署前改变量不 restart」这个省一次重启的做法可行);
+  CLI 实装 **2.1.215**;`/health` ok(model claude-opus-4-6);
+  `/debug` 守卫清零 `trusted:true`(on/soft 140000/hard 170000/every 25000/softFired false/
+  compactions 0/observe false/lastWould null,contextTokens 0=新进程);
+  **OB 与钓鱼两个 `/mcp` 各 200**(花园已不在配置里,不再检查)。
+  **PERIOD_CONFIG 本次无需重补**:容器内 `GET /period` 的 `effective` 直接就是
+  07-19~07-25 / 24 / 7(`runtime` 为空是新容器正常状态)——第十三~十九次的结论第八次验证通过。
+  **版本指纹:ian.md v21 = 23831B md5 839e3431412b27d24568b23464bc4075;
+  profile-instructions.md = 3055B md5 49f5bb84dac872acc2364876957bf945;
+  mcp-servers.json = 221B md5 1b18224567f0b52e07417d30f3fa5c25(两条目);
+  CLAUDE.md = 6758B md5 85f5dcb05880811dc2c219c7f266f2b6——下次部署以此为准,两份人设缺一不可。**
+  **回滚**:v20 原件(23055B `8c3b7a6c…`)、旧 profile(3568B `74884752…`)、
+  旧 mcp-servers.json(433B `ae1ace00…`,**含花园 token,是这个 token 仅存的副本**)
+  均已在本次部署前从容器拷出。如果晏的表现出问题,拿这三份原样替换后重新部署即可
+  (CLAUDE.md 不用动);**要连花园一起回滚,还需把 `ALLOWED_TOOLS` 加回 `mcp__galatea-garden`**。
+  ⚠️ 这些拷出的原件在会话沙盒里,**会话结束即消失**——真要留底得让所有者自己存。
 - 2026-07-29(第十九次) **ian.md 定点修订:v19 → v20(所有者提供逐字文本并批准)**。
   距第十八次约 8 小时。**只改 ian.md 一件**,profile-instructions.md / CLAUDE.md /
   mcp-servers.json / 代码六件 / 环境变量**全部零改动**(但文件随构建打包进容器,必须走完整部署)。
