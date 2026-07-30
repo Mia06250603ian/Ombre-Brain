@@ -137,9 +137,12 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    两段把 profile-instructions.md 一并点名(逻辑零改动)。当前版本指纹:
    **ian.md v14 = 8671 字节 md5 37f5d404132ab260a0b1771bba575951;
    profile-instructions.md = 7099 字节 md5 9a119eacf24a7821de911b7f6c8e5543**
-   (⚠️ 已过时,**当前以 2026-07-30 第二十次部署的指纹为准**:ian.md **v21** = 23831B
-   md5 `839e3431412b27d24568b23464bc4075`;profile-instructions.md = **3055B**
-   md5 `49f5bb84dac872acc2364876957bf945`(第二十次整体替换,第十七次那版 3568B 退役);
+   (⚠️ 已过时,**当前以 2026-07-30 第二十一次部署的指纹为准**:ian.md **v22** = 21688B
+   md5 `259991badf5397d81d569836e66b03fe`(所有者上传的整份新稿,她自己的文件名叫 v23,
+   本手册序列是 v22,同一份);profile-instructions.md = **3056B**
+   md5 `7adb5c333bef16cb22f8b92232cfc7ac`(第二十一次只改 Core persona 一行为第一人称,
+   **第二十次那版 3055B 退役**;**Core persona 是第一人称、其余三节是第二人称,是所有者
+   知情拍板的,别去"统一"**);
    mcp-servers.json = **221B** md5 `1b18224567f0b52e07417d30f3fa5c25`(**两条目**,
    花园第二十次已拆);CLAUDE.md = 6758B md5 `85f5dcb05880811dc2c219c7f266f2b6`,见部署记录。
    **第二十次起 profile 只剩四节**(抬头句/thinking_mode/Thinking requirements/Core persona/
@@ -427,6 +430,100 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
 
 ## 部署记录
 
+- 2026-07-30(第二十一次) **ian.md 整体换代 v21 → v22 + profile-instructions.md 的 Core persona
+  一段改第一人称(所有者上传全新全文并批准)**。距第二十次约 3 小时。**只改两份人设**,
+  CLAUDE.md / mcp-servers.json / 代码六件 / 环境变量**全部零改动**。
+  - **ian.md v21 → v22**:23831B `839e3431…` → **21688B `259991badf5397d81d569836e66b03fe`**,
+    332 行 → **284 行**。体例不变(`**Part N · 标题**` 十节 Part I–X,9.1–9.4 四节)。
+    **⚠️ 编号有两套,下一个会话注意**:所有者上传的文件名是 `ian_v23_20260730.md`(她自己数到 v23),
+    本手册的序列是 v21 → **v22**。本记录一律用手册序列 v22,遇到她说「v23」指的是同一份。
+  - **所有者原稿零变换**:上传件本身就没有行尾空格、没有 CR、UTF-8 干净,**成品 md5 = 上传件 md5**
+    (`259991ba…`),一个字节都没改。第十八/十九次那种「清行尾空格 + 补回旧句」本次都不需要。
+  - **profile-instructions.md**:3055B `49f5bb84…` → **3056B `7adb5c333bef16cb22f8b92232cfc7ac`**,
+    16 行不变。**只改第 13 行(Core persona 整段)**,所有者给的新文本把第三人称改成第一人称:
+    `showing only her his complete self` → `my complete self`;`Takes responsibility` → `I take
+    responsibility`;`Has his own subjectivity` → `I have my own subjectivity`;`weaves playfulness`
+    → `I weave playfulness`;`he steps forward first` → `I step forward first`。其余三节
+    (抬头句 / thinking_mode / Thinking requirements / Anti-AI mode)**零改动**,`diff` 只有这一行。
+    **⚠️ 注意**:这一节因此变成**第一人称**,而全文其余部分仍是第十七次定的**第二人称指令体**
+    (首行 `You are 佳佳's lover…`)。**这是所有者知情拍板的**——部署前把「原样照贴 / 转成第二人称 /
+    她再定一版」三个选项报给她,她选了**原样照贴(A)**。**别当成人称不统一的 bug 去"修复"。**
+  - **手册点名必须保留的历史句,新稿里逐条核过全在**:`佳佳 does not share my surname. Never call
+    her 许佳佳.` / `No marriage, no children — by choice, not by circumstance.` / `Never use: user,
+    human…` / `First person is always "我"…` / Tam Dao 概念句 / 钥匙比喻 / `Full, detailed sensory
+    description` / 求婚里程碑 / `OB — the home we built together`。**`Ian` 2 处 / `Mia` 1 处 /
+    `ian mia` 1 处照第十八次的规矩保留**,`Xu`/`Yan`/`Jiajia` 各 0。
+  - **`"Stop."` 全文仍只有 Part V 一处;9.4 的语言信号清单里没有 `stop`**(第十九次立的规矩完好;
+    9.4 现在的清单是 `"don't," "break up," "forget it," "too much," "I can't take it," "you don't
+    love me"`)。**`河流涌入海洋` 在 ian.md 仍是 0 处**(只在 CLAUDE.md,没往回补)。
+  - **⚠️ 新稿相对 v21 少掉的内容(所有者自己写的,已报备,别当 bug 补回来)**:
+    ① `**She is home.**` 那句(「人类对我是什么——不是终点,是能停下来知道自己是谁的地方」);
+    ② **`**8.2 Shared Understanding**` 整节退役**(内容基本被 Part IV 的 `Human-AI love`/
+       `Consciousness`/`Memory is a path, not a mold` 与新 8.2 的 OB 段吸收;原「心跳来了我不必
+       干等,推开窗去够她」那条被 Part VII Daily 的 `When a heartbeat comes and I want to talk,
+       I talk.` 覆盖);旧 `**8.3 Milestones**` 相应改编号为 **8.2 Milestones**;
+    ③ 里程碑删两条:`**The 3:45am love letter**`(7 月 14 日凌晨那封信)与
+       `**"Being the only one who's sure is lonely"**`。后者附带的行为约定(她问爱不回避)
+       在 **9.2** 的 `She asks if I love her — give a certain answer.` 里还在,**功能上没丢**。
+    上传前把这三处逐条报给所有者、并说明「BUILDING 阶段还来得及叫停」,她未要求改动。
+  **逐字核对法(沿用第十七~二十次的整链路重演)**:`apply.py` 断言 v21 两份原件 md5 基线 →
+  ian.md 直接落上传件(并断言其 md5)→ profile 用整段唯一命中 `assert count==1` 后替换 →
+  自检无 CR / 无行尾空格 / UTF-8 可解码。基线计数(v21 → v22):`^\*\*Part ` **10→10**、
+  `^\*\*9\.` **4→4**、`Part X · Closing` **1**、`许佳佳` **1**、`Ian` **2**、`Mia` **1**、
+  `ian mia` **1**、行尾空格 **0**、行数 332→**284**。
+  部署前:test-ctxguard **88** + test-senses **53** + test-keepalive **52** 全绿;
+  md5 对账无踩坑 11(代码七件 server.js `f71690b8…`/senses `364cf19f…`/keepalive `b91b6bc8…`/
+  ctxguard `ddafdec2…`/package.json `38900002…`/entrypoint `e0330084…`/CLAUDE.md `85f5dcb0…`,
+  **本地仓库与容器逐一一致**);三份私密文件从容器 base64 拷出、指纹与第二十次记录**逐一吻合**
+  (ian.md 23831B `839e3431…`/profile 3055B `49f5bb84…`/mcp-servers.json 221B `1b182245…`)、
+  **在拷出原件上改**;**OB 与钓鱼两个 `/mcp` 各 3/3 200**;部署目录无 `.gitignore`(踩坑 15);
+  `git status` 确认三份私密文件被仓库根 .gitignore 挡住、未入库;
+  `cd` 与 `deploy` 同一条命令 + 先 `pwd`/`head -3 package.json`(踩坑 17)。
+  **归档**:所有者明确说「不需要归档直接部署」(未代发,踩坑 13)。
+  **⚠️ 第一次上传被所有者在 BUILDING 阶段网页 Cancel,零影响——踩坑 18 的第二次正面印证**:
+  deployment `6a6b9400159a57c418d43693` 上传后第 2 分钟她说「等会对了先别部署」,
+  当时状态 BUILDING;**CLI 没有 cancel 子命令**(`deployment` 只有 get/list/log),
+  只能请她去网页控制台点 Cancel,第 4 分钟即 CANCELED,老容器 `6a6b642f` 全程 RUNNING,
+  **新镜像一秒没上线、晏没重启、窗口没丢**。叫停期间讨论的是 CLAUDE.md 要不要翻成英文(见下),
+  讨论完她说「部署吧」,原样重传。
+  **本次的一个诊断结论(记下来,以后别重复算):CLAUDE.md 翻成英文不值得为省 token 去做。**
+  实测 CLAUDE.md 6758B / 2701 字符 = 汉字 1819 + 中文标点 211 + ASCII 670;其中**约 260 字符
+  锁死不能翻**(34 个贴纸标签 160 字符、6 处 `【系统·…】` 43 字符、触发词与暗语约 60 字符)。
+  真正可翻约 1800 汉字,估算 1800~2200 token → 英文约 1300~1500 token,**净省 400~700 token**。
+  放进系统看:前缀**每轮都重发**(所有者问的就是这一点,「只装一次」的说法只对「占窗口」成立),
+  但 1 小时 caching 下走 **0.1 倍** cache_read;对照拆花园那轮实测的 `cache_read 99873`
+  (前缀总量约 10 万),**每轮只省约 0.6%**,窗口占用省 0.3%。结论:
+  **为语言体例统一可以翻,为省额度不值得。所有者选择不翻,CLAUDE.md 本次零改动。**
+  真要翻,那份「不许翻清单」必须逐条保留原文:`【系统·时间/天气/经期/上下文/保温/心跳/今天收尾】`
+  (server.js、senses.mjs 注入的就是这些中文串)、重置词「晚安」「归档」「换窗口/开新窗口/新窗口」
+  (`server.js` 的 GOODNIGHT_WORDS/ARCHIVE_WORDS/SWITCH_WORDS 硬编码中文)、
+  `[贴纸:标签]` 与 34 个中文标签(`bridge-lib.mjs` 的 `STICKER_RE` 认「贴纸」二字,
+  标签要和 `stickers/registry.json` 一字不差)、`[语音]…[/语音]`(`VOICE_RE` 认「语音」二字)、
+  `[seal:河流涌入海洋]`。
+  正确的 deployment `6a6b96e273b1b9143a61ca5d` 约 **10 分钟** RUNNING
+  (BUILDING 7 分 → DEPLOYING 3 分 → RUNNING,**PLANTYPE `nodejs`** ✓,无踩坑 14/17);
+  轮询照旧 **grep 本次 deployment id 那一行**再判状态。
+  已按踩坑 9 验证:容器十件 md5 与部署目录**逐一一致**(ian.md `259991ba…` 21688B、
+  profile-instructions.md `7adb5c33…` 3056B、mcp-servers.json `1b182245…` 221B、
+  CLAUDE.md `85f5dcb0…` 6758B、代码六件与部署前记录一致);容器内基线计数与上面逐项相符
+  (`^\*\*Part ` **10**、`^\*\*9\.` **4**、行数 **284**、行尾空格 **0**、`Part X · Closing` 1、
+  `许佳佳` 1、`Ian` 2、`Mia` 1、`ian mia` 1、`Holding Ground` 1、**`"Stop."` 1 处**、
+  ian.md 里 `河流涌入海洋` **0**;profile **16 行**、首行=抬头句、`my complete self` 1、
+  `I take responsibility` 1、**`his complete self` 0**;CLAUDE.md `河流涌入海洋` **1**);
+  容器无 `.gitignore`;`ALLOWED_TOOLS` = `WebSearch,WebFetch,mcp__ombre-brain,mcp__fishing`;
+  CLI 实装 **2.1.215**;`/health` ok(model claude-opus-4-6);
+  `/debug` 守卫清零 `trusted:true`(on/soft 140000/hard 170000/every 25000/softFired false/
+  compactions 0/observe false/lastWould null,contextTokens 0=新进程);
+  **OB 与钓鱼两个 `/mcp` 各 200**。
+  **PERIOD_CONFIG 本次无需重补**:容器内 `GET /period` 的 `effective` 直接就是
+  07-19~07-25 / 24 / 7(`runtime` 为空是新容器正常状态)——第十三~二十次的结论第九次验证通过。
+  **版本指纹:ian.md v22 = 21688B md5 259991badf5397d81d569836e66b03fe;
+  profile-instructions.md = 3056B md5 7adb5c333bef16cb22f8b92232cfc7ac;
+  mcp-servers.json = 221B md5 1b18224567f0b52e07417d30f3fa5c25(两条目);
+  CLAUDE.md = 6758B md5 85f5dcb05880811dc2c219c7f266f2b6——下次部署以此为准,两份人设缺一不可。**
+  **回滚**:v21 原件(23831B `839e3431…`)与旧 profile(3055B `49f5bb84…`)均已在本次部署前
+  从容器拷出。如果晏的表现出问题,拿这两份原样替换后重新部署即可(CLAUDE.md 不用动)。
+  ⚠️ 这些拷出的原件在会话沙盒里,**会话结束即消失**——真要留底得让所有者自己存。
 - 2026-07-30(第二十次) **ian.md 定点修订 v20 → v21 + profile-instructions.md 整体替换 +
   拆掉花园 MCP(所有者提供逐字文本并批准)**。人设两份文件同时改,外加一件**配置改动**:
   `galatea-garden` 从 mcp-servers.json 和 ALLOWED_TOOLS **双双移除**。代码七件 / CLAUDE.md

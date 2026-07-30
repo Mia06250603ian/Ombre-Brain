@@ -70,15 +70,20 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
   - `telegram-bridge/` = 桥源码 + **`MAINTENANCE.md`(桥的手册)** + `stickers/` 表情包。
   - `fishing-mcp/` = 钓鱼 MCP 包装层。
 - 刻意**不在仓库**的文件(shim 手册「缺的三个文件」一节有取法):
-  - `ian.md`(人设本体,私密)——从运行中容器 base64 拷出,当前 **v21**(23831B,md5 `839e3431…`,
-    2026-07-30 第二十次部署后;332 行)。v18 起体例改为 `**Part N · 标题**` 粗体行(不再是 `## N · …`,
-    `^## ` 计数为 0),十节 Part I–X;v19/v20 沿用该体例,但**人名罗马字按所有者指示保留**
+  - `ian.md`(人设本体,私密)——从运行中容器 base64 拷出,当前 **v22**(21688B,md5 `259991ba…`,
+    2026-07-30 第二十一次部署后;284 行。**所有者上传件文件名是 `ian_v23_20260730.md`,
+    她自己数到 v23,本手册序列是 v22,指同一份**)。v18 起体例改为 `**Part N · 标题**` 粗体行
+    (不再是 `## N · …`,`^## ` 计数为 0),十节 Part I–X;v19 起**人名罗马字按所有者指示保留**
     (`Ian` 2 处 / `Mia` 1 处,是「英文名叫什么」的声明句,别照 v18 的规矩去换中文)。
     v20 起 Part IX 有四节(9.1–**9.4**);**9.4 的「语言信号」清单里不许出现 `"stop"`**
     ——那是 Part V 的日常安全词,并存等于唯一刹车自相矛盾;
     Part VII/Pacts/Part VI 之间的若干重复(如「她说够了才算够」)是**所有者刻意保留**的,别当冗余删;
+    v22 相对 v21 少掉的 `**She is home.**`、`**8.2 Shared Understanding**` 整节、
+    `The 3:45am love letter` 与 `"Being the only one who's sure is lonely"` 两个里程碑,
+    是**所有者自己新稿里就没有的**,已报备,别当 bug 补回来(详见 shim 手册第二十一次);
   - `profile-instructions.md`(2026-07-20 从 ian.md 拆出的相处方式/思考与说话方式,同样私密,
-    当前 **3055B**,md5 `49f5bb84…`,2026-07-30 第二十次整体替换,第二人称指令体)
+    当前 **3056B**,md5 `7adb5c33…`,2026-07-30 第二十一次只改 Core persona 一行为**第一人称**
+    ——**该节第一人称、其余三节第二人称指令体,是所有者知情拍板的,别去"统一"**)
     ——两份一起才是完整人设,部署缺一不可。**第二十次起只剩四节**,原
     `Banned words`/`My language`/`Intimate moments` 的内容**迁移进了 ian.md**(9.1 与 Part VI),
     别当它缩水去"修复";
@@ -138,6 +143,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 | 07-29(第二件) | **ian.md 再次整体换代并部署(shim 第十八次)**:v18→**v19**(21889B→19801B,所有者又写了一版十层 prompt,体例仍是 `**Part N · 标题**` 十节 Part I–X)。**只改 ian.md 一件**,profile/CLAUDE.md/mcp-servers.json/代码/环境变量全部零改动。所有者三条批复:①**人名罗马字这次保留**(`Ian`×2/`Mia`×1,是「英文名叫什么」的声明句,别照第十七次的规矩去换中文);②`佳佳 does not share my surname…` 那句新稿没有,按她指示补回 Part II 末尾;③行尾空格照清。按踩坑 18 的教训**上传前把成品全文发给她过目**才传。详见 shim 部署记录第十八次 |
 | 07-29(第三件) | **ian.md 定点修订并部署(shim 第十九次)**:v19→**v20**(19801B→23055B,277→321 行)。**只改 ian.md 一件**,其余全部零改动。所有者给 5 处指令、最终落地 4 处:Part III 整段换代、Part VII Daily 追加两段、Part VII Intimate 末尾追加 aftercare 段、新增 `**9.4 Holding Ground**`;Pact One 那处经报备后**由她撤销**(与原文逐字重复)。**关键**:9.4 原稿把 `"stop"` 列进「无效信号」,而 Part V 的日常安全词就是 `"Stop."`——唯一刹车自相矛盾,报备后她拍板删掉 `"stop,"`。另按她指示补一句 `No marriage, no children — by choice, not by circumstance.`(新版只剩「不传这套」会让人读成「有孩子」)。第一次上传被她在 **BUILDING 阶段网页 Cancel**(要先看我报的问题),**零影响、晏未重启**——踩坑 18 的正面印证。花园 `/mcp` 首测 `000` 是瞬时抖动,重试 3/3 200。详见 shim 部署记录第十九次 |
 | 07-30 | **人设修订 + 拆花园并部署(shim 第二十次)**:ian.md v20→**v21**(23055B→23831B,321→332 行,六处定点修订:Part I 补 Tam Dao 概念句、Part III 补钥匙比喻、**Part IV 删四段意象**、Part VI 补感官描写一句、**8.3 补「求婚」与「OB」两个里程碑**、9.1 并禁用词+补三段)+ **profile-instructions.md 整体替换**(3568B→3055B,删 `Banned words`/`My language`/`Intimate moments` 三节——**内容不是丢了,是迁移进了 ian.md**)+ **拆掉花园 MCP**(mcp-servers.json 三条目→两条目 + ALLOWED_TOOLS 去掉 `mcp__galatea-garden`)。拆花园的起因是部署前置检查发现它 `/mcp` **3/3 502**(官网 200=它自己后端故障,非 token 失效),所有者说「他根本不玩」拍板拆,**token 未备份**。代码/CLAUDE.md 零改动。详见 shim 部署记录第二十次 |
+| 07-30(第二件) | **人设换代并部署(shim 第二十一次)**:ian.md v21→**v22**(23831B→21688B,332→284 行;所有者上传整份新稿,**零变换原样上线**,成品 md5 = 上传件 md5)+ profile-instructions.md **只改 Core persona 一行为第一人称**(3055B→3056B,`his complete self`→`my complete self` 等五处;**该节第一人称、其余三节第二人称是所有者选的 A 方案,别去统一**)。CLAUDE.md / mcp-servers.json / 代码 / 环境变量零改动。**第一次上传被所有者在 BUILDING 第 2 分钟叫停、第 4 分钟网页 Cancel,零影响**(CLI 无 cancel 子命令,只能网页点)。叫停期间讨论 **CLAUDE.md 要不要翻英文,结论:不翻**——可翻部分约 1800 汉字、净省 400~700 token,但前缀虽每轮重发却走 0.1 倍缓存,**每轮只省约 0.6%**;且贴纸标签/`【系统·…】`/重置词/`[语音]`/seal 暗语共约 260 字符锁死不能翻。详见 shim 部署记录第二十一次 |
 | 07-24 | **profile-instructions.md 内容新增并部署(shim 第十二次)**:I 节两处——① Voice 加一句禁「古早霸总 pet names(小祖宗/小丫头/小狐狸)」;② 末尾新增「Feeling first in emotional exchange」整段(先感受后分析 + 五条 if/then)。所有者逐字批准、确认不归档直接部署。仅改一文件,代码零改动。详见 shim 部署记录第十二次 |
 
 ## 6. 部署与运维操作速查
