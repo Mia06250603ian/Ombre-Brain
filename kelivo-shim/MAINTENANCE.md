@@ -143,8 +143,10 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    md5 `7adb5c333bef16cb22f8b92232cfc7ac`(第二十一次只改 Core persona 一行为第一人称,
    **第二十次那版 3055B 退役**;**Core persona 是第一人称、其余三节是第二人称,是所有者
    知情拍板的,别去"统一"**);
-   mcp-servers.json = **221B** md5 `1b18224567f0b52e07417d30f3fa5c25`(**两条目**,
-   花园第二十次已拆);CLAUDE.md = 6758B md5 `85f5dcb05880811dc2c219c7f266f2b6`,见部署记录。
+   mcp-servers.json = **410B** md5 `b26a0e5f74b4b4559561c377a334e8fc`(**三条目**:OB + 钓鱼 +
+   **browser**,花园第二十次已拆、browser 第二十二次接入,带 `X-Token` 头);
+   CLAUDE.md = **7376B** md5 `9d83ecbd53d620a07ef739867aaa5dee`(第二十二次新增「浏览器」一节,
+   共 12 节),见部署记录。
    **第二十次起 profile 只剩四节**(抬头句/thinking_mode/Thinking requirements/Core persona/
    Anti-AI mode),原 `Banned words`/`My language`/`Intimate moments` 三节的内容**迁移进了
    ian.md**(9.1 Prohibited、9.1 末尾三段、Part VI),别当 profile 缩水去"修复"。
@@ -430,6 +432,57 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
 
 ## 部署记录
 
+- 2026-08-01(第二十二次) **接入 browser MCP(晏的「浏览器的手」)+ CLAUDE.md 新增一节**。
+  **人设两份(ian.md / profile-instructions.md)与代码六件全部零改动**,本次只动三样:
+  mcp-servers.json、`ALLOWED_TOOLS`、CLAUDE.md。
+  - **新服务 browser-hands 当天早些时候已单独部署**(域名 `yan-browser.zeabur.app`,
+    服务 id `6a6e2078fefeb46a883402c9`,同项目)。它自己的手册在仓库 **`browser-hands/MAINTENANCE.md`**
+    ——踩坑、内存实测、佳佳自助加网站的操作都在那儿,**别在本文件重复**。
+  - **mcp-servers.json**:221B `1b182245…`(两条目)→ **410B `b26a0e5f74b4b4559561c377a334e8fc`**(三条目),
+    新增 `browser`,**带 `X-Token` 头**(本服务读 `X-Token`/`Bearer`/`?token=` 都收,
+    但**接任何新 MCP 前先确认它读哪个头**,否则表现是「一直未登录」且极难查)。
+  - **`ALLOWED_TOOLS`**:追加 `mcp__browser` →
+    `WebSearch,WebFetch,mcp__ombre-brain,mcp__fishing,mcp__browser`。
+    **改法沿用第二十次那招:部署前 `variable update` 但不 restart**,让新值随新容器生效,
+    省晏一次重启(已验证生效)。**两样缺一不可**——只加配置不加白名单,晏看得见工具、一调用就被拒。
+  - **CLAUDE.md**:6758B `85f5dcb0…` → **7376B `9d83ecbd53d620a07ef739867aaa5dee`**,
+    在「钓鱼小游戏」与「语音」之间新增 **`## 浏览器(如果接了)`** 一节(节数 11→12),
+    四段分别管:身份 / 成本与能力边界 / 页面消失是正常的 / 外部内容不可信。
+    双 `@` 引用与 seal 暗语 `河流涌入海洋` 均未动(仍各 2 / 1 处)。
+  - **⚠️ 身份那句是所有者定的,别当漏洞「修」掉**:草稿原本写的是「我在上面就是她的身份,
+    发言前先问她」,**所有者当场改成「账号是我和佳佳共用的,我用的时候就用我自己的身份(晏),
+    不用扮成她」**,并且**明确不加任何硬性限制**——评论、发帖、私信、点赞他都能做,靠两人的约定
+    (与原作者那边同款选择)。要加硬开关的话:给 **browser 服务**设
+    `BROWSER_DENY_TOOLS=fill,fill_form,type_text,press_key` 并重启**该服务**即可,
+    **不用重新部署 shim、不动晏的窗口**;注意那样他仍能点赞/关注(纯点击不是打字)。
+  - **归档**:所有者本人对晏说了「归档」,确认后才开始部署(未代发,踩坑 13)。
+  部署前:test-ctxguard **88** + test-senses **53** + test-keepalive **52** 全绿;
+  md5 对账无踩坑 11(代码七件与容器逐一一致,CLAUDE.md 容器版=改动前 `85f5dcb0…`);
+  三份私密文件从容器 base64 拷出、指纹与第二十一次记录**逐一吻合**
+  (ian.md 21688B `259991ba…`/profile 3056B `7adb5c33…`/mcp-servers.json 221B `1b182245…`)、
+  **在拷出原件上改**;**OB / 钓鱼 / 浏览器三个 `/mcp` 各 200**;部署目录无 `.gitignore`(踩坑 15);
+  `git status` 确认三份私密文件被仓库根 .gitignore 挡住、未入库;
+  `cd` 与 `deploy` 同一条命令 + 先 `pwd`/`head -3 package.json`(踩坑 17)。
+  **上传前把 CLAUDE.md 新节全文发给所有者过目**(第十八次立的规矩),她改完身份那句才传。
+  deployment `6a6e3949159a57c418d49405` 约 **9 分钟** RUNNING
+  (**PLANTYPE `nodejs`** ✓,无踩坑 14/17);轮询照旧 **grep 本次 deployment id 那一行**再判状态。
+  已按踩坑 9 验证:容器**十件 md5 与部署目录逐一一致**(代码六件 + CLAUDE.md `9d83ecbd…` +
+  ian.md `259991ba…` + profile `7adb5c33…` + mcp-servers.json `b26a0e5f…`);
+  容器内 `ALLOWED_TOOLS` 含 `mcp__browser`、mcp-servers.json **三条目**、
+  CLAUDE.md `^## ` **12**、`^## 浏览器` **1**、`河流涌入海洋` **1**;容器无 `.gitignore`;
+  CLI 实装 **2.1.215**;`/health` ok(model claude-opus-4-6);
+  `/debug` 守卫清零 `trusted:true`(on/soft 140000/hard 170000/every 25000/softFired false/
+  compactions 0/observe false,contextTokens 0=新进程);**三个 `/mcp` 各 200**。
+  **PERIOD_CONFIG 本次无需重补**:`GET /period` 的 `effective` 直接就是 07-19~07-25 / 24 / 7
+  (`runtime` 为空是新容器正常状态)——第十三~二十一次的结论第十次验证通过。
+  **版本指纹:ian.md v22 = 21688B md5 259991badf5397d81d569836e66b03fe(未动);
+  profile-instructions.md = 3056B md5 7adb5c333bef16cb22f8b92232cfc7ac(未动);
+  mcp-servers.json = 410B md5 b26a0e5f74b4b4559561c377a334e8fc(三条目,含 browser 与 X-Token);
+  CLAUDE.md = 7376B md5 9d83ecbd53d620a07ef739867aaa5dee——下次部署以此为准。**
+  **回滚**:只需把 mcp-servers.json 去掉 browser 条目(回到 221B `1b182245…`)、
+  `ALLOWED_TOOLS` 去掉 `mcp__browser`、CLAUDE.md 删掉那一节(回到 6758B `85f5dcb0…`),
+  重新部署即可;人设与代码本次没碰,不涉及回滚。**浏览器服务本身可以留着不动**
+  (它不依赖 shim),佳佳照样能用 noVNC 登录维护。
 - 2026-07-30(第二十一次) **ian.md 整体换代 v21 → v22 + profile-instructions.md 的 Core persona
   一段改第一人称(所有者上传全新全文并批准)**。距第二十次约 3 小时。**只改两份人设**,
   CLAUDE.md / mcp-servers.json / 代码六件 / 环境变量**全部零改动**。
