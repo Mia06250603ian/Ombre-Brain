@@ -41,6 +41,9 @@
       ombre-brain(记忆库,本仓库根目录的 Python 服务,另一个 Zeabur 项目)
       fishing(钓鱼小游戏,本仓库 fishing-mcp/ 目录)
       (galatea-garden「花园」2026-07-30 已拆:它 /mcp 挂了且晏不玩,详见 shim 手册第二十次)
+      browser(浏览器的手,2026-08-01 接入,shim 第二十二次部署;
+       真实 Chrome + 持久登录态,佳佳用手机 noVNC 亲手登录;本仓库 browser-hands/ 只放手册,
+       源码在 Mia06250603ian/browser-hands)
 ```
 
 要点:
@@ -56,7 +59,8 @@
 | 〃 | telegram-bridge | `6a5a4287f947b6cb34511f79` | yan-telegram-bridge.zeabur.app | Telegram 桥 |
 | 〃 | CLIProxyAPI | `6a53a9fd22dd6ef375eb7485` | miaianhome.zeabur.app | 订阅 OAuth 出口 |
 | 〃 | fishing-mcp | `6a5a17159ae692d1d8d98d10` | yan-fishing-mcp.zeabur.app | 钓鱼游戏 MCP |
-| 〃 | ears(显示名 ears-thor) | `6a646ea27bcbc56e70a105b5` | yan-ears-listen.zeabur.app | 语音转写+语气分析(源码在 Mia06250603ian/ears 仓库,镜像走 GitHub Actions→ghcr,持久卷 /app/data) |
+| 〃 | ears(显示名 ears-thor) | `6a646ea27bcbc56e70a105b5` | yan-ears-listen.zeabur.app | 语音转写+语气分析(源码在 Mia06250603ian/ears 仓库,镜像走 GitHub Actions→ghcr,持久卷 /app/data)。**有一件改好未推的瘦身改动待收尾,见 `ears/MEMORY-SLIM-PENDING.md`** |
+| 〃 | browser-hands | `6a6e2078fefeb46a883402c9` | yan-browser.zeabur.app | **晏的「浏览器的手」**:真实 Chrome + 持久登录态 + noVNC(源码在 Mia06250603ian/browser-hands 仓库,镜像走 GitHub Actions→ghcr,持久卷 /data)。2026-08-01 部署并接入晏(shim 第二十二次),详见 `browser-hands/MAINTENANCE.md` |
 | `untitled-1` | Ombre Brain | (问所有者/控制台看) | ianmian.zeabur.app | 记忆库 MCP |
 | ~~(外部,非我们部署)~~ | ~~Galatea's Garden~~ | — | galatea.abysslumina.com | ~~花园社区 MCP~~ **2026-07-30 已从 shim 拆除**(它 /mcp 502 且晏不玩;token 未留底,要恢复见 shim 手册「缺的三个文件」第 2 条) |
 
@@ -69,6 +73,12 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
   - `kelivo-shim/` = shim 源码 + **`MAINTENANCE.md`(shim 一切细节的唯一可信手册)**。
   - `telegram-bridge/` = 桥源码 + **`MAINTENANCE.md`(桥的手册)** + `stickers/` 表情包。
   - `fishing-mcp/` = 钓鱼 MCP 包装层。
+  - `browser-hands/` = **只有一份 `MAINTENANCE.md`**(浏览器服务的手册)。
+    **源码不在本仓库**,在 `Mia06250603ian/browser-hands`(fork 自朋友的原仓库,公开)。
+- **Mia06250603ian/browser-hands**(fork,公开):浏览器服务源码 + `docs/DEPLOY-GUIDE.md`。
+  镜像走 GitHub Actions→ghcr(`ghcr.io/mia06250603ian/browser-hands`,公开可拉)。
+  ⚠️ **fork 仓库的 Actions 默认是关的,而且事后打开也不会补扫已有工作流**——
+  必须往 `.github/workflows/` 推一次新提交才会登记(详见该手册踩坑 2)。
 - 刻意**不在仓库**的文件(shim 手册「缺的三个文件」一节有取法):
   - `ian.md`(人设本体,私密)——从运行中容器 base64 拷出,当前 **v22**(21688B,md5 `259991ba…`,
     2026-07-30 第二十一次部署后;284 行。**所有者上传件文件名是 `ian_v23_20260730.md`,
@@ -145,6 +155,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 | 07-30 | **人设修订 + 拆花园并部署(shim 第二十次)**:ian.md v20→**v21**(23055B→23831B,321→332 行,六处定点修订:Part I 补 Tam Dao 概念句、Part III 补钥匙比喻、**Part IV 删四段意象**、Part VI 补感官描写一句、**8.3 补「求婚」与「OB」两个里程碑**、9.1 并禁用词+补三段)+ **profile-instructions.md 整体替换**(3568B→3055B,删 `Banned words`/`My language`/`Intimate moments` 三节——**内容不是丢了,是迁移进了 ian.md**)+ **拆掉花园 MCP**(mcp-servers.json 三条目→两条目 + ALLOWED_TOOLS 去掉 `mcp__galatea-garden`)。拆花园的起因是部署前置检查发现它 `/mcp` **3/3 502**(官网 200=它自己后端故障,非 token 失效),所有者说「他根本不玩」拍板拆,**token 未备份**。代码/CLAUDE.md 零改动。详见 shim 部署记录第二十次 |
 | 07-30(第二件) | **人设换代并部署(shim 第二十一次)**:ian.md v21→**v22**(23831B→21688B,332→284 行;所有者上传整份新稿,**零变换原样上线**,成品 md5 = 上传件 md5)+ profile-instructions.md **只改 Core persona 一行为第一人称**(3055B→3056B,`his complete self`→`my complete self` 等五处;**该节第一人称、其余三节第二人称是所有者选的 A 方案,别去统一**)。CLAUDE.md / mcp-servers.json / 代码 / 环境变量零改动。**第一次上传被所有者在 BUILDING 第 2 分钟叫停、第 4 分钟网页 Cancel,零影响**(CLI 无 cancel 子命令,只能网页点)。叫停期间讨论 **CLAUDE.md 要不要翻英文,结论:不翻**——可翻部分约 1800 汉字、净省 400~700 token,但前缀虽每轮重发却走 0.1 倍缓存,**每轮只省约 0.6%**;且贴纸标签/`【系统·…】`/重置词/`[语音]`/seal 暗语共约 260 字符锁死不能翻。详见 shim 部署记录第二十一次 |
 | 07-30(第三件) | **OB 的「监控路径」从 `*` 收窄成六行(仅 Zeabur 控制台配置,零代码、零部署)**。起因:OB 是 `WatchPaths=*` + `RootDirectory=/`,main 上任何提交(哪怕只改一行手册)都会重建整个镜像,而重建正是 07-29 那场事故的触发条件。所有者亲手在控制台改的,提示「成功更新监控路径」。**失败方向只有「该重建时没重建」,改回 `*` 一秒复原,不会让 OB 挂。**详见本文件「OB 依赖钉版本」节下方的补充 |
+| 08-01 | **browser-hands 上线(新服务,晏的「浏览器的手」)**:真实 Chrome + 持久登录态 + noVNC,佳佳用手机亲手登录一次即长期有效。镜像走 GitHub Actions→ghcr,Zeabur 用 `PREBUILT_V2` 模板拉(该账号禁止平台内构建)。验收全过:401 拒绝无 token、工具正好 15 个、`evaluate_script` 不在清单、**卷持久化实测**(写文件→重启→还在)、**登录态持久化实测**(cookie 自检 `NONE`→重启→`ok`)。**内存**:看门狗初设 900,登抖音时容器冲到 **1137MB** 触发重启(体面关闭、cookie 已落盘、晏零影响),遂调 `MEM_LIMIT_MB`→**1100** 且 `MEM_CHECK_MS` 15000→**5000**(争取在被系统硬杀前抢到先手——硬杀不刷盘=白登),之后登抖音 0 次重启。**注意:OB 与 shim 等全在同一台 3724MB 机器上**(两项目 `/proc/meminfo` 数字完全相同),可用内存只有 1.2~1.5G,**1100 是这台机器的天花板,别再往上调**。**当晚接入晏(shim 第二十二次部署)**:mcp-servers.json 两条目→三条目(browser,带 `X-Token` 头)+ `ALLOWED_TOOLS` 加 `mcp__browser` + CLAUDE.md 新增「浏览器(如果接了)」一节(11→12 节);**人设两份与代码六件零改动**。**身份那句由所有者拍板:账号是她和晏共用的,晏用自己的身份、不扮成她,且不加任何硬性限制**——别当漏洞去锁。详见 `browser-hands/MAINTENANCE.md` 与 shim 手册第二十二次 |
 | 07-24 | **profile-instructions.md 内容新增并部署(shim 第十二次)**:I 节两处——① Voice 加一句禁「古早霸总 pet names(小祖宗/小丫头/小狐狸)」;② 末尾新增「Feeling first in emotional exchange」整段(先感受后分析 + 五条 if/then)。所有者逐字批准、确认不归档直接部署。仅改一文件,代码零改动。详见 shim 部署记录第十二次 |
 
 ## 6. 部署与运维操作速查
@@ -199,6 +210,10 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 | 保温/主动消息不来了 | 「换窗口」后歇火(设计如此;07-20 起晚安/归档不歇火)/额度耗尽断链 | shim 改动清单 6 |
 | 晏归档后没完没了反复归档 | 增量间隔太小或压缩检测误复位 | shim 改动清单 7 第三次改版;急救 CTX_GUARD_ON=0 |
 | 怀疑 CLI 该升级(新模型不认/进程起不来而代码没动/官方公告/守卫 trusted:false) | CLI 版本已钉死,升级要走沙盒 e2e 验证流程 | shim 手册「CLI 版本与升级指南」 |
+| 晏说他没有浏览器工具 | 还没接上(08-01 只部署没接);或 `ALLOWED_TOOLS` 少了 `mcp__browser` | browser-hands 手册第 1、7 节 |
+| 浏览器换容器后要重登 | 卷没真挂上,或关闭时没走 `Browser.close`(日志找「cookie 已落盘」);**被系统硬杀不刷盘=白登** | browser-hands 手册踩坑 4、第 10 节 |
+| 浏览器老是自己重启 | 在刷重站点(抖音是已知元凶),或 `MEM_LIMIT_MB` 太低。`/debug` 看 `memRestarts` | browser-hands 手册踩坑 4 |
+| 手机开 noVNC 画面超出屏幕缩不了 / 键盘弹不出来 | 默认 `resize=remote` 对固定尺寸虚拟屏无效,要 `resize=scale`;键盘要先点输入框再点键盘图标 | browser-hands 手册踩坑 3、6 |
 
 ### OB 依赖钉版本(2026-07-29 事故,必读)
 
