@@ -220,7 +220,19 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
   它们不经 `tg()`,原先一处都没有超时,理论上能把整条队列(乃至收消息)卡住五分钟。
   **测试 139 → 160 项全绿**;另做了两轮本地端到端(假 Telegram + 假 shim + 真 server.js,含长轮询):
   抖动重试后三句全到 / shim 502 时她收到人话提示 / 永久失败时「丢了 1 句」且前后句照发 / 连跑四轮队列不卡死。
-  **已部署**:deployment `6a6f54579cd65e28a343824c` RUNNING(构建只花了约 50 秒,比手册说的 7~12 分钟快得多)。
+  **补一次部署(同日)**:deployment `6a6f5b9a9cd65e28a34383b2` RUNNING,测试 160→**174 项**全绿。
+  起因是所有者一句「你确定你写的代码不用 debug 吗」——**复审时发现第一轮端到端只测了纯文字,
+  漏掉贴纸和语音**,补测当场抓到两处措辞错:①贴纸发失败却说「有 1 句没送到」;
+  ②**Telegram 主动拒收(400 内容问题)却说「网络抖了一下」**——第二条尤其要命,
+  等于把排障的人往错方向带,和这次要修的原病(只写 `fetch failed`)是同一个毛病换了张皮。
+  改法见设计要点 10 与 `describeLoss`;`sendSticker` 也改成返回 true/false/null
+  (以前一律返回 undefined,被拒收的贴纸会被当成发成功)。
+  **教训:改了哪条路就要测哪条路。** 顺带复验了 `[查岗]` 防打转(结构动过必须复验):
+  假 shim 每轮都回 `[查岗]`,实测只查一次、标记没外泄。
+  **另一个部署前的坑**:跑端到端时 `npm install` 出来的 `node_modules` 会被 `deploy` 一起打包上去,
+  **上传前务必 `rm -rf node_modules`**(`.gitignore` 挡得住 git,挡不住 zeabur deploy)。
+
+  **首次部署**:deployment `6a6f54579cd65e28a343824c` RUNNING(构建只花了约 50 秒,比手册说的 7~12 分钟快得多)。
   验收:PLANTYPE=nodejs、`server.js`/`bridge-lib.mjs` 两个 md5 本地=线上逐字一致、容器内贴纸 35 张、
   `/health` 五项开关全对、启动日志干净。交接时有两条 `409 Conflict`(新旧容器抢 getUpdates,已知边界 1),
   **27 秒内自行消解,不用管**——轮询每 5 秒重试一次,没有新条目就是老容器退干净了。
