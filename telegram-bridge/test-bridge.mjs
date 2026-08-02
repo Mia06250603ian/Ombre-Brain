@@ -4,6 +4,7 @@ import {
   makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf,
   extractStickers, extractSegments, splitBubbles, bubblesFor,
   formatEarsResult,
+  normalizeAppName, pushActivity, summarizeActivity, isCurfewHour, curfewDecide, curfewPrompt, isSilentReply,
 } from "./bridge-lib.mjs";
 import fs from "fs";
 
@@ -216,6 +217,105 @@ eq(splitBubbles("  \n "), [], "纯空白零泡");
   const dup = new Set(Object.values(reg));
   ok(dup.size === tags.length, "文件无重复引用");
 }
+
+// ---- 手机活动上报 ----
+eq(normalizeAppName("小红书"), "小红书", "App 名原样");
+eq(normalizeAppName("  抖音 \n "), "抖音", "App 名去空白");
+eq(normalizeAppName(""), null, "空 App 名 → null");
+eq(normalizeAppName(null), null, "null → null");
+eq(normalizeAppName(undefined), null, "undefined → null(快捷指令变量没取到时就是这个)");
+ok(normalizeAppName("a".repeat(100)).length === 40, "超长截到 40");
+{
+  const t0 = 1000000;
+  let list = [];
+  list = pushActivity(list, { app: "小红书", at: t0 }, { now: t0 });
+  list = pushActivity(list, { app: "抖音", at: t0 + 1000 }, { now: t0 + 1000 });
+  eq(list.length, 2, "两条都在");
+  eq(list[1].app, "抖音", "最后一条是最新的");
+}
+{
+  const now = 1000000000;
+  const old = [{ app: "旧", at: now - 49 * 3600e3 }, { app: "新", at: now - 60000 }];
+  const list = pushActivity(old, { app: "更新", at: now }, { now });
+  eq(list.map((e) => e.app), ["新", "更新"], "超过 48 小时的自动掉队");
+}
+{
+  const now = 1000000000;
+  let list = [];
+  for (let i = 0; i < 400; i++) list = pushActivity(list, { app: `a${i}`, at: now }, { now });
+  eq(list.length, 300, "条数封顶 300(不会无上限涨)");
+  eq(list[299].app, "a399", "封顶时留的是最新的");
+}
+{
+  const now = 1000000000;
+  const s = summarizeActivity([
+    { app: "小红书", at: now - 20 * 60000 },
+    { app: "抖音", at: now - 10 * 60000 },
+    { app: "抖音", at: now - 5 * 60000 },
+  ], { now });
+  eq(s.lastApp, "抖音", "最后活跃的 App");
+  eq(s.minutesAgo, 5, "几分钟前");
+  eq(s.recent.map((r) => r.app), ["抖音", "小红书"], "相邻重复折叠、由近及远");
+}
+eq(summarizeActivity([], { now: 1 }), { count: 0, lastApp: null, lastAt: null, minutesAgo: null, recent: [] }, "没有记录时的空汇总");
+
+// ---- 宵禁时段 ----
+ok(isCurfewHour(3, 1, 7), "凌晨 3 点在 1-7 宵禁内");
+ok(!isCurfewHour(15, 1, 7), "下午 3 点不在宵禁内");
+ok(!isCurfewHour(7, 1, 7), "7 点整已出宵禁(end 不含)");
+ok(isCurfewHour(1, 1, 7), "1 点整已进宵禁(start 含)");
+ok(isCurfewHour(23, 22, 2), "跨零点:23 点在 22-2 内");
+ok(isCurfewHour(1, 22, 2), "跨零点:1 点在 22-2 内");
+ok(!isCurfewHour(12, 22, 2), "跨零点:中午不在 22-2 内");
+
+// ---- 查岗决策 ----
+const base = {
+  on: true, hour: 3, curfewStart: 1, curfewEnd: 7,
+  cooldownMin: 30, freshMin: 15, busy: false, lastPokeAt: 0, lastOutboundAt: 0,
+};
+const T = 10 * 3600e3;                                  // 一个够大的「现在」
+const fresh = [{ app: "小红书", at: T - 2 * 60000 }];   // 2 分钟前开的
+{
+  const d = curfewDecide({ ...base, now: T, list: fresh });
+  ok(d.fire && d.app === "小红书" && d.minutesAgo === 2, "宵禁 + 刚开 App → 戳");
+}
+ok(!curfewDecide({ ...base, on: false, now: T, list: fresh }).fire, "总开关关掉 → 不戳");
+eq(curfewDecide({ ...base, hour: 15, now: T, list: fresh }).reason, "not-curfew", "白天 → 不戳(白天不归这条管)");
+eq(curfewDecide({ ...base, busy: true, now: T, list: fresh }).reason, "busy", "她正聊着 → 不戳");
+eq(curfewDecide({ ...base, now: T, list: [] }).reason, "no-activity", "没有任何上报 → 不戳");
+eq(curfewDecide({ ...base, now: T, list: [{ app: "小红书", at: T - 40 * 60000 }] }).reason, "stale",
+  "40 分钟前开的、早放下了 → 不翻旧账");
+eq(curfewDecide({ ...base, now: T, list: fresh, lastPokeAt: T - 10 * 60000 }).reason, "cooldown",
+  "10 分钟前刚戳过 → 冷却中");
+eq(curfewDecide({ ...base, now: T, list: fresh, lastPokeAt: T - 5 * 60000 }).reason, "cooldown",
+  "记录比上次戳更新、但冷却没过 → 仍不戳");
+eq(curfewDecide({ ...base, now: T, list: fresh, lastPokeAt: T - 1 * 60000 }).reason, "no-new",
+  "上次戳在记录之后 → 先命中「没有新动静」(这条比冷却更早判)");
+eq(curfewDecide({ ...base, now: T, list: [{ app: "小红书", at: T - 90 * 60000 }], lastPokeAt: T - 60 * 60000 }).reason, "no-new",
+  "上次戳过之后没有新动静 → 不重复戳同一件事");
+eq(curfewDecide({ ...base, now: T, list: fresh, lastOutboundAt: T - 5 * 60000 }).reason, "just-spoke",
+  "他 5 分钟前刚开过口 → 不赶话(心跳与查岗共用这道冷却)");
+{
+  const d = curfewDecide({ ...base, now: T, list: fresh, lastOutboundAt: T - 60 * 60000, lastPokeAt: T - 60 * 60000 });
+  ok(d.fire, "冷却都过了 → 照常戳");
+}
+
+// ---- 查岗提示语 ----
+{
+  const p = curfewPrompt({ bjNow: "03:20", app: "小红书", minutesAgo: 3 });
+  ok(p.startsWith("【系统·查岗】"), "提示语带【系统·查岗】前缀");
+  ok(p.includes("小红书") && p.includes("3 分钟前"), "提示语里有 App 和时间");
+  ok(p.length > 8, "提示语远超重置词匹配窗口(不会被当成「归档/晚安」误触发)");
+  eq(detectReset(p), null, "查岗提示语不会触发重置词(守护用例,别删)");
+  ok(curfewPrompt({ bjNow: "03:20", app: "抖音", minutesAgo: 0 }).includes("刚刚"), "0 分钟说「刚刚」");
+}
+
+// ---- 他选择不打扰 ----
+ok(isSilentReply("。"), "回句号 = 不说话");
+ok(isSilentReply(" 。。 "), "多个句号也算");
+ok(isSilentReply(""), "空回复算不说话");
+ok(isSilentReply("【沉默】"), "沉默标记算不说话");
+ok(!isSilentReply("这么晚还不睡?"), "真说了话就不算沉默");
 
 console.log(fail ? `\n${fail}/${n} FAILED` : `${n} 项全绿 ✓`);
 process.exit(fail ? 1 : 0);

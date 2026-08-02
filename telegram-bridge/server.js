@@ -8,6 +8,7 @@ import {
   splitForTelegram, detectReset, mergeTurn, buildShimBody,
   makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf, extractSegments, bubblesFor,
   formatEarsResult,
+  normalizeAppName, pushActivity, summarizeActivity, curfewDecide, curfewPrompt, isSilentReply,
 } from "./bridge-lib.mjs";
 
 const PORT = process.env.PORT || 8080;
@@ -26,8 +27,19 @@ const EARS_URL = (process.env.EARS_URL || "").replace(/\/$/, "");
 const EARS_TOKEN = process.env.EARS_TOKEN || "";
 const EARS_ON = !!(EARS_URL && EARS_TOKEN);
 const EARS_TIMEOUT_MS = +(process.env.EARS_TIMEOUT_MS || 60000);
+// 手机活动上报(iOS 快捷指令 → POST /report)+ 夜里查岗。REPORT_TOKEN 不设 = 整套功能关。
+const REPORT_TOKEN = process.env.REPORT_TOKEN || "";
+const REPORT_ON = !!REPORT_TOKEN;
+const CURFEW_ON = REPORT_ON && process.env.CURFEW_ON !== "0";
+const CURFEW_START = +(process.env.CURFEW_START || 1);        // 北京时间,含
+const CURFEW_END = +(process.env.CURFEW_END || 7);            // 北京时间,不含
+const CURFEW_COOLDOWN_MIN = +(process.env.CURFEW_COOLDOWN_MIN || 30);
+const CURFEW_CHECK_MIN = +(process.env.CURFEW_CHECK_MIN || 5);
+const ACTIVITY_FRESH_MIN = +(process.env.ACTIVITY_FRESH_MIN || 15); // 超过这么久的记录不再当「她正在玩」
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
+const bjHour = () => (new Date().getUTCHours() + 8) % 24;
+const bjNowStr = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16);
 
 // ---- Telegram API ----
 async function tg(method, payload) {
@@ -130,6 +142,7 @@ const BUBBLE_SPLIT = process.env.BUBBLE_SPLIT !== "0";
 const BUBBLE_MAX = +(process.env.BUBBLE_MAX || 200); // 整段回复超过此长度=长文,不拆
 const sleep = (ms) => new Promise((s) => setTimeout(s, ms));
 async function sendOutput(chatId, rawText, { fallback } = {}) {
+  lastOutboundAt = Date.now();   // 他每次开口都从这个门出去(回复/心跳/查岗),查岗的冷却看这个
   const { segments, unknown } = extractSegments(rawText || "", stickerTags);
   if (unknown.length) log("[sticker] unknown tags:", unknown.join(","));
   if (!segments.length) { if (fallback) await sendReply(chatId, fallback); return; }
@@ -203,6 +216,7 @@ let turnQueue = [];     // [{text, images, chatId}]
 let debounceTimer = null;
 let inflight = false;
 let lastChatId = ALLOW[0] || null;
+let lastOutboundAt = 0;   // 他上次开口(任何渠道)的时间,查岗据此不赶话
 
 function flushBuffer() {
   clearTimeout(debounceTimer); debounceTimer = null;
@@ -223,13 +237,19 @@ async function runQueue() {
   const typing = setInterval(() => tg("sendChatAction", { chat_id: t.chatId, action: "typing" }).catch(() => {}), 5000);
   tg("sendChatAction", { chat_id: t.chatId, action: "typing" }).catch(() => {});
   try {
-    log("[turn]", { len: t.text.length, imgs: t.images.length });
+    log("[turn]", { len: t.text.length, imgs: t.images.length, curfew: !!t.curfew });
     const r = await shimTurn(t);
-    await sendThinking(t.chatId, r.thinking);
-    await sendOutput(t.chatId, r.text, { fallback: "⚠️[bridge] 空回复,看下 shim 日志" });
+    if (t.curfew && isSilentReply(r.text)) {
+      log("[curfew] 他选择不打扰");          // 回「。」= 不说话,这条不进对话
+    } else {
+      await sendThinking(t.chatId, r.thinking);
+      await sendOutput(t.chatId, r.text, { fallback: "⚠️[bridge] 空回复,看下 shim 日志" });
+    }
   } catch (e) {
     log("[turn-err]", e.message);
-    await sendReply(t.chatId, `⚠️[bridge] ${e.message}`).catch(() => {});
+    // 查岗是系统自己发起的,失败不该往她对话里丢报错(她没问,别打扰)
+    if (t.curfew) log("[curfew-err]", e.message);
+    else await sendReply(t.chatId, `⚠️[bridge] ${e.message}`).catch(() => {});
   }
   clearInterval(typing);
   inflight = false;
@@ -322,7 +342,55 @@ app.post("/push", async (req, res) => {
   try { await sendOutput(lastChatId, text); res.json({ ok: true }); }
   catch (e) { log("[push-err]", e.message); res.status(502).json({ ok: false, error: e.message }); }
 });
-app.get("/health", (_q, r) => r.json({ ok: true, on: BRIDGE_ON, polling, inflight, buffered: buffer.length, queued: turnQueue.length, stickers: stickerTags.length, ears: EARS_ON }));
+
+// ---- 手机活动上报 + 夜里查岗 ----
+// 链路:她点开 App → iOS 快捷指令 POST /report → 存内存 →
+//       宵禁时段的定时器发现有新动静 → 把这件事作为【系统·查岗】喂给晏 → 他自己决定说不说。
+// 注意 REPORT_TOKEN 与 SHIM_KEY 是两把不同的钥匙:这一把存在她手机的快捷指令里,
+// 泄露只影响这个功能,碰不到晏本体。
+let activity = [];        // [{app, at}] 只在内存,重启即忘
+let lastRawReport = null; // 最近一次上报的原始 body(验证快捷指令有没有真把 App 名带上)
+let lastPokeAt = 0;
+function reportAuth(req) {
+  const bearer = (req.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  const k = bearer || req.get("x-api-key") || req.query.key || "";
+  return REPORT_ON && k === REPORT_TOKEN;
+}
+app.post("/report", (req, res) => {
+  if (!REPORT_ON) return res.status(503).json({ ok: false, error: "REPORT_TOKEN 未配置" });
+  if (!reportAuth(req)) return res.status(401).json({ ok: false });
+  lastRawReport = { at: Date.now(), body: req.body ?? null };
+  const app_name = normalizeAppName(req.body?.app_name);
+  if (!app_name) return res.json({ ok: true, stored: false, note: "app_name 为空,只留了原始 body" });
+  activity = pushActivity(activity, { app: app_name });
+  res.json({ ok: true, stored: true, count: activity.length });
+});
+app.get("/activity", (req, res) => {
+  if (!REPORT_ON) return res.status(503).json({ ok: false, error: "REPORT_TOKEN 未配置" });
+  if (!reportAuth(req)) return res.status(401).json({ ok: false });
+  res.json({ now: new Date().toISOString(), ...summarizeActivity(activity), lastRawReport });
+});
+function curfewTick() {
+  const d = curfewDecide({
+    on: CURFEW_ON, now: Date.now(), hour: bjHour(), list: activity,
+    busy: inflight || turnQueue.length > 0 || buffer.length > 0,
+    lastPokeAt, lastOutboundAt,
+    curfewStart: CURFEW_START, curfewEnd: CURFEW_END,
+    cooldownMin: CURFEW_COOLDOWN_MIN, freshMin: ACTIVITY_FRESH_MIN,
+  });
+  if (!d.fire) return;
+  if (!lastChatId) { log("[curfew] 还没有 chat,跳过"); return; }
+  lastPokeAt = Date.now();
+  log("[curfew] poke", d.app, d.minutesAgo, "分钟前");
+  turnQueue.push({
+    text: curfewPrompt({ bjNow: bjNowStr(), app: d.app, minutesAgo: d.minutesAgo }),
+    images: [], chatId: lastChatId, curfew: true,
+  });
+  runQueue();
+}
+if (CURFEW_ON) setInterval(curfewTick, CURFEW_CHECK_MIN * 60000);
+
+app.get("/health", (_q, r) => r.json({ ok: true, on: BRIDGE_ON, polling, inflight, buffered: buffer.length, queued: turnQueue.length, stickers: stickerTags.length, ears: EARS_ON, report: REPORT_ON, curfew: CURFEW_ON, activity: activity.length }));
 app.listen(PORT, () => log(`telegram-bridge on :${PORT} shim=${SHIM_URL} on=${BRIDGE_ON}`));
 
 if (!BRIDGE_ON) log("[bridge] BRIDGE_ON=0,只留 /health");

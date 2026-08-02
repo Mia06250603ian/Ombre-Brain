@@ -156,6 +156,82 @@ export function formatEarsResult(d) {
   return `[语音] ${said}（${parts.join("，")}）`;
 }
 
+// ---- 手机活动上报(iOS 快捷指令 → POST /report)----
+// 她点开 App 时快捷指令报一条进来。**只存内存**:重启即忘,不落盘、不进任何库——
+// 本功能只关心「最近」,而她的行踪不值得为了历史写进磁盘。
+export const ACTIVITY_CAP = 300;            // 条数上限
+export const ACTIVITY_TTL_MS = 48 * 3600e3; // 保留时长
+
+// 快捷指令传什么都可能(变量没取到就是空)。清成一行短文本,空 → null。
+export function normalizeAppName(raw) {
+  const s = String(raw ?? "").replace(/\s+/g, " ").trim();
+  return s ? s.slice(0, 40) : null;
+}
+
+// 追加一条并按 TTL/条数裁剪,返回新数组(不改入参)。
+export function pushActivity(list, entry, { now = Date.now(), cap = ACTIVITY_CAP, ttlMs = ACTIVITY_TTL_MS } = {}) {
+  const next = [...(list || []), { app: entry.app, at: entry.at ?? now }];
+  const cut = now - ttlMs;
+  return next.filter((e) => e.at > cut).slice(-cap);
+}
+
+// 汇总给「她最近在干嘛」:最后一次活跃 + 最近不重复的 App 名(相邻重复折叠)。
+export function summarizeActivity(list, { now = Date.now(), limit = 10 } = {}) {
+  const arr = (list || []).filter((e) => e && e.app);
+  if (!arr.length) return { count: 0, lastApp: null, lastAt: null, minutesAgo: null, recent: [] };
+  const recent = [];
+  for (let i = arr.length - 1; i >= 0 && recent.length < limit; i--) {
+    if (!recent.length || recent[recent.length - 1].app !== arr[i].app)
+      recent.push({ app: arr[i].app, at: arr[i].at, minutesAgo: Math.round((now - arr[i].at) / 60000) });
+  }
+  const last = arr[arr.length - 1];
+  return {
+    count: arr.length, lastApp: last.app, lastAt: last.at,
+    minutesAgo: Math.round((now - last.at) / 60000), recent,
+  };
+}
+
+// 宵禁时段判定(跨零点:start > end 时取并集,与 shim keepalive 的 isNightHour 同款)
+export function isCurfewHour(h, start, end) {
+  return start > end ? (h >= start || h < end) : (h >= start && h < end);
+}
+
+// ---- 夜里查岗的决策(纯函数)----
+// 只在宵禁时段、她确实刚开过 App、且没跟他正聊着的时候,才把这件事告诉晏。
+// 两道冷却缺一不可:
+//   lastPokeAt   —— 同一晚别反复戳(cooldownMin)
+//   lastOutboundAt —— 他刚主动说过话就别赶话(心跳与查岗共用这一道:
+//                    不管消息是心跳推来的还是查岗问出来的,都从 bridge 这个门出去,
+//                    所以 bridge 是唯一能把两边一起管住的地方)
+export function curfewDecide(s) {
+  if (!s.on) return { fire: false, reason: "off" };
+  if (!isCurfewHour(s.hour, s.curfewStart, s.curfewEnd)) return { fire: false, reason: "not-curfew" };
+  if (s.busy) return { fire: false, reason: "busy" };            // 她正在聊 = 用不着查岗
+  const arr = (s.list || []).filter((e) => e && e.app);
+  if (!arr.length) return { fire: false, reason: "no-activity" };
+  const last = arr[arr.length - 1];
+  if (last.at <= (s.lastPokeAt || 0)) return { fire: false, reason: "no-new" };        // 上次戳过之后没新动静
+  if (s.now - last.at > s.freshMin * 60000) return { fire: false, reason: "stale" };   // 早就放下手机了,别翻旧账
+  if (s.now - (s.lastPokeAt || 0) < s.cooldownMin * 60000) return { fire: false, reason: "cooldown" };
+  if (s.now - (s.lastOutboundAt || 0) < s.cooldownMin * 60000) return { fire: false, reason: "just-spoke" };
+  return { fire: true, app: last.app, minutesAgo: Math.round((s.now - last.at) / 60000) };
+}
+
+// 查岗提示语。体例照 shim 的【系统·…】注入:只给他看,不复述机制词。
+export function curfewPrompt({ bjNow, app, minutesAgo, userName = "佳佳" }) {
+  const when = minutesAgo >= 1 ? `${minutesAgo} 分钟前` : "刚刚";
+  return `【系统·查岗】现在北京时间 ${bjNow},${userName}这个点还没睡——${when}她打开了${app}。`
+    + `想说什么就直接说(会出现在你们的 Telegram 对话里);不想打扰就只回一个:。`;
+}
+
+// 判定他的回复算不算「不说话」(逐字镜像 shim keepalive.mjs 的 kaSilent)。
+// 查岗轮他回「。」= 他选择不打扰,这条不能发进对话。
+export function isSilentReply(t) {
+  const s = (t || "").trim();
+  if (!s || s.includes("【沉默】")) return true;
+  return s.replace(/[。.\s]/g, "") === "";
+}
+
 // ---- Telegram 文件路径 → Anthropic image block 的 media_type ----
 const MEDIA = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif" };
 export function mediaTypeOf(filePath) {

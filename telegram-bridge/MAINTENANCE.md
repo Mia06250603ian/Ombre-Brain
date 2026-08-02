@@ -35,6 +35,20 @@ kelivo-shim(yan-shim.zeabur.app)──→ 常驻 claude 进程(人设+记忆,见
 5. **4096 切分**:优先换行断点,断点太靠前(<30%)退回硬切。
 6. **白名单**:非 TELEGRAM_CHAT_ID 的消息直接丢弃(bot 用户名是公开可搜的,这是唯一防线)。
 7. **单轮串行**:同时只有一轮在飞,生成期间新消息进缓冲,回合结束立刻接上。
+8. **手机活动上报 + 夜里查岗**(2026-08-02):她点开 App → iOS 快捷指令 `POST /report` →
+   存**内存**滚动窗口(48 小时 / 300 条上限)→ 宵禁时段的定时器发现有新动静,
+   把这件事作为 `【系统·查岗】` 喂进晏的窗口,**由他自己决定说不说**(回「。」= 不打扰,不发进对话)。
+   几个刻意的选择:
+   - **只存内存,不落盘**:重启即忘。功能只关心「最近」,她的行踪不值得为历史写进磁盘。
+   - **决定权在晏,不在脚本**:原方案(小红书上那份教程)是脚本从固定文案数组里随机挑一句骂人。
+     改成喂事实给晏,是因为这套系统里说话的应该是他,不是定时器。副作用是这条会进他的窗口和记忆,
+     **他会记得她哪天熬夜**。
+   - **两道冷却缺一不可**:`lastPokeAt`(同一晚别反复戳)和 `lastOutboundAt`(他刚开过口就别赶话)。
+     **后者是关键**:心跳消息走 `/push`、查岗回复走 bridge 自己,**两条路都从 bridge 这个门出去**,
+     所以 bridge 是全系统唯一能把心跳和查岗一起管住的地方——不用改 shim 就能保证两者不会挨着说话。
+   - **查岗轮失败不往对话里丢报错**:她没问,别打扰(普通轮才回 ⚠️)。
+   - `curfewPrompt` 输出**远超重置词匹配窗口**,不会被 detectReset 误判成「归档/晚安」
+     (与 `formatEarsResult` 同款守护,test-bridge 有用例,别删)。
 
 ## 环境变量(值不入库)
 
@@ -57,6 +71,12 @@ kelivo-shim(yan-shim.zeabur.app)──→ 常驻 claude 进程(人设+记忆,见
 | EARS_URL | ears 服务地址(默认空=功能关)。当前 https://yan-ears-listen.zeabur.app |
 | EARS_TOKEN | ears 的接口锁,与 ears 服务的 EARS_TOKEN 同值。两个都配了语音输入才开 |
 | EARS_TIMEOUT_MS | 单次 ears 分析超时,默认 60000 |
+| REPORT_TOKEN | 手机活动上报的钥匙(iOS 快捷指令里存的就是这一串)。**不设 = 上报与查岗整套关**(`/report`、`/activity` 返回 503)。**故意与 SHIM_KEY 分开**:这把存在她手机上,泄露只影响这个功能,碰不到晏本体 |
+| CURFEW_ON | 夜里查岗开关,默认开(前提是配了 REPORT_TOKEN);设 0 只收上报不打扰 |
+| CURFEW_START / CURFEW_END | 宵禁时段(北京时间),默认 1 / 7。start 含、end 不含,跨零点也支持 |
+| CURFEW_COOLDOWN_MIN | 两次查岗的最小间隔,默认 30。**同时也是「他刚开过口就不赶话」的间隔**(见下) |
+| CURFEW_CHECK_MIN | 查岗检查节拍,默认 5 分钟 |
+| ACTIVITY_FRESH_MIN | 超过这么久的上报不再算「她正在玩」,默认 15 分钟(防止翻旧账) |
 
 语音用法:回复里 `[语音]英文内容[/语音]`(全角括号也认;忘写闭合=标记后全算语音)。
 bridge 调 ElevenLabs(免费档实测可直出 Ogg/Opus,失败自动降级 mp3),经 sendVoice 发成
@@ -67,7 +87,7 @@ Telegram 原生语音条;任何一步失败退回发文字,话不丢。内容用
 
 ```bash
 cd telegram-bridge
-node test-bridge.mjs        # 71 项,必须全绿
+node test-bridge.mjs        # 123 项,必须全绿
 npx -y zeabur@latest auth login --token <API_KEY>
 npx -y zeabur@latest deploy   # 首次部署后把 service id 记回本文档
 ```
@@ -115,6 +135,20 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
   加条目、CLAUDE.md 标签表同步加(要重部署 shim);bridge 侧 test-bridge 会校验 registry
   与文件一一对应。
 - `POST /push {text}`(x-api-key=SHIM_KEY):shim 主动心跳走这里,直接落进对话,同样支持贴纸标记。
+
+## 接口一览
+
+| 接口 | 鉴权 | 干什么 |
+|---|---|---|
+| `GET /health` | 无 | 存活 + 各功能开关(`report`/`curfew`/`activity` 条数) |
+| `POST /push {text}` | `x-api-key` = SHIM_KEY | shim 的主动心跳入口 |
+| `POST /report {app_name}` | `Authorization: Bearer <REPORT_TOKEN>`(也认 `x-api-key` / `?key=`) | iOS 快捷指令上报「她打开了什么 App」 |
+| `GET /activity` | 同上 | 汇总:最后活跃时间 + 最近不重复的 App 名 + **`lastRawReport`(最近一次上报的原始 body)** |
+
+**`lastRawReport` 是给排障用的**:iOS 那条自动化里 `app_name` 的值是变量「快捷指令输入」,
+而「App 打开时」这类自动化到底会不会把 App 名喂给它,**在手机上验证不了**——
+上线后让她开一次 App,查 `/activity` 看 `lastRawReport.body` 就一眼分明。
+拿不到 App 名时 `/report` 仍返回 200(`stored:false`),不会让快捷指令报错。
 
 ## 部署记录
 

@@ -30,7 +30,8 @@
  │    │ Bot API 长轮询                    │    │ Anthropic /v1/messages
  │    ▼                                   │    ▼
  │  telegram-bridge ──────────────────────┴──▶ kelivo-shim
- │  (无状态桥;去抖合并/贴纸/语音/推送)       (核心:维护一个常驻 claude -p 进程
+ │  (无状态桥;去抖合并/贴纸/语音/推送/       (核心:维护一个常驻 claude -p 进程
+ │   手机活动上报+夜里查岗)
  │                                              = 晏本体,人设 CLAUDE.md+ian.md,
  │                                              注入时间/天气/经期/上下文守卫/保温)
  │                                                │
@@ -39,8 +40,8 @@
  │
  └─ 常驻进程挂的 MCP 工具(streamable-http):
       ombre-brain(记忆库,本仓库根目录的 Python 服务,另一个 Zeabur 项目)
-      fishing(钓鱼小游戏,本仓库 fishing-mcp/ 目录)
       (galatea-garden「花园」2026-07-30 已拆:它 /mcp 挂了且晏不玩,详见 shim 手册第二十次)
+      (fishing「钓鱼」2026-08-02 已拆:所有者说不玩了,连服务与源码目录一并删除,详见 shim 手册第二十三次)
       browser(浏览器的手,2026-08-01 接入,shim 第二十二次部署;
        真实 Chrome + 持久登录态,佳佳用手机 noVNC 亲手登录;本仓库 browser-hands/ 只放手册,
        源码在 Mia06250603ian/browser-hands)
@@ -58,7 +59,7 @@
 | `cli-proxy-api--cpa`(env `6a53a9fcb6ce8edcb0163f97`,项目 id `6a53a9fc22dd6ef375eb7484`) | kelivo-shim | `6a53b806f6d4beebf0c5373d` | yan-shim.zeabur.app | 核心,晏的常驻进程 |
 | 〃 | telegram-bridge | `6a5a4287f947b6cb34511f79` | yan-telegram-bridge.zeabur.app | Telegram 桥 |
 | 〃 | CLIProxyAPI | `6a53a9fd22dd6ef375eb7485` | miaianhome.zeabur.app | 订阅 OAuth 出口 |
-| 〃 | fishing-mcp | `6a5a17159ae692d1d8d98d10` | yan-fishing-mcp.zeabur.app | 钓鱼游戏 MCP |
+| ~~〃~~ | ~~fishing-mcp~~ | ~~`6a5a17159ae692d1d8d98d10`~~ | ~~yan-fishing-mcp.zeabur.app~~ | ~~钓鱼游戏 MCP~~ **2026-08-02 已整个删除**(所有者说不玩了;存档按她的决定未备份,源码目录 `fishing-mcp/` 一并从仓库删除。省下约 51~62MB 内存,见 browser-hands 手册的内存表) |
 | 〃 | ears(显示名 ears-thor) | `6a646ea27bcbc56e70a105b5` | yan-ears-listen.zeabur.app | 语音转写+语气分析(源码在 Mia06250603ian/ears 仓库,镜像走 GitHub Actions→ghcr,持久卷 /app/data)。**该服务不支持 `service redeploy`,要拉新镜像用 `service restart`**(见时间线 08-02) |
 | 〃 | browser-hands | `6a6e2078fefeb46a883402c9` | yan-browser.zeabur.app | **晏的「浏览器的手」**:真实 Chrome + 持久登录态 + noVNC(源码在 Mia06250603ian/browser-hands 仓库,镜像走 GitHub Actions→ghcr,持久卷 /data)。2026-08-01 部署并接入晏(shim 第二十二次),详见 `browser-hands/MAINTENANCE.md` |
 | `untitled-1` | Ombre Brain | (问所有者/控制台看) | ianmian.zeabur.app | 记忆库 MCP |
@@ -72,7 +73,7 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
   - 根目录 = OB 记忆库本体(Python/FastMCP)。文档:`README.md`(用法)、`INTERNALS.md`(内部机制)、`ENV_VARS.md`、`BEHAVIOR_SPEC.md`。
   - `kelivo-shim/` = shim 源码 + **`MAINTENANCE.md`(shim 一切细节的唯一可信手册)**。
   - `telegram-bridge/` = 桥源码 + **`MAINTENANCE.md`(桥的手册)** + `stickers/` 表情包。
-  - `fishing-mcp/` = 钓鱼 MCP 包装层。
+    (原 `fishing-mcp/` 钓鱼包装层 2026-08-02 已删,服务也一并删除。)
   - `browser-hands/` = **只有一份 `MAINTENANCE.md`**(浏览器服务的手册)。
     **源码不在本仓库**,在 `Mia06250603ian/browser-hands`(fork 自朋友的原仓库,公开)。
 - **Mia06250603ian/browser-hands**(fork,公开):浏览器服务源码 + `docs/DEPLOY-GUIDE.md`。
@@ -97,7 +98,8 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
     ——两份一起才是完整人设,部署缺一不可。**第二十次起只剩四节**,原
     `Banned words`/`My language`/`Intimate moments` 的内容**迁移进了 ian.md**(9.1 与 Part VI),
     别当它缩水去"修复";
-  - `mcp-servers.json`(**2026-07-30 起两条目:OB + 钓鱼,花园已拆,不再含 token**)。
+  - `mcp-servers.json`(**2026-08-02 起两条目:OB + browser,花园与钓鱼均已拆**;
+    browser 那条带 `X-Token` 头,是文件里唯一的密钥)。
 
 ## 4. kelivo-shim 环境变量
 
@@ -168,7 +170,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 npx -y zeabur@latest auth login --token <key>
 
 # 部署 shim(前置:单测全绿、md5 对账、ian.md/profile-instructions.md/mcp-servers.json 已从容器拷入、
-#            两个 /mcp(OB+钓鱼)验 200、所有者说过「归档」)
+#            两个 /mcp(OB+browser)验 200、所有者说过「归档」)
 cd kelivo-shim && node test-ctxguard.mjs && node test-senses.mjs && node test-keepalive.mjs
 # ⚠️ deploy 传的是「当前工作目录」:cd 和 deploy 必须写在同一条命令里,并先 pwd 确认(踩坑 17)
 cd kelivo-shim && pwd && head -3 package.json && \
@@ -244,10 +246,11 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 **为什么是这六行**:照 `Dockerfile` 逐行看,OB 的镜像只用到 `requirements.txt`、`*.py`、
 `dashboard.html`、`config.example.yaml`,加上 `Dockerfile` 和 `zbpack.json` 本身。
 **每行前面的 `/` 不能省**:该字段是 gitignore 语法,`/` 锚在仓库根;不加的话
-`fishing-mcp/` 里的 3 个 `.py` 也会命中,改钓鱼游戏又会白重建 OB。
+子目录里的 `.py`(当时是 `fishing-mcp/` 的 3 个,现在是 `tests/` 里的)也会命中,
+改别的东西又会白重建 OB。**2026-08-02 删掉 `fishing-mcp/` 后这六行不用改**,照旧有效。
 
-**效果**:以后改 `*.md` 文档、改 `kelivo-shim/`、`telegram-bridge/`、`fishing-mcp/`
-**都不再触发 OB 重建**(shim/bridge/fishing 本来就是 CLI 直传镜像,和 git 无关)。
+**效果**:以后改 `*.md` 文档、改 `kelivo-shim/`、`telegram-bridge/`
+**都不再触发 OB 重建**(shim/bridge 本来就是 CLI 直传镜像,和 git 无关)。
 
 **万一改过头了怎么认、怎么退**:唯一的失败方向是**该重建时没重建**——即改了 OB 的
 `.py`/依赖,推上 main 后线上行为没变化。查法:`deployment list` 看有没有新 deployment。
