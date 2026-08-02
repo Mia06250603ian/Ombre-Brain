@@ -72,7 +72,9 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
 - **Mia06250603ian/Ombre-Brain**(本仓库,Gitea 备份见 README):
   - 根目录 = OB 记忆库本体(Python/FastMCP)。文档:`README.md`(用法)、`INTERNALS.md`(内部机制)、`ENV_VARS.md`、`BEHAVIOR_SPEC.md`。
   - `kelivo-shim/` = shim 源码 + **`MAINTENANCE.md`(shim 一切细节的唯一可信手册)**。
-  - `telegram-bridge/` = 桥源码 + **`MAINTENANCE.md`(桥的手册)** + `stickers/` 表情包。
+  - `telegram-bridge/` = 桥源码 + **`MAINTENANCE.md`(桥的手册)** + `stickers/` 表情包
+    + `查岗功能-实施指南.md`(**可直接转发给别人的一份实施指南**:同款架构照着做即可,
+    含设计决策、可抄代码、iOS 快捷指令最终形态、十条踩坑;密钥域名全是占位符)。
     (原 `fishing-mcp/` 钓鱼包装层 2026-08-02 已删,服务也一并删除。)
   - `browser-hands/` = **只有一份 `MAINTENANCE.md`**(浏览器服务的手册)。
     **源码不在本仓库**,在 `Mia06250603ian/browser-hands`(fork 自朋友的原仓库,公开)。
