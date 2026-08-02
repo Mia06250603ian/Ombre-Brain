@@ -5,6 +5,7 @@ import {
   extractStickers, extractSegments, splitBubbles, bubblesFor,
   formatEarsResult,
   normalizeAppName, pushActivity, summarizeActivity, isCurfewHour, curfewDecide, curfewPrompt, isSilentReply,
+  takeCheckMarker, lookupPrompt,
 } from "./bridge-lib.mjs";
 import fs from "fs";
 
@@ -316,6 +317,42 @@ ok(isSilentReply(" 。。 "), "多个句号也算");
 ok(isSilentReply(""), "空回复算不说话");
 ok(isSilentReply("【沉默】"), "沉默标记算不说话");
 ok(!isSilentReply("这么晚还不睡?"), "真说了话就不算沉默");
+
+// ---- 他自己发起的查岗:[查岗] 标记 ----
+eq(takeCheckMarker("在忙吗"), { text: "在忙吗", wants: false }, "没写标记 = 不查");
+eq(takeCheckMarker("[查岗]"), { text: "", wants: true }, "只写标记:正文空、要查");
+eq(takeCheckMarker("【查岗】"), { text: "", wants: true }, "全角括号也认");
+eq(takeCheckMarker("[ 查岗 ]"), { text: "", wants: true }, "带空格也认");
+eq(takeCheckMarker("[查岗]这么久不理我"), { text: "这么久不理我", wants: true }, "标记被剥掉,正文照发");
+eq(takeCheckMarker("想你了[查岗]"), { text: "想你了", wants: true }, "标记在句尾也剥干净");
+ok(!takeCheckMarker("我去查岗了").wants, "光有「查岗」二字不带括号 → 不触发");
+ok(!takeCheckMarker("[贴纸:查岗]").wants, "贴纸标记不会被误认成查岗");
+{
+  const r = takeCheckMarker("[查岗]\n\n\n在干嘛");
+  eq(r.text, "在干嘛", "剥完不留多余空行");
+}
+
+// ---- 查岗结果喂回去的那一条 ----
+{
+  const now = 1000000000;
+  const s = summarizeActivity([
+    { app: "微信", at: now - 90 * 60000 },
+    { app: "抖音", at: now - 40 * 60000 },
+    { app: "小红书", at: now - 12 * 60000 },
+  ], { now });
+  const p = lookupPrompt(s, { bjNow: "15:30" });
+  ok(p.startsWith("【系统·查岗】"), "结果带【系统·查岗】前缀");
+  ok(p.includes("12 分钟前打开了小红书"), "最近一次说清楚");
+  ok(p.includes("抖音(40 分钟前)"), "再往前的也带上");
+  eq(detectReset(p), null, "查岗结果不会触发重置词(守护用例,别删)");
+}
+{
+  const p = lookupPrompt({ count: 0 }, { bjNow: "15:30" });
+  ok(p.includes("没有动静"), "没记录时明说没动静(别让他以为是查不到)");
+  eq(detectReset(p), null, "空结果也不会触发重置词");
+}
+ok(lookupPrompt(summarizeActivity([{ app: "小红书", at: 1000 }], { now: 1000 }), { bjNow: "15:30" }).includes("刚刚"),
+  "0 分钟说「刚刚」");
 
 console.log(fail ? `\n${fail}/${n} FAILED` : `${n} 项全绿 ✓`);
 process.exit(fail ? 1 : 0);

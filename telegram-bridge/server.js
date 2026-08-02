@@ -9,6 +9,7 @@ import {
   makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf, extractSegments, bubblesFor,
   formatEarsResult,
   normalizeAppName, pushActivity, summarizeActivity, curfewDecide, curfewPrompt, isSilentReply,
+  takeCheckMarker, lookupPrompt,
 } from "./bridge-lib.mjs";
 
 const PORT = process.env.PORT || 8080;
@@ -142,10 +143,11 @@ const BUBBLE_SPLIT = process.env.BUBBLE_SPLIT !== "0";
 const BUBBLE_MAX = +(process.env.BUBBLE_MAX || 200); // 整段回复超过此长度=长文,不拆
 const sleep = (ms) => new Promise((s) => setTimeout(s, ms));
 async function sendOutput(chatId, rawText, { fallback } = {}) {
-  lastOutboundAt = Date.now();   // 他每次开口都从这个门出去(回复/心跳/查岗),查岗的冷却看这个
   const { segments, unknown } = extractSegments(rawText || "", stickerTags);
   if (unknown.length) log("[sticker] unknown tags:", unknown.join(","));
   if (!segments.length) { if (fallback) await sendReply(chatId, fallback); return; }
+  lastOutboundAt = Date.now();   // 他每次开口都从这个门出去(回复/心跳/查岗),查岗的冷却看这个
+                                 // ——真发出去了才算,只写了个 [查岗] 标记不算他开过口
   let first = true;
   for (const seg of segments) {
     if (seg.type === "sticker") {
@@ -239,12 +241,15 @@ async function runQueue() {
   try {
     log("[turn]", { len: t.text.length, imgs: t.images.length, curfew: !!t.curfew });
     const r = await shimTurn(t);
-    if (t.curfew && isSilentReply(r.text)) {
+    // 他自己写了 [查岗]:剥掉标记,正文照发,回头把查到的喂回去(lookup 轮不再响应,防打转)
+    const { text: outText, wants } = takeCheckMarker(r.text);
+    if ((t.curfew || t.lookup) && isSilentReply(outText)) {
       log("[curfew] 他选择不打扰");          // 回「。」= 不说话,这条不进对话
     } else {
       await sendThinking(t.chatId, r.thinking);
-      await sendOutput(t.chatId, r.text, { fallback: "⚠️[bridge] 空回复,看下 shim 日志" });
+      await sendOutput(t.chatId, outText, { fallback: wants ? null : "⚠️[bridge] 空回复,看下 shim 日志" });
     }
+    if (wants && !t.lookup) queueLookup(t.chatId);
   } catch (e) {
     log("[turn-err]", e.message);
     // 查岗是系统自己发起的,失败不该往她对话里丢报错(她没问,别打扰)
@@ -336,11 +341,16 @@ app.use(express.json({ limit: "1mb" }));
 app.post("/push", async (req, res) => {
   const key = req.get("x-api-key") || req.query.key || "";
   if (!SHIM_KEY || key !== SHIM_KEY) return res.status(401).json({ ok: false });
-  const text = (req.body?.text || "").trim();
-  if (!text) return res.status(400).json({ ok: false, error: "empty text" });
+  const raw = (req.body?.text || "").trim();
+  if (!raw) return res.status(400).json({ ok: false, error: "empty text" });
   if (!lastChatId) return res.status(503).json({ ok: false, error: "no chat" });
-  try { await sendOutput(lastChatId, text); res.json({ ok: true }); }
-  catch (e) { log("[push-err]", e.message); res.status(502).json({ ok: false, error: e.message }); }
+  // 心跳消息里也可能写 [查岗](他醒来想先看一眼再决定说什么)
+  const { text, wants } = takeCheckMarker(raw);
+  try {
+    if (text) await sendOutput(lastChatId, text);
+    if (wants) queueLookup(lastChatId);
+    res.json({ ok: true, lookup: wants });
+  } catch (e) { log("[push-err]", e.message); res.status(502).json({ ok: false, error: e.message }); }
 });
 
 // ---- 手机活动上报 + 夜里查岗 ----
@@ -370,6 +380,16 @@ app.get("/activity", (req, res) => {
   if (!reportAuth(req)) return res.status(401).json({ ok: false });
   res.json({ now: new Date().toISOString(), ...summarizeActivity(activity), lastRawReport });
 });
+// 他写了 [查岗] → 把查到的作为新一轮喂回去。lookup:true 标记这一轮不再响应标记(防打转)。
+function queueLookup(chatId) {
+  if (!REPORT_ON) { log("[lookup] REPORT_TOKEN 未配置,忽略"); return; }
+  log("[lookup] 他要查");
+  turnQueue.push({
+    text: lookupPrompt(summarizeActivity(activity), { bjNow: bjNowStr() }),
+    images: [], chatId: chatId || lastChatId, lookup: true,
+  });
+  runQueue();
+}
 function curfewTick() {
   const d = curfewDecide({
     on: CURFEW_ON, now: Date.now(), hour: bjHour(), list: activity,

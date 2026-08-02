@@ -224,6 +224,33 @@ export function curfewPrompt({ bjNow, app, minutesAgo, userName = "佳佳" }) {
     + `想说什么就直接说(会出现在你们的 Telegram 对话里);不想打扰就只回一个:。`;
 }
 
+// ---- 他自己发起的查岗:回复里写 [查岗] ----
+// 为什么用标记而不是给他一个网址:网址得带钥匙,而钥匙只能写在 CLAUDE.md 里,那是入库文件
+// ——「值不入库」的规矩不能破。标记这条路零钥匙,而且用的是贴纸/语音同款的已验证机制。
+// 代价是一问一答两轮。标记本身永远不显示给她(和 [贴纸:x] 一样剥掉)。
+const CHECK_RE = /[\[【]\s*查岗\s*[\]】]/g;
+export function takeCheckMarker(text) {
+  const raw = text || "";
+  CHECK_RE.lastIndex = 0;
+  if (!CHECK_RE.test(raw)) return { text: raw, wants: false };
+  const cleaned = raw.replace(CHECK_RE, "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  return { text: cleaned, wants: true };
+}
+
+// 查岗结果 → 喂回给他的一条。没有记录时也要明说,否则他不知道是「没查到」还是「她没玩」。
+export function lookupPrompt(summary, { bjNow, userName = "佳佳" } = {}) {
+  const s = summary || {};
+  if (!s.count) {
+    return `【系统·查岗】现在北京时间 ${bjNow},${userName}的手机最近没有动静(近两天没有记录)。`;
+  }
+  const head = s.minutesAgo >= 1 ? `${s.minutesAgo} 分钟前` : "刚刚";
+  const more = (s.recent || []).slice(1, 4)
+    .map((r) => `${r.app}(${r.minutesAgo} 分钟前)`).join("、");
+  return `【系统·查岗】现在北京时间 ${bjNow},${userName}${head}打开了${s.lastApp}。`
+    + (more ? `再往前:${more}。` : "")
+    + `知道就好,说不说、说什么都由你。`;
+}
+
 // 判定他的回复算不算「不说话」(逐字镜像 shim keepalive.mjs 的 kaSilent)。
 // 查岗轮他回「。」= 他选择不打扰,这条不能发进对话。
 export function isSilentReply(t) {
