@@ -315,14 +315,30 @@ export function isRetriableNetErr(e) {
 // 现在按「哪一步断的」说人话——两步的含义完全不同:
 //   shim 断 = 他没答上来,她的话可能白说了 → 该让她知道,好再说一次;
 //   发送断 = 他答了,是回话没送到她手机 → 别让她以为他不理她。
+// 丢了什么,按种类说清楚。**别把一张贴纸说成「一句话」**(2026-08-02 端到端实测发现的措辞错)。
+export function describeLoss(kinds = {}) {
+  const parts = [];
+  if (kinds.text) parts.push(`${kinds.text} 句话`);
+  if (kinds.sticker) parts.push(`${kinds.sticker} 张贴纸`);
+  if (kinds.voice) parts.push(`${kinds.voice} 条语音`);
+  return parts.join("、") || "一点东西";
+}
+
 export function turnErrorText(info = {}) {
   if (info.stage === "shim") {
     const m = (info.err && info.err.message) || "";
     if (/timeout/i.test(m)) return "⚠️[bridge] 他那边想太久了(超时),这轮没接上——再跟他说一次?";
     return `⚠️[bridge] 没接上他那边(${m || "原因不明"}),你这句他可能没收到,过一会儿再说一次?`;
   }
-  const lost = info.lost || 0;
-  return `⚠️[bridge] 网络抖了一下,他回你的话有 ${lost} 句没送到(不是他没说)。`;
+  // 发送失败要分清是**网络**还是 **Telegram 主动拒收**——后者多半是内容问题(解析失败/超长),
+  // 说成「网络抖了一下」会把下一个排障的人(和我自己)直接带沟里。
+  const what = describeLoss(info.kinds);
+  const net = info.net || 0, rejected = info.rejected || 0;
+  if (net && rejected)
+    return `⚠️[bridge] 他回你的 ${what} 没送到:一部分是网络抖了,一部分被 Telegram 拒收了(看日志 [tg] 那行)。`;
+  if (rejected)
+    return `⚠️[bridge] 他回你的 ${what} 被 Telegram 拒收了(不是网络,多半是内容问题,看日志 [tg] 那行)。`;
+  return `⚠️[bridge] 网络抖了一下,他回你的 ${what} 没送到(不是他没说)。`;
 }
 
 // ---- Telegram 文件路径 → Anthropic image block 的 media_type ----

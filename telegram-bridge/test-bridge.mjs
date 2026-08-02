@@ -6,7 +6,7 @@ import {
   formatEarsResult,
   normalizeAppName, pushActivity, summarizeActivity, isCurfewHour, curfewDecide, curfewPrompt, isSilentReply,
   takeCheckMarker, lookupPrompt,
-  describeErr, isRetriableNetErr, turnErrorText,
+  describeErr, isRetriableNetErr, turnErrorText, describeLoss,
 } from "./bridge-lib.mjs";
 import fs from "fs";
 
@@ -400,10 +400,23 @@ const undiciErr = (causeName, causeMsg, code) => {
   ok(shim.includes("没接上他那边") && shim.includes("shim HTTP 502"), "shim 断了要让她知道该再说一次");
   ok(turnErrorText({ stage: "shim", err: new Error("shim turn timeout") }).includes("想太久"),
     "超时说人话");
-  const send = turnErrorText({ stage: "send", lost: 3 });
-  ok(send.includes("3 句") && send.includes("不是他没说"),
-    "发送断了只报丢了几句,并且澄清不是他不理她");
-  for (const s of [shim, send]) {
+  const send = turnErrorText({ stage: "send", kinds: { text: 3 }, net: 3 });
+  ok(send.includes("3 句话") && send.includes("网络抖") && send.includes("不是他没说"),
+    "网络原因丢了话:说清几句 + 澄清不是他不理她");
+  // ↓ 这两条是 2026-08-02 端到端实测抓出来的措辞错,别改回去
+  eq(describeLoss({ sticker: 1 }), "1 张贴纸", "**一张贴纸不许说成「一句话」**");
+  eq(describeLoss({ text: 2, sticker: 1, voice: 1 }), "2 句话、1 张贴纸、1 条语音", "混合损失逐项说清");
+  eq(describeLoss({}), "一点东西", "什么都没记到也不能说空话");
+  const rej = turnErrorText({ stage: "send", kinds: { text: 1 }, rejected: 1 });
+  ok(rej.includes("Telegram 拒收") && !rej.includes("网络抖"),
+    "**Telegram 主动拒收不许说成「网络抖了一下」**(内容问题,说错会把排障带沟里)");
+  ok(rej.includes("[tg]"), "拒收时指路到日志的 [tg] 行");
+  const both = turnErrorText({ stage: "send", kinds: { text: 1, sticker: 1 }, net: 1, rejected: 1 });
+  ok(both.includes("一部分是网络") && both.includes("一部分被 Telegram 拒收"), "两种原因都有时分别说明");
+  ok(both.includes("1 句话、1 张贴纸"), "混合损失在提示里也逐项说清");
+  const st = turnErrorText({ stage: "send", kinds: { sticker: 1 }, net: 1 });
+  ok(st.includes("1 张贴纸") && !st.includes("句话"), "只丢贴纸时不提「句话」");
+  for (const s of [shim, send, rej, both, st]) {
     ok(!/fetch failed/i.test(s), "**给她看的话里永远不许出现 fetch failed**(守护用例,别删)");
     ok(s.startsWith("⚠️[bridge]"), "仍然标明是桥在说话,不是晏在说话");
   }

@@ -118,17 +118,20 @@ try { stickerReg = JSON.parse(fs.readFileSync(path.join(STICKER_DIR, "registry.j
 catch { log("[sticker] 没有 registry.json,贴纸功能关"); }
 const stickerTags = Object.keys(stickerReg);
 const stickerFileIds = {};
+// 返回 true=发出去了 / false=Telegram 拒收 / null=没这张图(不算发也不算丢)。
+// 以前无论如何都返回 undefined,导致「被 Telegram 拒收的贴纸」被当成发成功了。
 async function sendSticker(chatId, tag) {
   const file = stickerReg[tag];
-  if (!file) return;
-  if (stickerFileIds[tag]) { await tg("sendSticker", { chat_id: chatId, sticker: stickerFileIds[tag] }); return; }
+  if (!file) return null;
+  if (stickerFileIds[tag]) { const j = await tg("sendSticker", { chat_id: chatId, sticker: stickerFileIds[tag] }); return !!j?.ok; }
   const form = new FormData();
   form.append("chat_id", String(chatId));
   form.append("sticker", new Blob([fs.readFileSync(path.join(STICKER_DIR, file))], { type: "image/webp" }), file);
   const r = await fetch(`https://api.telegram.org/bot${BOT}/sendSticker`, { method: "POST", body: form, signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS) });
   const j = await r.json().catch(() => ({}));
-  if (j.ok) { const id = j.result?.sticker?.file_id; if (id) stickerFileIds[tag] = id; }
-  else log("[sticker] sendSticker failed:", j.description || r.status);
+  if (j.ok) { const id = j.result?.sticker?.file_id; if (id) stickerFileIds[tag] = id; return true; }
+  log("[sticker] sendSticker failed:", j.description || r.status);
+  return false;
 }
 
 // ---- 语音:[语音]…[/语音] 段经 ElevenLabs 转成 Telegram 语音条 ----
@@ -168,12 +171,14 @@ async function sendVoiceMsg(chatId, text) {
 const BUBBLE_SPLIT = process.env.BUBBLE_SPLIT !== "0";
 const BUBBLE_MAX = +(process.env.BUBBLE_MAX || 200); // 整段回复超过此长度=长文,不拆
 const sleep = (ms) => new Promise((s) => setTimeout(s, ms));
-// 返回 { sent, failed }:**一句发失败只丢那一句,后面的照发**(以前是当场抛错,
-// 整轮剩下的话全没了——她看到的就是「思考折叠出来了,正文一个字没有」)。
+// 返回 { sent, failed, kinds, net, rejected }:**一句发失败只丢那一句,后面的照发**
+//(以前是当场抛错,整轮剩下的话全没了——她看到的就是「思考折叠出来了,正文一个字没有」)。
+// kinds 按种类记(话/贴纸/语音),net 与 rejected 分开记原因——**给她的提示要说得准**:
+// 「网络抖了一下」和「Telegram 拒收(内容问题)」是两回事,混为一谈会把排障带沟里。
 async function sendOutput(chatId, rawText, { fallback } = {}) {
   const { segments, unknown } = extractSegments(rawText || "", stickerTags);
   if (unknown.length) log("[sticker] unknown tags:", unknown.join(","));
-  const stat = { sent: 0, failed: 0 };
+  const stat = { sent: 0, failed: 0, kinds: { text: 0, sticker: 0, voice: 0 }, net: 0, rejected: 0 };
   if (!segments.length) {
     if (fallback) { try { await sendReply(chatId, fallback); } catch (e) { log("[send-err] fallback", describeErr(e)); } }
     return stat;
@@ -181,17 +186,21 @@ async function sendOutput(chatId, rawText, { fallback } = {}) {
   // 他每次开口都从这个门出去(回复/心跳/查岗),查岗的冷却看这个。
   // ——真发出去了才算:只写了个 [查岗] 标记不算,一句都没发成功也不算。
   const markSent = () => { stat.sent++; lastOutboundAt = Date.now(); };
+  const markLost = (kind, why) => { stat.failed++; stat.kinds[kind]++; stat[why]++; };
   const sendOne = async (payload, tag) => {
     try {
       const j = await tg("sendMessage", payload);
-      if (j?.ok) markSent(); else stat.failed++;   // Telegram 明说不 ok(400 等)也算丢了
-    } catch (e) { stat.failed++; log(`[send-err] ${tag}`, describeErr(e)); }
+      if (j?.ok) markSent();
+      else markLost("text", "rejected");          // Telegram 明说不 ok(400 等)= 内容问题,不是网络
+    } catch (e) { markLost("text", "net"); log(`[send-err] ${tag}`, describeErr(e)); }
   };
   let first = true;
   for (const seg of segments) {
     if (seg.type === "sticker") {
       if (!first) await sleep(400);
-      await sendSticker(chatId, seg.tag).then(markSent, (e) => { stat.failed++; log("[sticker-err]", describeErr(e)); });
+      await sendSticker(chatId, seg.tag).then(
+        (ok) => { if (ok === true) markSent(); else if (ok === false) markLost("sticker", "rejected"); },
+        (e) => { markLost("sticker", "net"); log("[sticker-err]", describeErr(e)); });
       first = false;
       continue;
     }
@@ -220,7 +229,7 @@ async function sendOutput(chatId, rawText, { fallback } = {}) {
       first = false;
     }
   }
-  if (stat.failed) log("[send] 这一轮丢了", stat.failed, "句,发出去", stat.sent, "句");
+  if (stat.failed) log("[send] 这一轮丢了", JSON.stringify({ kinds: stat.kinds, 网络: stat.net, 被拒: stat.rejected }), "发出去", stat.sent, "条");
   return stat;
 }
 // 思考折叠发失败**不许连累正文**:正文才是她要看的话。
@@ -318,7 +327,7 @@ async function runQueue() {
         await sendThinking(t.chatId, r.thinking);
         const stat = await sendOutput(t.chatId, outText, { fallback: wants ? null : "⚠️[bridge] 空回复,看下 shim 日志" });
         // 真有话没送到才吭声(查岗轮不吭声,她没问)
-        if (stat.failed && !t.curfew) await notify(turnErrorText({ stage: "send", lost: stat.failed }));
+        if (stat.failed && !t.curfew) await notify(turnErrorText({ stage: "send", ...stat }));
       }
       if (wants && !t.lookup) queueLookup(t.chatId);
     }
