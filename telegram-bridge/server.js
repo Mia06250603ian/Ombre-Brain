@@ -371,15 +371,31 @@ function reportAuth(req) {
   const k = bearer || req.get("x-api-key") || req.query.key || "";
   return REPORT_ON && k === REPORT_TOKEN;
 }
-app.post("/report", (req, res) => {
+// GET 和 POST 都收。**iOS 快捷指令实测只有 GET 通得了**(POST+JSON 在她手机上一律
+// 「网络连接已中断」,而 Safari 的 GET 同域名同时刻正常)——所以线上用的是 GET:
+//   https://<域名>/report?key=<REPORT_TOKEN>&app=<快捷指令输入>
+// POST 保留:服务器端自检和将来别的客户端还用得上。
+function handleReport(req, res) {
   if (!REPORT_ON) return res.status(503).json({ ok: false, error: "REPORT_TOKEN 未配置" });
-  if (!reportAuth(req)) return res.status(401).json({ ok: false });
-  lastRawReport = { at: Date.now(), body: req.body ?? null };
-  const app_name = normalizeAppName(req.body?.app_name);
-  if (!app_name) return res.json({ ok: true, stored: false, note: "app_name 为空,只留了原始 body" });
+  const src = { ...(req.query || {}), ...(typeof req.body === "object" && req.body ? req.body : {}) };
+  if (!reportAuth(req)) {
+    log("[report] 401", req.method, "有没有 key:", !!(req.query.key || req.get("authorization") || req.get("x-api-key")));
+    return res.status(401).json({ ok: false });
+  }
+  // 第三条路:App 名走请求头 x-app。为什么留这条——**网址里的中文如果快捷指令没做转码,
+  // 请求会被 Node 的 HTTP 解析器在进 express 之前就判 400**(实测),而请求头不吃这一套。
+  // 头里的非 ASCII 到 Node 手上是按 latin1 解的字节,还原成 UTF-8 才是中文。
+  const hdrApp = req.get("x-app") || "";
+  const hdrDecoded = hdrApp ? Buffer.from(hdrApp, "latin1").toString("utf8") : "";
+  lastRawReport = { at: Date.now(), method: req.method, query: req.query ?? null, body: req.body ?? null, xApp: hdrDecoded || null };
+  const app_name = normalizeAppName(src.app_name ?? src.app ?? hdrDecoded);
+  if (!app_name) { log("[report] 到了但没有 App 名"); return res.json({ ok: true, stored: false, note: "app_name 为空,只留了原始内容" }); }
   activity = pushActivity(activity, { app: app_name });
+  log("[report]", app_name, "共", activity.length, "条");
   res.json({ ok: true, stored: true, count: activity.length });
-});
+}
+app.post("/report", handleReport);
+app.get("/report", handleReport);
 app.get("/activity", (req, res) => {
   if (!REPORT_ON) return res.status(503).json({ ok: false, error: "REPORT_TOKEN 未配置" });
   if (!reportAuth(req)) return res.status(401).json({ ok: false });
