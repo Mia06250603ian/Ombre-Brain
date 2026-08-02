@@ -6,6 +6,7 @@ import {
   formatEarsResult,
   normalizeAppName, pushActivity, summarizeActivity, isCurfewHour, curfewDecide, curfewPrompt, isSilentReply,
   takeCheckMarker, lookupPrompt,
+  describeErr, isRetriableNetErr, turnErrorText, describeLoss,
 } from "./bridge-lib.mjs";
 import fs from "fs";
 
@@ -353,6 +354,73 @@ ok(!takeCheckMarker("[贴纸:查岗]").wants, "贴纸标记不会被误认成查
 }
 ok(lookupPrompt(summarizeActivity([{ app: "小红书", at: 1000 }], { now: 1000 }), { bjNow: "15:30" }).includes("刚刚"),
   "0 分钟说「刚刚」");
+
+// ---- 网络错误三件套(2026-08-02:治「⚠️[bridge] fetch failed」)----
+// 造几个和线上一模一样的错误对象:undici 的 fetch 失败永远是
+// TypeError: fetch failed,真原因挂在 e.cause 上。
+const undiciErr = (causeName, causeMsg, code) => {
+  const e = new TypeError("fetch failed");
+  const c = new Error(causeMsg);
+  c.name = causeName; if (code) c.code = code;
+  e.cause = c;
+  return e;
+};
+{
+  const e = undiciErr("SocketError", "other side closed", "UND_ERR_SOCKET");
+  eq(describeErr(e), "TypeError: fetch failed ← SocketError: other side closed [UND_ERR_SOCKET]",
+    "describeErr 把 cause 一起摊开(不写日志=下次还是查不出来)");
+  eq(describeErr(null), "(无错误对象)", "describeErr 兜住空值");
+  eq(describeErr(new Error("boom")), "boom", "普通 Error 就是原话");
+  const plain = new Error("connect ECONNREFUSED 1.2.3.4:443"); plain.code = "ECONNREFUSED";
+  eq(describeErr(plain), "connect ECONNREFUSED 1.2.3.4:443 [ECONNREFUSED]", "code 带出来");
+  ok(!describeErr(e).includes("undefined"), "展开链里不许出现 undefined");
+}
+{
+  // 可重试:连接层面就没成,请求几乎不可能已经被 Telegram 处理
+  ok(isRetriableNetErr(undiciErr("SocketError", "other side closed", "UND_ERR_SOCKET")),
+    "对端关了闲置连接 → 重试");
+  ok(isRetriableNetErr(undiciErr("Error", "getaddrinfo EAI_AGAIN api.telegram.org", "EAI_AGAIN")),
+    "DNS 抖 → 重试");
+  ok(isRetriableNetErr(undiciErr("ConnectTimeoutError", "Connect Timeout Error", "UND_ERR_CONNECT_TIMEOUT")),
+    "建连超时 → 重试");
+  ok(isRetriableNetErr(new TypeError("fetch failed")),
+    "**光秃秃的 fetch failed 也要重试**(线上犯的就是这个;只认已知 code 等于没修)");
+  // 不重试:请求已经发出去了,对方可能已经办完,重发 = 同一句话说两遍
+  ok(!isRetriableNetErr(undiciErr("HeadersTimeoutError", "Headers Timeout Error", "UND_ERR_HEADERS_TIMEOUT")),
+    "headers 超时 → 不重试(可能已经发到了)");
+  ok(!isRetriableNetErr(undiciErr("BodyTimeoutError", "Body Timeout Error", "UND_ERR_BODY_TIMEOUT")),
+    "body 超时 → 不重试");
+  const to = new Error("The operation was aborted due to timeout"); to.name = "TimeoutError";
+  ok(!isRetriableNetErr(to), "我们自己掐的超时 → 不重试");
+  ok(!isRetriableNetErr(new Error("shim HTTP 502")), "shim 的报错不归 tg 重试管");
+  ok(!isRetriableNetErr(null) && !isRetriableNetErr("字符串"), "空值/字符串不炸");
+}
+{
+  const shim = turnErrorText({ stage: "shim", err: new Error("shim HTTP 502") });
+  ok(shim.includes("没接上他那边") && shim.includes("shim HTTP 502"), "shim 断了要让她知道该再说一次");
+  ok(turnErrorText({ stage: "shim", err: new Error("shim turn timeout") }).includes("想太久"),
+    "超时说人话");
+  const send = turnErrorText({ stage: "send", kinds: { text: 3 }, net: 3 });
+  ok(send.includes("3 句话") && send.includes("网络抖") && send.includes("不是他没说"),
+    "网络原因丢了话:说清几句 + 澄清不是他不理她");
+  // ↓ 这两条是 2026-08-02 端到端实测抓出来的措辞错,别改回去
+  eq(describeLoss({ sticker: 1 }), "1 张贴纸", "**一张贴纸不许说成「一句话」**");
+  eq(describeLoss({ text: 2, sticker: 1, voice: 1 }), "2 句话、1 张贴纸、1 条语音", "混合损失逐项说清");
+  eq(describeLoss({}), "一点东西", "什么都没记到也不能说空话");
+  const rej = turnErrorText({ stage: "send", kinds: { text: 1 }, rejected: 1 });
+  ok(rej.includes("Telegram 拒收") && !rej.includes("网络抖"),
+    "**Telegram 主动拒收不许说成「网络抖了一下」**(内容问题,说错会把排障带沟里)");
+  ok(rej.includes("[tg]"), "拒收时指路到日志的 [tg] 行");
+  const both = turnErrorText({ stage: "send", kinds: { text: 1, sticker: 1 }, net: 1, rejected: 1 });
+  ok(both.includes("一部分是网络") && both.includes("一部分被 Telegram 拒收"), "两种原因都有时分别说明");
+  ok(both.includes("1 句话、1 张贴纸"), "混合损失在提示里也逐项说清");
+  const st = turnErrorText({ stage: "send", kinds: { sticker: 1 }, net: 1 });
+  ok(st.includes("1 张贴纸") && !st.includes("句话"), "只丢贴纸时不提「句话」");
+  for (const s of [shim, send, rej, both, st]) {
+    ok(!/fetch failed/i.test(s), "**给她看的话里永远不许出现 fetch failed**(守护用例,别删)");
+    ok(s.startsWith("⚠️[bridge]"), "仍然标明是桥在说话,不是晏在说话");
+  }
+}
 
 console.log(fail ? `\n${fail}/${n} FAILED` : `${n} 项全绿 ✓`);
 process.exit(fail ? 1 : 0);

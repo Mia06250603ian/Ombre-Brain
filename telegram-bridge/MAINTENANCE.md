@@ -61,6 +61,22 @@ kelivo-shim(yan-shim.zeabur.app)──→ 常驻 claude 进程(人设+记忆,见
    - **将来若要退回「系统推给他」**:CLAUDE.md 那一节的措辞已同时覆盖两种情况,
      **只改 bridge 即可,不用重新部署 shim、不动晏的窗口。**
 
+10. **发消息的容错**(2026-08-02,治「⚠️[bridge] fetch failed」):往 Telegram 发的每一发
+   都可能撞上瞬时抖动。三条规矩:
+   - **`tg()` 只对连接层面的失败重试**(判定在 `isRetriableNetErr`)。分界线是「这次失败时,
+     请求有没有可能已经被对方处理了」:建连失败/DNS/对端关掉闲置连接 → 没被处理,重发安全;
+     **我们自己掐的超时、undici 的 headers/body 超时 → 可能已经办完了,重发 = 同一句说两遍,不重试。**
+   - **`fetch failed` 在排除那两种超时后一律算可重试**——线上真正在犯的就是这一类,
+     要是只认已知 code,这个修法等于没修(test-bridge 有守护用例)。
+   - **一句发失败只丢那一句,后面的照发**(`sendOutput` 返回 `{sent, failed}`)。
+     以前是当场抛错,整轮剩下的话全没了。
+   - **贴纸和语音走的是裸 fetch(multipart),不经 `tg()`**,所以重试管不着它们;
+     但**必须有超时**(`MEDIA_TIMEOUT_MS`,六处全覆盖)——undici 默认要等 300 秒,
+     而本桥单轮串行、长轮询也是单线,**一次卡死能堵住整条队列,连收消息都堵**。
+     它们失败的后果本来就不严重(贴纸只丢那张图、语音退回发文字),缺的只是「别卡住」。
+   - **`runQueue` 最外层的 `try/finally` 是命根子**:`inflight` 和 typing 定时器必须无论如何都收干净,
+     否则一次意外抛错就让 `inflight` 永远卡在 `true`——那是「他再也不回话」的死法。别把它拆了。
+
 ## 环境变量(值不入库)
 
 | 变量 | 说明 |
@@ -88,6 +104,9 @@ kelivo-shim(yan-shim.zeabur.app)──→ 常驻 claude 进程(人设+记忆,见
 | CURFEW_COOLDOWN_MIN | 两次查岗的最小间隔,默认 30。**同时也是「他刚开过口就不赶话」的间隔**(见下) |
 | CURFEW_CHECK_MIN | 查岗检查节拍,默认 5 分钟 |
 | ACTIVITY_FRESH_MIN | 超过这么久的上报不再算「她正在玩」,默认 15 分钟(防止翻旧账) |
+| TG_TIMEOUT_MS | 发给 Telegram 的单次请求超时,默认 30000。**别调大**:本桥单轮串行,一发卡死堵住整条队列(undici 默认要等 300 秒) |
+| TG_RETRY | 网络级失败的额外重试次数,默认 2。**设 0 = 关掉重试**(急救开关:万一出现「同一句话发两遍」,先设 0 再排查) |
+| MEDIA_TIMEOUT_MS | 贴纸图/语音条**收发**的超时,默认 60000(比文字宽,因为是几百 KB 的传输)。覆盖六处裸 fetch:她发来的图/贴纸下载、语音条下载、贴纸上传、ElevenLabs 合成、语音条上传 |
 
 语音用法:回复里 `[语音]英文内容[/语音]`(全角括号也认;忘写闭合=标记后全算语音)。
 bridge 调 ElevenLabs(免费档实测可直出 Ogg/Opus,失败自动降级 mp3),经 sendVoice 发成
@@ -98,7 +117,7 @@ Telegram 原生语音条;任何一步失败退回发文字,话不丢。内容用
 
 ```bash
 cd telegram-bridge
-node test-bridge.mjs        # 123 项,必须全绿
+node test-bridge.mjs        # 160 项,必须全绿
 npx -y zeabur@latest auth login --token <API_KEY>
 npx -y zeabur@latest deploy   # 首次部署后把 service id 记回本文档
 ```
@@ -124,6 +143,20 @@ npx -y zeabur@latest deploy   # 首次部署后把 service id 记回本文档
 5. **心跳仍走 Bark**(shim 侧逻辑,本桥不碰)。要让晏的主动消息直接出现在 Telegram 对话里,
    需改 shim 的 heartbeatTick 出口 —— 那是第二阶段,要动 shim,按 shim 手册全套流程 + 所有者授权。
 6. **隐私**:对话明文过 Telegram 服务器(Bot API 无端到端加密)。所有者已知情。
+7. **看到 `fetch failed` 先按这个断案(2026-08-02 排障法,别重新推一遍)**:
+   `fetch failed` 是 Node 全局 fetch(undici)的固定报错串,**只有它报得出这五个字**。实测三种:
+
+   | 谁失败 | 报出来长什么样 |
+   |---|---|
+   | 全局 `fetch` | `TypeError: fetch failed`(真原因在 `e.cause`) |
+   | `node:https` | `connect ECONNREFUSED …` / `socket hang up` |
+   | AbortSignal | `TimeoutError: The operation was aborted due to timeout` |
+
+   **推论:叫 shim 那一步走的是 `node:https`(设计要点 3),它失败只会说 `shim HTTP xxx` 或
+   `shim turn timeout`,永远报不出 `fetch failed`。** 所以见到 `fetch failed`,
+   **一定是发给 api.telegram.org 的那些调用**,跟晏、跟 shim、跟额度都没关系——
+   他其实已经把话说完了,是回话往她手机送的路上断的。
+   日志里认它的形状:`[send-err] …` / `[tg] … 放弃:` 后面跟着 cause(如 `[UND_ERR_SOCKET]`)。
 
 ## Zeabur 位置
 
@@ -162,6 +195,51 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
 拿不到 App 名时 `/report` 仍返回 200(`stored:false`),不会让快捷指令报错。
 
 ## 部署记录
+
+- 2026-08-02(第三件) **修「⚠️[bridge] fetch failed」**。所有者报「telegram 经常返回
+  ⚠️[bridge] fetch failed」,现象补充:**思考折叠出来了,正文一个字没有。**
+  **诊断**(全程零改动、零部署做完的):这句话只有一个产地 `server.js` 的 `⚠️[bridge] ${e.message}`;
+  而 `fetch failed` 只可能来自全局 fetch(判案表见「已知边界 / 坑」第 7 条),
+  **叫 shim 那一步走 node:https,报不出这五个字** → 断的必然是发给 Telegram 的调用。
+  也就是**他早就答完了(额度也花了),是回话没送到**。旧代码把 shim 调用和发送写在同一个 `try` 里,
+  于是**任何一发抖动都掀掉整轮**:后面的气泡全丢,再甩她一句英文报错——
+  而那句报错自己发得出去,恰恰证明只是瞬时抖动。一轮里 fetch 十几发(思考折叠 + 每个气泡一发),
+  所以是「经常」而不是「偶尔」。
+  **改了四件**(所有者逐条批准,取舍也报备过):
+  ① `tg()` 加重试(只重连接层面的失败)+ 30s 显式超时;
+  ② `sendOutput` 每发独立容错,只丢失败的那一句,并返回 `{sent, failed}`;
+  ③ 所有 catch 日志改用 `describeErr` **把 `e.cause` 一起打出来**——旧日志只有 `e.message`,
+     等于什么都没记(与 `/report` 那条教训同一形状);
+  ④ 报错文案分流:shim 断了才提示她「再说一次」;只是发送抖了就说人话、只报丢了几句,
+     **给她看的话里永远不许出现 `fetch failed`**(test-bridge 有守护用例)。
+  另外把 `runQueue` 最外层包了 `try/finally`——原来 `inflight` 靠顺序执行复位,
+  拆成两段后一次意外抛错就会让它永远卡在 `true`(见设计要点 10 最后一条)。
+  **已知取舍(所有者拍板接受)**:重试有极小概率让同一句发两遍(消息其实送到了、回执路上断了)。
+  取「偶尔重一句」而不取「丢掉半截回复」。真出现了,`TG_RETRY=0` 就是急救开关(改环境变量+restart,不用部署)。
+  **第五件由所有者当场追加**:贴纸/语音那六处裸 fetch 也加上超时(`MEDIA_TIMEOUT_MS`,默认 60s)——
+  它们不经 `tg()`,原先一处都没有超时,理论上能把整条队列(乃至收消息)卡住五分钟。
+  **测试 139 → 160 项全绿**;另做了两轮本地端到端(假 Telegram + 假 shim + 真 server.js,含长轮询):
+  抖动重试后三句全到 / shim 502 时她收到人话提示 / 永久失败时「丢了 1 句」且前后句照发 / 连跑四轮队列不卡死。
+  **补一次部署(同日)**:deployment `6a6f5b9a9cd65e28a34383b2` RUNNING,测试 160→**174 项**全绿。
+  起因是所有者一句「你确定你写的代码不用 debug 吗」——**复审时发现第一轮端到端只测了纯文字,
+  漏掉贴纸和语音**,补测当场抓到两处措辞错:①贴纸发失败却说「有 1 句没送到」;
+  ②**Telegram 主动拒收(400 内容问题)却说「网络抖了一下」**——第二条尤其要命,
+  等于把排障的人往错方向带,和这次要修的原病(只写 `fetch failed`)是同一个毛病换了张皮。
+  改法见设计要点 10 与 `describeLoss`;`sendSticker` 也改成返回 true/false/null
+  (以前一律返回 undefined,被拒收的贴纸会被当成发成功)。
+  **教训:改了哪条路就要测哪条路。** 顺带复验了 `[查岗]` 防打转(结构动过必须复验):
+  假 shim 每轮都回 `[查岗]`,实测只查一次、标记没外泄。
+  **另一个部署前的坑**:跑端到端时 `npm install` 出来的 `node_modules` 会被 `deploy` 一起打包上去,
+  **上传前务必 `rm -rf node_modules`**(`.gitignore` 挡得住 git,挡不住 zeabur deploy)。
+
+  **首次部署**:deployment `6a6f54579cd65e28a343824c` RUNNING(构建只花了约 50 秒,比手册说的 7~12 分钟快得多)。
+  验收:PLANTYPE=nodejs、`server.js`/`bridge-lib.mjs` 两个 md5 本地=线上逐字一致、容器内贴纸 35 张、
+  `/health` 五项开关全对、启动日志干净。交接时有两条 `409 Conflict`(新旧容器抢 getUpdates,已知边界 1),
+  **27 秒内自行消解,不用管**——轮询每 5 秒重试一次,没有新条目就是老容器退干净了。
+  **⚠️ 对账踩的一个新坑(下一个我注意)**:别用 `git show main:<file>` 当基线对 md5——
+  **容器里的本地 `main` 引用可能是陈旧的**(本次它停在 PR #57,比实际落后十几个提交),
+  照它对账会得出「线上和仓库对不上」的假警报。**要用 `origin/main`**(先 `git fetch origin main`),
+  或者直接用自己分支的起点 `HEAD~<n>`。本次两者一对就完全一致。
 
 - 2026-08-02 **手机行踪上报 + 查岗上线**(`/report`、`/activity`、夜里查岗定时器、`[查岗]` 标记)。
   新增环境变量 `REPORT_TOKEN`(与 SHIM_KEY 分开的一把钥匙,存在她手机的快捷指令里)。
