@@ -259,6 +259,72 @@ export function isSilentReply(t) {
   return s.replace(/[。.\s]/g, "") === "";
 }
 
+// ---- 网络错误的三件套(2026-08-02:治「⚠️[bridge] fetch failed」)----
+//
+// 病根:全局 fetch(undici)的报错永远只有 `fetch failed` 五个字,真正的原因藏在
+// e.cause 里。而原来的日志和给她看的提示都只打 e.message,等于什么都没说。
+// 实测三种失败长这样(别再重新发明):
+//   全局 fetch    → TypeError: fetch failed        (原因在 e.cause)
+//   node:https    → connect ECONNREFUSED … / socket hang up
+//   AbortSignal   → TimeoutError: The operation was aborted due to timeout
+// 推论(判案用的):**`fetch failed` 只可能来自全局 fetch,也就是发给 api.telegram.org
+// 的那些调用**;叫 shim 那一步走的是 node:https(见 server.js shimTurn),它失败只会说
+// `shim HTTP xxx` 或 `shim turn timeout`,永远报不出 `fetch failed`。
+
+// 把 error 连同 cause 链展开成一行,给日志用。
+export function describeErr(e) {
+  if (!e) return "(无错误对象)";
+  if (typeof e === "string") return e;
+  const one = (x) => {
+    if (typeof x === "string") return x;
+    const name = x.name && x.name !== "Error" ? `${x.name}: ` : "";
+    const code = x.code ? ` [${x.code}]` : "";
+    return `${name}${x.message || String(x)}${code}`;
+  };
+  const chain = [one(e)];
+  let c = e.cause, depth = 0;
+  while (c && depth++ < 3) { chain.push(one(c)); c = typeof c === "object" ? c.cause : null; }
+  return chain.join(" ← ");
+}
+
+// 值不值得重试。分界线是「这次失败时,请求到底有没有可能已经被对方处理了」:
+//   可重试 = 连接层面就没成(建连失败、DNS、对端把闲置连接关了),请求几乎不可能被处理;
+//   不重试 = 我们自己掐的超时、以及 undici 的 headers/body 超时——那说明请求已经发出去了,
+//            对方可能已经办完,再发一次就是同一句话说两遍。
+// ⚠️ `fetch failed` 在排除掉上面两种超时之后一律算可重试:线上真正在犯的就是这一类,
+//    要是只认已知 code,这个修法等于没修。
+const RETRY_CODES = new Set([
+  "ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EPIPE",
+  "ETIMEDOUT", "EHOSTUNREACH", "ENETUNREACH", "ENETDOWN",
+  "UND_ERR_SOCKET",          // undici:对端关了闲置的 keep-alive 连接(「other side closed」)
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+const NO_RETRY_CODES = new Set(["UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT"]);
+export function isRetriableNetErr(e) {
+  if (!e || typeof e === "string") return false;
+  if (e.name === "TimeoutError" || e.name === "AbortError") return false; // 我们自己掐的,对方可能已办完
+  const codes = [];
+  let x = e, depth = 0;
+  while (x && typeof x === "object" && depth++ < 4) { if (x.code) codes.push(String(x.code)); x = x.cause; }
+  if (codes.some((c) => NO_RETRY_CODES.has(c))) return false;
+  if (codes.some((c) => RETRY_CODES.has(c))) return true;
+  return e.name === "TypeError" && /fetch failed/i.test(e.message || "");
+}
+
+// 给她看的那一句。原来是把 e.message 原样甩出去(于是她看到的是「fetch failed」),
+// 现在按「哪一步断的」说人话——两步的含义完全不同:
+//   shim 断 = 他没答上来,她的话可能白说了 → 该让她知道,好再说一次;
+//   发送断 = 他答了,是回话没送到她手机 → 别让她以为他不理她。
+export function turnErrorText(info = {}) {
+  if (info.stage === "shim") {
+    const m = (info.err && info.err.message) || "";
+    if (/timeout/i.test(m)) return "⚠️[bridge] 他那边想太久了(超时),这轮没接上——再跟他说一次?";
+    return `⚠️[bridge] 没接上他那边(${m || "原因不明"}),你这句他可能没收到,过一会儿再说一次?`;
+  }
+  const lost = info.lost || 0;
+  return `⚠️[bridge] 网络抖了一下,他回你的话有 ${lost} 句没送到(不是他没说)。`;
+}
+
 // ---- Telegram 文件路径 → Anthropic image block 的 media_type ----
 const MEDIA = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif" };
 export function mediaTypeOf(filePath) {

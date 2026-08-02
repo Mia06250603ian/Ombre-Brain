@@ -10,6 +10,7 @@ import {
   formatEarsResult,
   normalizeAppName, pushActivity, summarizeActivity, curfewDecide, curfewPrompt, isSilentReply,
   takeCheckMarker, lookupPrompt,
+  describeErr, isRetriableNetErr, turnErrorText,
 } from "./bridge-lib.mjs";
 
 const PORT = process.env.PORT || 8080;
@@ -43,13 +44,33 @@ const bjHour = () => (new Date().getUTCHours() + 8) % 24;
 const bjNowStr = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16);
 
 // ---- Telegram API ----
+// 摔一跤就爬起来:发给 Telegram 的每一发都可能撞上瞬时网络抖动(线上表现为
+// `TypeError: fetch failed`)。原来是一发失败就把整轮掀了,她只看到半截回复+英文报错。
+// 现在只对**连接层面**的失败重试(判定见 bridge-lib 的 isRetriableNetErr,不重试超时类,
+// 那类有「其实已经发到了」的可能,重发=同一句说两遍)。
+// 另加显式超时:undici 默认要等 300 秒,而本桥是单轮串行的,一发卡死能堵住整条队列。
+const TG_TIMEOUT_MS = +(process.env.TG_TIMEOUT_MS || 30000);
+const TG_RETRY = +(process.env.TG_RETRY || 2);   // 额外重试次数(0 = 关掉重试)
 async function tg(method, payload) {
-  const r = await fetch(`https://api.telegram.org/bot${BOT}/${method}`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!j.ok) log(`[tg] ${method} failed:`, j.description || r.status);
-  return j;
+  let lastErr = null;
+  for (let attempt = 0; attempt <= TG_RETRY; attempt++) {
+    if (attempt) await sleep(Math.min(300 * 2 ** (attempt - 1), 2000));
+    try {
+      const r = await fetch(`https://api.telegram.org/bot${BOT}/${method}`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(TG_TIMEOUT_MS),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!j.ok) log(`[tg] ${method} failed:`, j.description || r.status);
+      return j;
+    } catch (e) {
+      lastErr = e;
+      if (!isRetriableNetErr(e) || attempt === TG_RETRY) break;
+      log(`[tg] ${method} 网络抖动,第 ${attempt + 1} 次重试:`, describeErr(e));
+    }
+  }
+  log(`[tg] ${method} 放弃:`, describeErr(lastErr));   // 原因(cause)一定要落在日志里
+  throw lastErr;
 }
 async function tgFileToImage(fileId) {
   const f = await tg("getFile", { file_id: fileId });
@@ -142,17 +163,30 @@ async function sendVoiceMsg(chatId, text) {
 const BUBBLE_SPLIT = process.env.BUBBLE_SPLIT !== "0";
 const BUBBLE_MAX = +(process.env.BUBBLE_MAX || 200); // 整段回复超过此长度=长文,不拆
 const sleep = (ms) => new Promise((s) => setTimeout(s, ms));
+// 返回 { sent, failed }:**一句发失败只丢那一句,后面的照发**(以前是当场抛错,
+// 整轮剩下的话全没了——她看到的就是「思考折叠出来了,正文一个字没有」)。
 async function sendOutput(chatId, rawText, { fallback } = {}) {
   const { segments, unknown } = extractSegments(rawText || "", stickerTags);
   if (unknown.length) log("[sticker] unknown tags:", unknown.join(","));
-  if (!segments.length) { if (fallback) await sendReply(chatId, fallback); return; }
-  lastOutboundAt = Date.now();   // 他每次开口都从这个门出去(回复/心跳/查岗),查岗的冷却看这个
-                                 // ——真发出去了才算,只写了个 [查岗] 标记不算他开过口
+  const stat = { sent: 0, failed: 0 };
+  if (!segments.length) {
+    if (fallback) { try { await sendReply(chatId, fallback); } catch (e) { log("[send-err] fallback", describeErr(e)); } }
+    return stat;
+  }
+  // 他每次开口都从这个门出去(回复/心跳/查岗),查岗的冷却看这个。
+  // ——真发出去了才算:只写了个 [查岗] 标记不算,一句都没发成功也不算。
+  const markSent = () => { stat.sent++; lastOutboundAt = Date.now(); };
+  const sendOne = async (payload, tag) => {
+    try {
+      const j = await tg("sendMessage", payload);
+      if (j?.ok) markSent(); else stat.failed++;   // Telegram 明说不 ok(400 等)也算丢了
+    } catch (e) { stat.failed++; log(`[send-err] ${tag}`, describeErr(e)); }
+  };
   let first = true;
   for (const seg of segments) {
     if (seg.type === "sticker") {
       if (!first) await sleep(400);
-      await sendSticker(chatId, seg.tag).catch((e) => log("[sticker-err]", e.message));
+      await sendSticker(chatId, seg.tag).then(markSent, (e) => { stat.failed++; log("[sticker-err]", describeErr(e)); });
       first = false;
       continue;
     }
@@ -160,13 +194,13 @@ async function sendOutput(chatId, rawText, { fallback } = {}) {
       if (VOICE_ON && seg.text.length <= VOICE_MAX_CHARS) {
         if (!first) await sleep(400);
         tg("sendChatAction", { chat_id: chatId, action: "record_voice" }).catch(() => {});
-        try { await sendVoiceMsg(chatId, seg.text); first = false; continue; }
-        catch (e) { log("[voice-err]", e.message); }
+        try { await sendVoiceMsg(chatId, seg.text); markSent(); first = false; continue; }
+        catch (e) { log("[voice-err]", describeErr(e)); }
       }
       // 没配置/超长/转失败:话不能丢,退回文字发
       for (const b of bubblesFor(seg.text, { split: BUBBLE_SPLIT, maxLen: BUBBLE_MAX })) {
         if (!first) await sleep(500);
-        await tg("sendMessage", { chat_id: chatId, text: b });
+        await sendOne({ chat_id: chatId, text: b }, "voice-fallback");
         first = false;
       }
       continue;
@@ -177,15 +211,21 @@ async function sendOutput(chatId, rawText, { fallback } = {}) {
         tg("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
         await sleep(Math.min(500 + b.length * 25, 1600));
       }
-      await tg("sendMessage", { chat_id: chatId, text: b });
+      await sendOne({ chat_id: chatId, text: b }, "text");
       first = false;
     }
   }
+  if (stat.failed) log("[send] 这一轮丢了", stat.failed, "句,发出去", stat.sent, "句");
+  return stat;
 }
+// 思考折叠发失败**不许连累正文**:正文才是她要看的话。
 async function sendThinking(chatId, thinking) {
   if (!TG_THINKING || !thinking.trim()) return;
-  for (const chunk of splitForTelegram(thinking.trim(), 3900))
-    await tg("sendMessage", { chat_id: chatId, parse_mode: "HTML", text: `<blockquote expandable>${escapeHtml(chunk)}</blockquote>` });
+  for (const chunk of splitForTelegram(thinking.trim(), 3900)) {
+    try {
+      await tg("sendMessage", { chat_id: chatId, parse_mode: "HTML", text: `<blockquote expandable>${escapeHtml(chunk)}</blockquote>` });
+    } catch (e) { log("[thinking-err]", describeErr(e)); return; }
+  }
 }
 
 // ---- shim 调用(node:https,免 undici 300s 超时;SSE 攒完整段再发)----
@@ -243,26 +283,46 @@ async function runQueue() {
   const t = turnQueue.shift();
   const typing = setInterval(() => tg("sendChatAction", { chat_id: t.chatId, action: "typing" }).catch(() => {}), 5000);
   tg("sendChatAction", { chat_id: t.chatId, action: "typing" }).catch(() => {});
+  // 两步的失败含义完全不同,分开处理(以前混在一个 try 里,于是 Telegram 发消息抖一下,
+  // 她收到的是一句英文 `⚠️[bridge] fetch failed`,而他其实早就把话说完了):
+  //   ① shim 那一步断了 = 他没答上来,她的话可能白说了 → 得告诉她;
+  //   ② 往 Telegram 发那一步断了 = 他答了、没送到 → 说人话,并且只报丢了几句。
+  // 给她发提示这件事本身也走 Telegram,所以一律 catch 住:发不出去就只落日志,不能再抛。
+  const notify = async (text) => {
+    try { await sendReply(t.chatId, text); } catch (e) { log("[notify-err]", describeErr(e)); }
+  };
+  log("[turn]", { len: t.text.length, imgs: t.images.length, curfew: !!t.curfew, lookup: !!t.lookup });
+  // 最外层这个 try/finally 是命根子:inflight 和 typing 必须无论如何都收干净,
+  // 否则一次意外抛错就让 inflight 永远卡在 true —— 那是「他再也不回话」的死法。
   try {
-    log("[turn]", { len: t.text.length, imgs: t.images.length, curfew: !!t.curfew });
-    const r = await shimTurn(t);
-    // 他自己写了 [查岗]:剥掉标记,正文照发,回头把查到的喂回去(lookup 轮不再响应,防打转)
-    const { text: outText, wants } = takeCheckMarker(r.text);
-    if ((t.curfew || t.lookup) && isSilentReply(outText)) {
-      log("[curfew] 他选择不打扰");          // 回「。」= 不说话,这条不进对话
-    } else {
-      await sendThinking(t.chatId, r.thinking);
-      await sendOutput(t.chatId, outText, { fallback: wants ? null : "⚠️[bridge] 空回复,看下 shim 日志" });
+    let r = null;
+    try {
+      r = await shimTurn(t);
+    } catch (e) {
+      log("[turn-err] shim", describeErr(e));
+      // 查岗是系统自己发起的,失败不该往她对话里丢报错(她没问,别打扰)
+      if (t.curfew) log("[curfew-err]", describeErr(e));
+      else await notify(turnErrorText({ stage: "shim", err: e }));
     }
-    if (wants && !t.lookup) queueLookup(t.chatId);
+    if (r) {
+      // 他自己写了 [查岗]:剥掉标记,正文照发,回头把查到的喂回去(lookup 轮不再响应,防打转)
+      const { text: outText, wants } = takeCheckMarker(r.text);
+      if ((t.curfew || t.lookup) && isSilentReply(outText)) {
+        log("[curfew] 他选择不打扰");          // 回「。」= 不说话,这条不进对话
+      } else {
+        await sendThinking(t.chatId, r.thinking);
+        const stat = await sendOutput(t.chatId, outText, { fallback: wants ? null : "⚠️[bridge] 空回复,看下 shim 日志" });
+        // 真有话没送到才吭声(查岗轮不吭声,她没问)
+        if (stat.failed && !t.curfew) await notify(turnErrorText({ stage: "send", lost: stat.failed }));
+      }
+      if (wants && !t.lookup) queueLookup(t.chatId);
+    }
   } catch (e) {
-    log("[turn-err]", e.message);
-    // 查岗是系统自己发起的,失败不该往她对话里丢报错(她没问,别打扰)
-    if (t.curfew) log("[curfew-err]", e.message);
-    else await sendReply(t.chatId, `⚠️[bridge] ${e.message}`).catch(() => {});
+    log("[turn-err] 意外", describeErr(e));   // 兜底:走到这里说明有没预料到的抛错,别静默
+  } finally {
+    clearInterval(typing);
+    inflight = false;
   }
-  clearInterval(typing);
-  inflight = false;
   if (turnQueue.length) runQueue();
   else if (buffer.length) flushBuffer(); // 生成期间攒下的消息立刻接上
 }
@@ -298,7 +358,7 @@ async function onMessage(msg) {
         }
         text = text ? `${text}\n${line}` : line;
       } catch (e) {
-        log("[ears-err]", e.message);
+        log("[ears-err]", describeErr(e));
         await tg("sendMessage", { chat_id: chatId, text: `⚠️[bridge] 语音听不了(${e.message}),打字告诉他吧` });
         return;
       }
@@ -306,7 +366,7 @@ async function onMessage(msg) {
       await tg("sendMessage", { chat_id: chatId, text: "⚠️[bridge] 这类消息暂时传不过去(支持文字/图片/贴纸/语音条)" });
       return;
     }
-  } catch (e) { log("[media-err]", e.message); }
+  } catch (e) { log("[media-err]", describeErr(e)); }
   if (!text && !images.length) return;
 
   // /start 只用于第一次拿 chat_id,不进对话
@@ -333,9 +393,9 @@ async function pollLoop() {
       if (!j.ok) { log("[poll] not ok:", j.description); await new Promise((s) => setTimeout(s, 5000)); continue; }
       for (const u of j.result || []) {
         offset = u.update_id + 1;
-        if (u.message) await onMessage(u.message).catch((e) => log("[msg-err]", e.message));
+        if (u.message) await onMessage(u.message).catch((e) => log("[msg-err]", describeErr(e)));
       }
-    } catch (e) { log("[poll-err]", e.message); await new Promise((s) => setTimeout(s, 3000)); }
+    } catch (e) { log("[poll-err]", describeErr(e)); await new Promise((s) => setTimeout(s, 3000)); }
   }
 }
 
@@ -355,7 +415,7 @@ app.post("/push", async (req, res) => {
     if (text) await sendOutput(lastChatId, text);
     if (wants) queueLookup(lastChatId);
     res.json({ ok: true, lookup: wants });
-  } catch (e) { log("[push-err]", e.message); res.status(502).json({ ok: false, error: e.message }); }
+  } catch (e) { log("[push-err]", describeErr(e)); res.status(502).json({ ok: false, error: e.message }); }
 });
 
 // ---- 手机活动上报 + 夜里查岗 ----
