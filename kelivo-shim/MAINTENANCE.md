@@ -164,6 +164,22 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    II 节 "She is an adult." 前加「佳佳 does not share my surname. Never call her 许佳佳.」。
    **不要**在本目录放 .gitignore 挡这三个文件——zeabur 上传会遵循它,文件直接不进容器(踩坑 15)。
 
+## 系统回合(`x-system-turn: 1`,2026-08-02 第二十三次)
+
+**问题**:晏那边只有一个入口(`/v1/messages`),进来的东西一律当成「她说话了」——
+于是 bridge 送进来的查岗结果(他自己写 `[查岗]` 查的,或夜里系统推的)也会被记成她出现,
+把「她多久没来」清零、把「换窗口后歇火的保温」提前叫醒。**他自己伸头看一眼,不等于她回来了。**
+
+**做法**:bridge 在这类请求上带 `x-system-turn: 1`,`handleMessages` 见到就:
+- **不更新 `lastUserAt`**(「她多久没来」保持真实,这正是他去查的原因);
+- **不把 `windowCleared` 置回 false**(换窗口后的保温继续歇着,等她本人出现);
+- **不做 `detectReset`**(系统文案永远不可能触发「归档/晚安/换窗口」,多一道保险)。
+
+**她本人说话的路径一个字节没动**——没有这个头时行为与改动前完全一致(e2e 全绿即证)。
+**观察口**:`GET /debug` 的 `presence`(`lastUserAt` / `idleMin` / `windowCleared`)。
+排查「他说的『你多久没理我』准不准」直接看这里。
+**发这个头的只有 bridge 的查岗两条路**(`curfew` 与 `lookup` 轮),别的地方都不带。
+
 ## 架构
 
 ```

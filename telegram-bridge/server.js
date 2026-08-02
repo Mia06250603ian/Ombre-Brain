@@ -195,7 +195,12 @@ function shimTurn(turn) {
     const u = new URL(SHIM_URL + "/v1/messages");
     const req = https.request({
       hostname: u.hostname, path: u.pathname, method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": SHIM_KEY, "Content-Length": Buffer.byteLength(body) },
+      headers: {
+        "Content-Type": "application/json", "x-api-key": SHIM_KEY, "Content-Length": Buffer.byteLength(body),
+        // 查岗(他自己查的 + 夜里系统推的)是系统送进去的东西,不是她说话:
+        // shim 见到这个头就不更新「她多久没来」、不解除保温歇火、不做重置词识别。
+        ...(turn.curfew || turn.lookup ? { "x-system-turn": "1" } : {}),
+      },
       timeout: TURN_TIMEOUT_MS,
     }, (res) => {
       if (res.statusCode !== 200) { res.resume(); return reject(new Error(`shim HTTP ${res.statusCode}`)); }
