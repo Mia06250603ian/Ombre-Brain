@@ -456,6 +456,54 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
 
 ## 部署记录
 
+- 2026-08-02(第二十三次) **拆钓鱼 + 新增「她在干嘛」一节 + `x-system-turn` 门闩**。
+  改动三件:`server.js`、`CLAUDE.md`、`mcp-servers.json`;**两份人设与其余五件代码零改动**。
+  - **拆钓鱼(所有者拍板,拆到底)**:`mcp-servers.json` 410B `b26a0e5f…` → **310B
+    `ac40dbce57cd79d1602510dcb8d043a3`**(三条目 → **两条目**:ombre-brain + browser);
+    `ALLOWED_TOOLS` 去掉 `mcp__fishing` → `WebSearch,WebFetch,mcp__ombre-brain,mcp__browser`
+    (沿用第二十/二十二次那招:部署前 `variable update` 但**不 restart**,新值随新容器生效);
+    CLAUDE.md 删掉「钓鱼小游戏」整节;**Zeabur 服务 `6a5a1715…` 已删除**;
+    **仓库 `fishing-mcp/` 目录整个删掉**(9 个文件,含 vendored 的 fishing.py 与 PolyForm 许可证)。
+    **容器内存档未备份**(所有者原话「不用备份,丢就丢了」)。要复活得从 git 历史翻出该目录重部署。
+    **部署前查过:`ian.md` / `profile-instructions.md` 里提到钓鱼 0 处**——拆掉不会让他找一个不存在的工具。
+  - **CLAUDE.md**:7376B `9d83ecbd…` → **3af57e0b1c19a8c0a1fedfbcfc379386**,节数仍 **12**
+    (删一节、加一节)。新节 `## 她在干嘛(如果开了)`,教他两件事:①自己想查就在回复里写
+    `[查岗]`;②深夜系统会主动给一条 `【系统·查岗】`。**措辞刻意同时覆盖「他自己查」与
+    「系统推给他」两种形态**——将来若退回推送模式,只改 bridge 即可,**不必再部署 shim**。
+    写法照「天气感知」那节(心里有数、不复述、同一件事不念叨第二遍)。seal 暗语与双 `@` 引用未动。
+  - **`x-system-turn: 1` 门闩(新机制,见本文件「系统回合」一节)**:server.js
+    `f71690b8…` → **3aa70ab235453faf9d7bce6bcc99274b**。起因是所有者的一句追问——
+    **「查岗不是他有意识的行为吗」**:他自己伸头看一眼,却被系统记成「她回来了」,
+    把「她多久没来」清零、还把换窗口后歇火的保温提前叫醒。带该头的回合现在不更新
+    `lastUserAt`、不解除 `windowCleared`、不做 `detectReset`。**她本人说话的路径零改动。**
+    `/debug` 新增 `presence`(lastUserAt / idleMin / windowCleared)作为观察口。
+  - **经期挂持久卷本次未做**(所有者原批过,但查到 **Zeabur CLI 没有 volume 子命令、只能网页操作,
+    且加卷大概率再重启一次**,遂按建议改为沿用第十三次的两步法:她一报新周期就
+    `variable update` + `POST /period` 写全)。**`PERIOD_FILE` 环境变量的支持是现成的**
+    (代码默认 `period-state.json`,可配),将来要挂卷只需加卷 + 设该变量,代码零改动。
+  部署前:test-ctxguard **88** + test-senses **53** + test-keepalive **52** 全绿;
+  **另跑了 `e2e-run.sh`(真 server.js + 真 CLI 2.1.215 + 假后端)`E2E ALL PASS`**,证明门闩没伤到老路径;
+  md5 对账无踩坑 11(未改五件与容器一致;改动两件的容器版 = 改动前 git 基线 `5ddf4ca`,逐字核对);
+  三份私密文件从容器 base64 拷出、指纹与第二十二次记录**逐一吻合**、**在拷出原件上改**;
+  改 `mcp-servers.json` 用 Python 脚本 + 断言(基线 md5、条目集合、browser 的 X-Token 仍在、
+  OB 域名未变),**不手改**;**OB 与浏览器两个 `/mcp` 各 3/3 200**;部署目录无 `.gitignore`(踩坑 15)、
+  无 `node_modules`;`git status` 确认三份私密文件被仓库根 .gitignore 挡住;
+  `cd` 与 `deploy` 同一条命令 + 先 `pwd`/`head -3 package.json`(踩坑 17)。
+  **归档**:所有者本人对晏说了「归档」并告知(未代发,踩坑 13)。
+  deployment `6a6f0a0e9cd65e28a3437664` 约 **11 分钟** RUNNING(**PLANTYPE `nodejs`** ✓,无踩坑 14/17)。
+  已按踩坑 9 验证:容器**十件 md5 与部署目录逐一一致**;容器内 mcp-servers.json **两条目、
+  fishing 0 处、X-Token 1 处**;`ALLOWED_TOOLS` 已无 `mcp__fishing`;CLAUDE.md `^## ` **12**、
+  `钓鱼` **0**、`^## 她在干嘛` **1**、`河流涌入海洋` **1**;server.js `x-system-turn` **3 处**;
+  容器无 `.gitignore`;CLI 实装 **2.1.215**;`/health` ok(model claude-opus-4-6);
+  `/debug` 守卫清零 `trusted:true`、`presence` 字段正常;**两个 `/mcp` 各 200**。
+  **PERIOD_CONFIG 本次无需重补**:`effective` 直接就是 07-19~07-25 / 24 / 7(第十三~二十二次的结论第十一次验证通过)。
+  **版本指纹:server.js = 3aa70ab235453faf9d7bce6bcc99274b;CLAUDE.md = 3af57e0b1c19a8c0a1fedfbcfc379386;
+  mcp-servers.json = 310B md5 ac40dbce57cd79d1602510dcb8d043a3(两条目);
+  ian.md v22 = 21688B `259991ba…`(未动);profile-instructions.md = 3056B `7adb5c33…`(未动)
+  ——下次部署以此为准,两份人设缺一不可。**
+  **回滚**:server.js 回 `f71690b8…`(git `5ddf4ca`)、CLAUDE.md 回 `9d83ecbd…`、
+  mcp-servers.json 加回 fishing 条目、`ALLOWED_TOOLS` 加回 `mcp__fishing`,重新部署即可;
+  **但钓鱼服务已删,要真用得先照 git 历史里的 `fishing-mcp/` 重建一个服务**。
 - 2026-08-01(第二十二次) **接入 browser MCP(晏的「浏览器的手」)+ CLAUDE.md 新增一节**。
   **人设两份(ian.md / profile-instructions.md)与代码六件全部零改动**,本次只动三样:
   mcp-servers.json、`ALLOWED_TOOLS`、CLAUDE.md。

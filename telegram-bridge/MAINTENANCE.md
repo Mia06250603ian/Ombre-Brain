@@ -163,6 +163,27 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
 
 ## 部署记录
 
+- 2026-08-02 **手机行踪上报 + 查岗上线**(`/report`、`/activity`、夜里查岗定时器、`[查岗]` 标记)。
+  新增环境变量 `REPORT_TOKEN`(与 SHIM_KEY 分开的一把钥匙,存在她手机的快捷指令里)。
+  test-bridge 79 → **139 项**全绿。当天部署两次(第二次是把上报从 POST 改成 GET,见下)。
+  **⚠️ iOS 侧的大坑,下一个我务必先看这条:**
+  - 现象:她手机上快捷指令的 **POST + JSON 一律「网络连接已中断」**,换 5G/Wi-Fi 都一样,
+    **而同一时刻 Safari 打开同域名的 `GET /health` 完全正常**,服务器端零日志(请求根本没到)。
+  - 走过的弯路:先怀疑变量、再怀疑 POST、再怀疑 VPN(她答「我一直开的全局」,推翻)。
+  - **真正的病根是请求头**:把网址改成 `?key=<REPORT_TOKEN>`、**头部全部清空**后一次就通。
+    (最可能是粘贴 `Bearer …` 时带进了看不见的字符,URLSession 遇到会直接掐断连接。)
+  - **App 名要用「获取当前 App」这个动作的变量**,不是「输入快捷指令的信息」——
+    后者是原教程截图里就有、而纯文字版教程里没写的一步。**读教程 PDF 时注意「如图:」后面
+    还有截图,只提取文字会漏掉关键动作。**
+  - 最终手机侧配置(实测通):动作①「获取当前 App」→ 动作②「获取 URL 内容」,
+    **方法 GET、头部全空、无请求体**,网址 =
+    `https://yan-telegram-bridge.zeabur.app/report?key=<REPORT_TOKEN>&app=`〔当前 App〕。
+  - **教训:`/report` 第一版没有任何日志**,导致好几轮分不清「请求没到」还是「到了被拒」。
+    现已给每次 `/report` 加了日志(含 401),**别删**。
+  **夜里查岗做过一次真实演练**:临时把 `CURFEW_START/END` 改成当时的小时、`CURFEW_CHECK_MIN=1`,
+  restart → 她开一次小红书 → 日志出现 `[curfew] poke 小红书 0 分钟前` → 晏收到并回话 → 验完改回 1/7/5。
+  **注意 restart 会清空活动记录(只存内存),演练时要在重启之后重新开一次 App。**
+
 - 2026-07-25 **语音输入上线(接 ears)**:她的语音条 → ears 转写+语气分析 → 绑单条消息进晏的窗口。
   改动:bridge-lib.mjs 新增 `formatEarsResult`(纯逻辑,注解恒在防重置词误触);server.js 新增
   `earsListen` + voice 分支 + EARS_* 环境变量,/health 加 `ears` 字段;test-bridge 71→79 项全绿。
