@@ -51,6 +51,10 @@ const bjNowStr = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(11,
 // 另加显式超时:undici 默认要等 300 秒,而本桥是单轮串行的,一发卡死能堵住整条队列。
 const TG_TIMEOUT_MS = +(process.env.TG_TIMEOUT_MS || 30000);
 const TG_RETRY = +(process.env.TG_RETRY || 2);   // 额外重试次数(0 = 关掉重试)
+// 贴纸图/语音条的收发都是几百 KB 的传输,比一句文字慢得多,单独给一档更宽的超时。
+// 为什么非要有:这些走的是裸 fetch(multipart,不经 tg()),undici 默认要等 300 秒,
+// 而本桥单轮串行、长轮询也是单线——一次卡死能堵住整条队列,甚至堵住收消息。
+const MEDIA_TIMEOUT_MS = +(process.env.MEDIA_TIMEOUT_MS || 60000);
 async function tg(method, payload) {
   let lastErr = null;
   for (let attempt = 0; attempt <= TG_RETRY; attempt++) {
@@ -77,7 +81,7 @@ async function tgFileToImage(fileId) {
   const p = f.result?.file_path;
   const mt = mediaTypeOf(p);
   if (!p || !mt) return null;
-  const r = await fetch(`https://api.telegram.org/file/bot${BOT}/${p}`);
+  const r = await fetch(`https://api.telegram.org/file/bot${BOT}/${p}`, { signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS) });
   if (!r.ok) return null;
   const b64 = Buffer.from(await r.arrayBuffer()).toString("base64");
   return { type: "image", source: { type: "base64", media_type: mt, data: b64 } };
@@ -87,7 +91,7 @@ async function earsListen(fileId) {
   const f = await tg("getFile", { file_id: fileId });
   const p = f.result?.file_path;
   if (!p) throw new Error("getFile 失败");
-  const r = await fetch(`https://api.telegram.org/file/bot${BOT}/${p}`);
+  const r = await fetch(`https://api.telegram.org/file/bot${BOT}/${p}`, { signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS) });
   if (!r.ok) throw new Error(`下载语音 HTTP ${r.status}`);
   const buf = Buffer.from(await r.arrayBuffer());
   const ext = (p.split(".").pop() || "oga").toLowerCase();
@@ -121,7 +125,7 @@ async function sendSticker(chatId, tag) {
   const form = new FormData();
   form.append("chat_id", String(chatId));
   form.append("sticker", new Blob([fs.readFileSync(path.join(STICKER_DIR, file))], { type: "image/webp" }), file);
-  const r = await fetch(`https://api.telegram.org/bot${BOT}/sendSticker`, { method: "POST", body: form });
+  const r = await fetch(`https://api.telegram.org/bot${BOT}/sendSticker`, { method: "POST", body: form, signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS) });
   const j = await r.json().catch(() => ({}));
   if (j.ok) { const id = j.result?.sticker?.file_id; if (id) stickerFileIds[tag] = id; }
   else log("[sticker] sendSticker failed:", j.description || r.status);
@@ -141,6 +145,7 @@ async function ttsOpus(text) {
   for (const fmt of ["opus_48000_64", "mp3_44100_128"]) {
     const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_VOICE}?output_format=${fmt}`, {
       method: "POST", headers: { "xi-api-key": ELEVEN_KEY, "Content-Type": "application/json" }, body,
+      signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS),
     });
     if (r.ok) return { buf: Buffer.from(await r.arrayBuffer()), name: fmt.startsWith("opus") ? "voice.ogg" : "voice.mp3" };
     log("[tts]", fmt, r.status, (await r.text()).slice(0, 200));
@@ -152,7 +157,7 @@ async function sendVoiceMsg(chatId, text) {
   const form = new FormData();
   form.append("chat_id", String(chatId));
   form.append("voice", new Blob([buf]), name);
-  const r = await fetch(`https://api.telegram.org/bot${BOT}/sendVoice`, { method: "POST", body: form });
+  const r = await fetch(`https://api.telegram.org/bot${BOT}/sendVoice`, { method: "POST", body: form, signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS) });
   const j = await r.json().catch(() => ({}));
   if (!j.ok) throw new Error(`sendVoice: ${j.description || r.status}`);
 }
