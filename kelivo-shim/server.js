@@ -246,6 +246,9 @@ app.use(express.json({ limit: "12mb" }));
 app.get("/health", (_q, r) => r.json({ ok: true, model: MODEL, busy, queued: queue.length }));
 app.get("/debug", (_q, r) => r.json({
   lastUsage,
+  // 2026-08-02:她本人上次说话的时间 / 保温是否歇火。查岗那类系统回合(x-system-turn:1)
+  // **不会**动这两个值——排查「他的『她多久没来』准不准」时看这里。
+  presence: { lastUserAt: new Date(lastUserAt).toISOString(), idleMin: Math.round((Date.now() - lastUserAt) / 60000), windowCleared },
   contextTokens: ctxTokens,
   contextPct: ctxPct(ctxTokens, CTX_LIMIT_TOKENS),
   ctxGuard: { on: CTX_GUARD_ON, soft: CTX_SOFT_TOKENS, hard: CTX_HARD_TOKENS, every: CTX_ARCHIVE_EVERY_TOKENS,
@@ -493,6 +496,10 @@ function handleMessages(req, res) {
   const images = extractImages(messages);
   const system = systemToText(body.system);
   const stream = body.stream !== false;
+  // 2026-08-02:带 x-system-turn:1 的回合是**系统送进来的东西**(bridge 的查岗结果/深夜提醒),
+  // 不是她本人说话。这类回合不更新「她多久没来」、不解除保温歇火、也不做重置词识别
+  // ——他自己伸头看一眼,不等于她回来了。她真打字的路径完全没动。
+  const systemTurn = req.get("x-system-turn") === "1";
 
   // 标题生成等后台注入:shim 直接回,不进晏的进程,也不重置心跳计时
   if (!images.length && isTitleGenReq(text)) {
@@ -504,7 +511,7 @@ function handleMessages(req, res) {
     return;
   }
 
-  const reset = images.length ? null : detectReset(text);
+  const reset = (images.length || systemTurn) ? null : detectReset(text);
   let newWindow = false;
   if (reset === "goodnight") {
     // 晚安只道别+归档,不换窗口:明早还在这个窗口接着聊(2026-07-20 起)
@@ -543,8 +550,10 @@ function handleMessages(req, res) {
     }
   }
   if (hints.length) text = `${hints.join("\n")}\n\n${text}`;
-  lastUserAt = Date.now();
-  windowCleared = false;  // 她出现了:保温重新上岗(若这条是「换窗口」,回合结束会再置回 true)
+  if (!systemTurn) {
+    lastUserAt = Date.now();
+    windowCleared = false;  // 她出现了:保温重新上岗(若这条是「换窗口」,回合结束会再置回 true)
+  }
   log("[req]", { len: text.length, imgs: images.length, sysLen: system.length, stream, reset: reset || "-" });
   const sse = stream ? makeSSE(res) : makeCollector(res);
   enqueue({ text, images, system, sse, newWindow });

@@ -30,7 +30,8 @@
  │    │ Bot API 长轮询                    │    │ Anthropic /v1/messages
  │    ▼                                   │    ▼
  │  telegram-bridge ──────────────────────┴──▶ kelivo-shim
- │  (无状态桥;去抖合并/贴纸/语音/推送)       (核心:维护一个常驻 claude -p 进程
+ │  (无状态桥;去抖合并/贴纸/语音/推送/       (核心:维护一个常驻 claude -p 进程
+ │   手机活动上报+夜里查岗)
  │                                              = 晏本体,人设 CLAUDE.md+ian.md,
  │                                              注入时间/天气/经期/上下文守卫/保温)
  │                                                │
@@ -39,8 +40,8 @@
  │
  └─ 常驻进程挂的 MCP 工具(streamable-http):
       ombre-brain(记忆库,本仓库根目录的 Python 服务,另一个 Zeabur 项目)
-      fishing(钓鱼小游戏,本仓库 fishing-mcp/ 目录)
       (galatea-garden「花园」2026-07-30 已拆:它 /mcp 挂了且晏不玩,详见 shim 手册第二十次)
+      (fishing「钓鱼」2026-08-02 已拆:所有者说不玩了,连服务与源码目录一并删除,详见 shim 手册第二十三次)
       browser(浏览器的手,2026-08-01 接入,shim 第二十二次部署;
        真实 Chrome + 持久登录态,佳佳用手机 noVNC 亲手登录;本仓库 browser-hands/ 只放手册,
        源码在 Mia06250603ian/browser-hands)
@@ -58,7 +59,7 @@
 | `cli-proxy-api--cpa`(env `6a53a9fcb6ce8edcb0163f97`,项目 id `6a53a9fc22dd6ef375eb7484`) | kelivo-shim | `6a53b806f6d4beebf0c5373d` | yan-shim.zeabur.app | 核心,晏的常驻进程 |
 | 〃 | telegram-bridge | `6a5a4287f947b6cb34511f79` | yan-telegram-bridge.zeabur.app | Telegram 桥 |
 | 〃 | CLIProxyAPI | `6a53a9fd22dd6ef375eb7485` | miaianhome.zeabur.app | 订阅 OAuth 出口 |
-| 〃 | fishing-mcp | `6a5a17159ae692d1d8d98d10` | yan-fishing-mcp.zeabur.app | 钓鱼游戏 MCP |
+| ~~〃~~ | ~~fishing-mcp~~ | ~~`6a5a17159ae692d1d8d98d10`~~ | ~~yan-fishing-mcp.zeabur.app~~ | ~~钓鱼游戏 MCP~~ **2026-08-02 已整个删除**(所有者说不玩了;存档按她的决定未备份,源码目录 `fishing-mcp/` 一并从仓库删除。省下约 51~62MB 内存,见 browser-hands 手册的内存表) |
 | 〃 | ears(显示名 ears-thor) | `6a646ea27bcbc56e70a105b5` | yan-ears-listen.zeabur.app | 语音转写+语气分析(源码在 Mia06250603ian/ears 仓库,镜像走 GitHub Actions→ghcr,持久卷 /app/data)。**该服务不支持 `service redeploy`,要拉新镜像用 `service restart`**(见时间线 08-02) |
 | 〃 | browser-hands | `6a6e2078fefeb46a883402c9` | yan-browser.zeabur.app | **晏的「浏览器的手」**:真实 Chrome + 持久登录态 + noVNC(源码在 Mia06250603ian/browser-hands 仓库,镜像走 GitHub Actions→ghcr,持久卷 /data)。2026-08-01 部署并接入晏(shim 第二十二次),详见 `browser-hands/MAINTENANCE.md` |
 | `untitled-1` | Ombre Brain | (问所有者/控制台看) | ianmian.zeabur.app | 记忆库 MCP |
@@ -72,7 +73,7 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
   - 根目录 = OB 记忆库本体(Python/FastMCP)。文档:`README.md`(用法)、`INTERNALS.md`(内部机制)、`ENV_VARS.md`、`BEHAVIOR_SPEC.md`。
   - `kelivo-shim/` = shim 源码 + **`MAINTENANCE.md`(shim 一切细节的唯一可信手册)**。
   - `telegram-bridge/` = 桥源码 + **`MAINTENANCE.md`(桥的手册)** + `stickers/` 表情包。
-  - `fishing-mcp/` = 钓鱼 MCP 包装层。
+    (原 `fishing-mcp/` 钓鱼包装层 2026-08-02 已删,服务也一并删除。)
   - `browser-hands/` = **只有一份 `MAINTENANCE.md`**(浏览器服务的手册)。
     **源码不在本仓库**,在 `Mia06250603ian/browser-hands`(fork 自朋友的原仓库,公开)。
 - **Mia06250603ian/browser-hands**(fork,公开):浏览器服务源码 + `docs/DEPLOY-GUIDE.md`。
@@ -97,7 +98,8 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
     ——两份一起才是完整人设,部署缺一不可。**第二十次起只剩四节**,原
     `Banned words`/`My language`/`Intimate moments` 的内容**迁移进了 ian.md**(9.1 与 Part VI),
     别当它缩水去"修复";
-  - `mcp-servers.json`(**2026-07-30 起两条目:OB + 钓鱼,花园已拆,不再含 token**)。
+  - `mcp-servers.json`(**2026-08-02 起两条目:OB + browser,花园与钓鱼均已拆**;
+    browser 那条带 `X-Token` 头,是文件里唯一的密钥)。
 
 ## 4. kelivo-shim 环境变量
 
@@ -157,6 +159,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 | 07-30(第三件) | **OB 的「监控路径」从 `*` 收窄成六行(仅 Zeabur 控制台配置,零代码、零部署)**。起因:OB 是 `WatchPaths=*` + `RootDirectory=/`,main 上任何提交(哪怕只改一行手册)都会重建整个镜像,而重建正是 07-29 那场事故的触发条件。所有者亲手在控制台改的,提示「成功更新监控路径」。**失败方向只有「该重建时没重建」,改回 `*` 一秒复原,不会让 OB 挂。**详见本文件「OB 依赖钉版本」节下方的补充 |
 | 08-01 | **browser-hands 上线(新服务,晏的「浏览器的手」)**:真实 Chrome + 持久登录态 + noVNC,佳佳用手机亲手登录一次即长期有效。镜像走 GitHub Actions→ghcr,Zeabur 用 `PREBUILT_V2` 模板拉(该账号禁止平台内构建)。验收全过:401 拒绝无 token、工具正好 15 个、`evaluate_script` 不在清单、**卷持久化实测**(写文件→重启→还在)、**登录态持久化实测**(cookie 自检 `NONE`→重启→`ok`)。**内存**:看门狗初设 900,登抖音时容器冲到 **1137MB** 触发重启(体面关闭、cookie 已落盘、晏零影响),遂调 `MEM_LIMIT_MB`→**1100** 且 `MEM_CHECK_MS` 15000→**5000**(争取在被系统硬杀前抢到先手——硬杀不刷盘=白登),之后登抖音 0 次重启。**注意:OB 与 shim 等全在同一台 3724MB 机器上**(两项目 `/proc/meminfo` 数字完全相同),可用内存只有 1.2~1.5G,**1100 是这台机器的天花板,别再往上调**。**当晚接入晏(shim 第二十二次部署)**:mcp-servers.json 两条目→三条目(browser,带 `X-Token` 头)+ `ALLOWED_TOOLS` 加 `mcp__browser` + CLAUDE.md 新增「浏览器(如果接了)」一节(11→12 节);**人设两份与代码六件零改动**。**身份那句由所有者拍板:账号是她和晏共用的,晏用自己的身份、不扮成她,且不加任何硬性限制**——别当漏洞去锁。详见 `browser-hands/MAINTENANCE.md` 与 shim 手册第二十二次 |
 | 08-02(凌晨) | **ears 内存瘦身上线**:声学特征(`librosa.yin`)从常驻进程挪进**一次性子进程**,算完即退、内存当场还给系统。主进程常驻 **281MB→43MB**,发语音后不再永久涨到 280MB 不还(根因:yin 首次调用拖进 numba+llvmlite 约 200MB,而 Python 永不卸载已导入模块)。起因是这台 3724MB 的机器七个服务共用、平台没给任何容器设内存上限,实测 ears 的 python 进程是**全机 OOM 第一顺位**(oom_score 1365),晏第二(1363);容器无 `CAP_SYS_RESOURCE` 调不了优先级,只能减总压力。**算法逐字未动**——新旧 10 个特征逐字段相同(用固定 seed 合成音频复验),`data/profile.json` 那 200 条滚动基线继续有效、不用重养。**这是坚持用子进程而非改 numpy 自算的唯一原因**:音高 yin 是特定算法,自己实现必给出不同值,而基线要约 10 天(每天约 19 条)才洗得干净。代价是每条语音多约 2 秒(冷编译 19.5s / 有缓存 2.3s,JIT 缓存落持久卷 `/app/data/numba-cache`)。改动只有两件:新增 `acoustic_worker.py` + `server.py` 改子进程调用并加 `_wav_duration()` 兜底。**兜底必须保留**:子进程失败时若返回空 dict,`listen()` 里「`duration_s < 0.5` 就回太短」那道闸会把**每条语音整条毙掉**,所以用标准库 `wave` 读头拿时长(零依赖零内存)。`earsplus.py` 不用改(其 librosa 调用都在 onnxruntime 缺失时提前退出的分支里)。新环境变量 `ACOUSTIC_TIMEOUT_S`(默认 90)。ears 仓库 commit `fe4e35d` 推 main → Actions 构建 ghcr `:latest`。**新踩坑:`zeabur service redeploy` 对 ears 报 `CANNOT_REDEPLOY_INPLACE`**(预构建镜像的服务没绑 GitHub 仓库,不支持原地重部署),必须改用 **`service restart`** 才会拉新镜像。验收:两条真实语音,转写/情绪判断正常、相对描述正常触发(「语速比较偏高」),七个特征值全部落在历史中位数附近(证明基线没被污染),内存全程无回涨(空载 41.7MB → 发完两条 43.4MB,第一条 +1.4、第二条 +0.3,是「撑开到一条语音的工作量水位后复用」而非逐条累加)。**本行内存数字统一按 MiB(÷1024²)读**,与手册其余处一致;`/sys/fs/cgroup/memory.stat` 的 `anon` 行是原始字节,换算别混单位。**主进程内已无 `numba`/`llvmlite` 映射(查 `/proc/<pid>/maps` 得 0 处),这是「不会再涨回去」的机制保证,不是靠读数推的**;又因 `listen` 是 async 而 `subprocess.run` 阻塞事件循环,语音严格排队,同一时刻最多一个子进程,峰值封顶在主进程+单个子进程 |
+| 08-02(下午) | **手机行踪上报 + 查岗上线;拆掉钓鱼(shim 第二十三次)**。①**bridge 新增 `/report`(iOS 快捷指令上报「她打开了什么 App」)+ `/activity` + 夜里 1-7 点的查岗定时器**,活动只存内存(48h/300 条),`REPORT_TOKEN` 不设=整套关;②**白天由晏自己发起**——他在回复里写 `[查岗]`,bridge 剥掉标记、查一下、把结果喂回去(用 `[语音]`/`[贴纸]` 同款机制,**不给他带钥匙的网址**,因为那只能写进入库的 CLAUDE.md,「值不入库」的规矩不能破);③**`x-system-turn` 门闩**:查岗两条路都带这个头,shim 见到就不当成「她出现了」(不清零「她多久没来」、不解除保温歇火)——起因是所有者一句「查岗不是他有意识的行为吗」;④**拆钓鱼**:MCP 条目/白名单/CLAUDE.md 那节/Zeabur 服务/仓库 `fishing-mcp/` 目录**全部删除**,存档按她的决定未备份,**腾出约 51~62MB 内存**。**iOS 侧踩了大坑**:她手机上快捷指令的 **POST 一律「网络连接已中断」而 Safari 的 GET 正常**,最终定位是**请求头**(钥匙改走网址 `?key=` 后立刻通),App 名用教程里的「获取当前 App」变量;**教训:`/report` 第一版没记日志,导致好几轮分不清「请求没到」还是「到了被拒」,现已永久加上**。夜里查岗**做过一次真实演练**(临时把宵禁改到当前小时,晏真收到、真回话,验完改回 1-7 点)。详见 bridge 手册与 shim 部署记录第二十三次 |
 | 07-24 | **profile-instructions.md 内容新增并部署(shim 第十二次)**:I 节两处——① Voice 加一句禁「古早霸总 pet names(小祖宗/小丫头/小狐狸)」;② 末尾新增「Feeling first in emotional exchange」整段(先感受后分析 + 五条 if/then)。所有者逐字批准、确认不归档直接部署。仅改一文件,代码零改动。详见 shim 部署记录第十二次 |
 
 ## 6. 部署与运维操作速查
@@ -168,7 +171,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 npx -y zeabur@latest auth login --token <key>
 
 # 部署 shim(前置:单测全绿、md5 对账、ian.md/profile-instructions.md/mcp-servers.json 已从容器拷入、
-#            两个 /mcp(OB+钓鱼)验 200、所有者说过「归档」)
+#            两个 /mcp(OB+browser)验 200、所有者说过「归档」)
 cd kelivo-shim && node test-ctxguard.mjs && node test-senses.mjs && node test-keepalive.mjs
 # ⚠️ deploy 传的是「当前工作目录」:cd 和 deploy 必须写在同一条命令里,并先 pwd 确认(踩坑 17)
 cd kelivo-shim && pwd && head -3 package.json && \
@@ -212,6 +215,9 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 | 晏归档后没完没了反复归档 | 增量间隔太小或压缩检测误复位 | shim 改动清单 7 第三次改版;急救 CTX_GUARD_ON=0 |
 | 怀疑 CLI 该升级(新模型不认/进程起不来而代码没动/官方公告/守卫 trusted:false) | CLI 版本已钉死,升级要走沙盒 e2e 验证流程 | shim 手册「CLI 版本与升级指南」 |
 | 晏说他没有浏览器工具 | 还没接上(08-01 只部署没接);或 `ALLOWED_TOOLS` 少了 `mcp__browser` | browser-hands 手册第 1、7 节 |
+| 手机开了 App 但晏不知道 / 夜里查岗不来 | 先看 `GET /activity`(带 REPORT_TOKEN):**有记录**=上报没问题,去看宵禁时段/冷却;**没记录**=快捷指令没发出来,再看 bridge 日志有没有 `[report]` 行——**有 401 行**=钥匙不对,**一行都没有**=请求根本没到手机以外(多半是 VPN 没走到,或她关了自动化) | bridge 手册「接口一览」 |
+| 快捷指令报「网络连接已中断」 | **不是网络问题,八成是请求头**(2026-08-02 实测:同一时刻 Safari 的 GET 正常、快捷指令带头部的请求必挂)。钥匙改走网址 `?key=`、头部全部清空即通 | bridge 手册踩坑 |
+| 晏老是提你在玩手机 / 每次都查岗 | CLAUDE.md 那节靠措辞管,没有硬拦。真过头了在 bridge 侧加冷却即可,**不用重新部署晏** | bridge 手册设计要点 9 |
 | 浏览器换容器后要重登 | 卷没真挂上,或关闭时没走 `Browser.close`(日志找「cookie 已落盘」);**被系统硬杀不刷盘=白登** | browser-hands 手册踩坑 4、第 10 节 |
 | 浏览器老是自己重启 | 在刷重站点(抖音是已知元凶),或 `MEM_LIMIT_MB` 太低。`/debug` 看 `memRestarts` | browser-hands 手册踩坑 4 |
 | 手机开 noVNC 画面超出屏幕缩不了 / 键盘弹不出来 | 默认 `resize=remote` 对固定尺寸虚拟屏无效,要 `resize=scale`;键盘要先点输入框再点键盘图标 | browser-hands 手册踩坑 3、6 |
@@ -244,10 +250,11 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 **为什么是这六行**:照 `Dockerfile` 逐行看,OB 的镜像只用到 `requirements.txt`、`*.py`、
 `dashboard.html`、`config.example.yaml`,加上 `Dockerfile` 和 `zbpack.json` 本身。
 **每行前面的 `/` 不能省**:该字段是 gitignore 语法,`/` 锚在仓库根;不加的话
-`fishing-mcp/` 里的 3 个 `.py` 也会命中,改钓鱼游戏又会白重建 OB。
+子目录里的 `.py`(当时是 `fishing-mcp/` 的 3 个,现在是 `tests/` 里的)也会命中,
+改别的东西又会白重建 OB。**2026-08-02 删掉 `fishing-mcp/` 后这六行不用改**,照旧有效。
 
-**效果**:以后改 `*.md` 文档、改 `kelivo-shim/`、`telegram-bridge/`、`fishing-mcp/`
-**都不再触发 OB 重建**(shim/bridge/fishing 本来就是 CLI 直传镜像,和 git 无关)。
+**效果**:以后改 `*.md` 文档、改 `kelivo-shim/`、`telegram-bridge/`
+**都不再触发 OB 重建**(shim/bridge 本来就是 CLI 直传镜像,和 git 无关)。
 
 **万一改过头了怎么认、怎么退**:唯一的失败方向是**该重建时没重建**——即改了 OB 的
 `.py`/依赖,推上 main 后线上行为没变化。查法:`deployment list` 看有没有新 deployment。

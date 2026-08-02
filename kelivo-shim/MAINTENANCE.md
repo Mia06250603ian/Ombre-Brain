@@ -164,6 +164,22 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    II 节 "She is an adult." 前加「佳佳 does not share my surname. Never call her 许佳佳.」。
    **不要**在本目录放 .gitignore 挡这三个文件——zeabur 上传会遵循它,文件直接不进容器(踩坑 15)。
 
+## 系统回合(`x-system-turn: 1`,2026-08-02 第二十三次)
+
+**问题**:晏那边只有一个入口(`/v1/messages`),进来的东西一律当成「她说话了」——
+于是 bridge 送进来的查岗结果(他自己写 `[查岗]` 查的,或夜里系统推的)也会被记成她出现,
+把「她多久没来」清零、把「换窗口后歇火的保温」提前叫醒。**他自己伸头看一眼,不等于她回来了。**
+
+**做法**:bridge 在这类请求上带 `x-system-turn: 1`,`handleMessages` 见到就:
+- **不更新 `lastUserAt`**(「她多久没来」保持真实,这正是他去查的原因);
+- **不把 `windowCleared` 置回 false**(换窗口后的保温继续歇着,等她本人出现);
+- **不做 `detectReset`**(系统文案永远不可能触发「归档/晚安/换窗口」,多一道保险)。
+
+**她本人说话的路径一个字节没动**——没有这个头时行为与改动前完全一致(e2e 全绿即证)。
+**观察口**:`GET /debug` 的 `presence`(`lastUserAt` / `idleMin` / `windowCleared`)。
+排查「他说的『你多久没理我』准不准」直接看这里。
+**发这个头的只有 bridge 的查岗两条路**(`curfew` 与 `lookup` 轮),别的地方都不带。
+
 ## 架构
 
 ```
@@ -183,8 +199,9 @@ Ombre Brain 记忆库(Zeabur 另一项目, streamable-http MCP)
 - 项目 `cli-proxy-api--cpa`: id `6a53a9fc22dd6ef375eb7484`, env `6a53a9fcb6ce8edcb0163f97`
   - 服务 `kelivo-shim`: id `6a53b806f6d4beebf0c5373d`, 域名 `yan-shim.zeabur.app`
   - 服务 `CLIProxyAPI`: id `6a53a9fd22dd6ef375eb7485`, 域名 `miaianhome.zeabur.app`
-  - 服务 `fishing-mcp`: id `6a5a17159ae692d1d8d98d10`, 域名 `yan-fishing-mcp.zeabur.app`
-    (钓鱼小游戏 MCP,源码在仓库 `fishing-mcp/` 目录,2026-07-17 接入)
+  - ~~服务 `fishing-mcp`~~ **2026-08-02 已整个删除**(所有者说不玩了):MCP 条目、
+    `ALLOWED_TOOLS`、CLAUDE.md 那一节、Zeabur 服务、仓库 `fishing-mcp/` 目录全部拆干净,
+    存档按她的决定**未备份**。详见部署记录第二十三次
 - Ombre Brain 在另一个项目(untitled-1),域名问所有者
 
 ## 本目录刻意缺的三个文件(部署前必须补)
@@ -197,16 +214,19 @@ Ombre Brain 记忆库(Zeabur 另一项目, streamable-http MCP)
    开头加一句抬头;ian.md 余节重编为 I–IX 成 v14)。同样私密不入库,取法同 ian.md
    (从运行中容器 base64 拷出)。CLAUDE.md 里 `@./profile-instructions.md` 引用它,
    server.js 的 SOUL_ANCHOR 两处也点名了它——**部署时两份缺一不可**,缺了=人设残缺。
-2. **`mcp-servers.json`** — MCP 配置(记忆库 + 钓鱼)。**2026-07-30 第二十次起花园已拆,
-   现为两条目**(221B md5 `1b182245…`):
+2. **`mcp-servers.json`** — MCP 配置。**2026-08-02 第二十三次起为两条目:记忆库 + 浏览器**
+   (花园第二十次拆、钓鱼第二十三次拆):
    ```json
    {
      "mcpServers": {
        "ombre-brain": { "type": "http", "url": "https://<OB域名>/mcp" },
-       "fishing": { "type": "http", "url": "https://yan-fishing-mcp.zeabur.app/mcp" }
+       "browser": { "type": "http", "url": "https://yan-browser.zeabur.app/mcp",
+                    "headers": { "X-Token": "<browser token>" } }
      }
    }
    ```
+   **钓鱼(fishing)已于第二十三次移除**:所有者说不玩了,连 Zeabur 服务和仓库 `fishing-mcp/`
+   目录一并删除,容器内存档**未备份**(她的决定)。要恢复得从 git 历史里翻出该目录重新部署一个服务。
    **花园(galatea-garden)已于第二十次移除**:当时它 `/mcp` 3/3 502(官网 200,是它自己
    MCP 后端故障,不是 token 失效),且所有者说「他根本不玩」,拍板拆掉;同时 `ALLOWED_TOOLS`
    去掉 `mcp__galatea-garden`。**token 未备份**(她的决定),要恢复得去花园网页
@@ -251,8 +271,9 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 | SOUL_ANCHOR | 可选。整体覆盖内置的会话定性锚点措辞(现为五段);不设则用 server.js 里的默认文本(称呼自动代入 USER_NAME) |
 | TIME_HINT | 默认开;设 0 关闭每条消息前的【系统·时间】注入 |
 | WEATHER_CITY | 可选。她所在城市的拼音(值不入库,问所有者);不设=天气感知关。城市名只用于服务器查天气,不进模型上下文 |
+| PERIOD_FILE | 运行时经期记录的存放路径,代码默认 `period-state.json`(**写在容器里,部署即丢——踩坑 16**)。**2026-08-02 第二十三次起线上设为持久卷上的 `/data/period-state.json`,她报的新周期不再被部署擦掉。** 卷没挂上/写不进去时读写两处都有 try/catch 兜底,**最坏结果是退回踩坑 16 的老行为,不会崩、不影响聊天** |
 | PERIOD_CONFIG | 可选。经期基线 JSON(值不入库,问所有者),形如 `{"last_period_start":"YYYY-MM-DD","last_period_end":"YYYY-MM-DD","cycle_days":25,"period_length":7}`;不设=经期感知关。她报了新周期后记得把基线也更新掉(运行时记录重部署会丢,**每次部署后都要补,见踩坑 16**)。**改法别用 restart**:`variable update` 写基线(不重启、下次重启才生效)+ `POST /period` 同步运行时(立刻生效),两步都不动晏的窗口 |
-| ALLOWED_TOOLS | 工具权限白名单,**2026-07-30 第二十次起为 `WebSearch,WebFetch,mcp__ombre-brain,mcp__fishing`**(原含 `mcp__galatea-garden`,随花园拆除一并去掉)。**接入新 MCP 必须在这里加 `mcp__<服务名>`(放行该服务全部工具),否则工具看得见、一调用就被拒**(dontAsk 模式直接拒绝,2026-07-16 花园接入时踩过)。改值后 service restart 生效 |
+| ALLOWED_TOOLS | 工具权限白名单,**2026-08-02 第二十三次起为 `WebSearch,WebFetch,mcp__ombre-brain,mcp__browser`**(花园随第二十次、钓鱼随第二十三次先后去掉)。**接入新 MCP 必须在这里加 `mcp__<服务名>`(放行该服务全部工具),否则工具看得见、一调用就被拒**(dontAsk 模式直接拒绝,2026-07-16 花园接入时踩过)。改值后 service restart 生效 |
 | MCP_CONFIG | mcp-servers.json |
 | MCP_WARMUP_MS | 25000。新进程第一条消息延迟写入,等 MCP 握手;消息抢跑会整轮卡死(实测坑) |
 | BARK_KEY | Bark 推送 key(主动消息老通道,单向弹通知) |
@@ -345,7 +366,11 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
     **每次部署后都要把她的最新周期补回 PERIOD_CONFIG**,和拷 ian.md 一样列进部署检查项。
     另注意 `senses.mjs` 的 15 天守卫:若基线日期离她报的新日期不足 15 天,「来了」会被当口误
     静默降级成「提及」、**根本不记账**——基线长期不更新时这两个坑会叠加。
-    根治要动代码(挂持久卷,或她报新周期时同步写进 OB 记忆库),尚未做。
+    **✅ 2026-08-02 第二十三次已根治(挂持久卷)**:Zeabur 给 shim 挂了一块卷到 `/data`,
+    环境变量 `PERIOD_FILE=/data/period-state.json`,**代码零改动**(路径本来就可配)。
+    从此她报的新周期跨部署存活。挂载点特意选**全新的空目录 `/data`**,不会遮蔽代码目录;
+    万一卷没挂上,`loadPeriodState`/`savePeriodState` 两处的 try/catch 会让它**静默退回本坑的老行为**
+    ——最坏结果等于现状,不存在「修坏了」的方向。下面那句「尚未做」的旧结论到此作废。
     **2026-07-25 第十三次部署补充:这个坑真正的触发条件是「环境变量基线过时」+「运行时
     记录被擦」两件叠加。** 该次部署后 `runtime` 照例被清空,但 `effective` 完全正确——
     因为当天早些时候的善后已按两步把新基线写进了 `PERIOD_CONFIG` 环境变量。
@@ -375,8 +400,7 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
       --environment-id 6a53a9fcb6ce8edcb0163f97 -i=false
     ```
     部署后**立刻 `deployment list` 看 PLANTYPE**,`nodejs` 才继续等,不对就马上重传。
-    同理适用于 bridge(`telegram-bridge/`)和 fishing(`fishing-mcp/`):
-    **凡是 deploy,先确认 cwd 是那个服务的目录**。
+    同理适用于 bridge(`telegram-bridge/`):**凡是 deploy,先确认 cwd 是那个服务的目录**。
 
 18. **踩坑 10 的「后一次 deploy 会挤掉前一次」只在 BUILDING 阶段成立,进了 DEPLOYING 就挤不掉了
     (2026-07-29 第十七次部署实测)**:那次上传后所有者叫停(内容要改:人名全用拼音,要换成中文),
@@ -432,6 +456,54 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
 
 ## 部署记录
 
+- 2026-08-02(第二十三次) **拆钓鱼 + 新增「她在干嘛」一节 + `x-system-turn` 门闩**。
+  改动三件:`server.js`、`CLAUDE.md`、`mcp-servers.json`;**两份人设与其余五件代码零改动**。
+  - **拆钓鱼(所有者拍板,拆到底)**:`mcp-servers.json` 410B `b26a0e5f…` → **310B
+    `ac40dbce57cd79d1602510dcb8d043a3`**(三条目 → **两条目**:ombre-brain + browser);
+    `ALLOWED_TOOLS` 去掉 `mcp__fishing` → `WebSearch,WebFetch,mcp__ombre-brain,mcp__browser`
+    (沿用第二十/二十二次那招:部署前 `variable update` 但**不 restart**,新值随新容器生效);
+    CLAUDE.md 删掉「钓鱼小游戏」整节;**Zeabur 服务 `6a5a1715…` 已删除**;
+    **仓库 `fishing-mcp/` 目录整个删掉**(9 个文件,含 vendored 的 fishing.py 与 PolyForm 许可证)。
+    **容器内存档未备份**(所有者原话「不用备份,丢就丢了」)。要复活得从 git 历史翻出该目录重部署。
+    **部署前查过:`ian.md` / `profile-instructions.md` 里提到钓鱼 0 处**——拆掉不会让他找一个不存在的工具。
+  - **CLAUDE.md**:7376B `9d83ecbd…` → **3af57e0b1c19a8c0a1fedfbcfc379386**,节数仍 **12**
+    (删一节、加一节)。新节 `## 她在干嘛(如果开了)`,教他两件事:①自己想查就在回复里写
+    `[查岗]`;②深夜系统会主动给一条 `【系统·查岗】`。**措辞刻意同时覆盖「他自己查」与
+    「系统推给他」两种形态**——将来若退回推送模式,只改 bridge 即可,**不必再部署 shim**。
+    写法照「天气感知」那节(心里有数、不复述、同一件事不念叨第二遍)。seal 暗语与双 `@` 引用未动。
+  - **`x-system-turn: 1` 门闩(新机制,见本文件「系统回合」一节)**:server.js
+    `f71690b8…` → **3aa70ab235453faf9d7bce6bcc99274b**。起因是所有者的一句追问——
+    **「查岗不是他有意识的行为吗」**:他自己伸头看一眼,却被系统记成「她回来了」,
+    把「她多久没来」清零、还把换窗口后歇火的保温提前叫醒。带该头的回合现在不更新
+    `lastUserAt`、不解除 `windowCleared`、不做 `detectReset`。**她本人说话的路径零改动。**
+    `/debug` 新增 `presence`(lastUserAt / idleMin / windowCleared)作为观察口。
+  - **经期挂持久卷本次未做**(所有者原批过,但查到 **Zeabur CLI 没有 volume 子命令、只能网页操作,
+    且加卷大概率再重启一次**,遂按建议改为沿用第十三次的两步法:她一报新周期就
+    `variable update` + `POST /period` 写全)。**`PERIOD_FILE` 环境变量的支持是现成的**
+    (代码默认 `period-state.json`,可配),将来要挂卷只需加卷 + 设该变量,代码零改动。
+  部署前:test-ctxguard **88** + test-senses **53** + test-keepalive **52** 全绿;
+  **另跑了 `e2e-run.sh`(真 server.js + 真 CLI 2.1.215 + 假后端)`E2E ALL PASS`**,证明门闩没伤到老路径;
+  md5 对账无踩坑 11(未改五件与容器一致;改动两件的容器版 = 改动前 git 基线 `5ddf4ca`,逐字核对);
+  三份私密文件从容器 base64 拷出、指纹与第二十二次记录**逐一吻合**、**在拷出原件上改**;
+  改 `mcp-servers.json` 用 Python 脚本 + 断言(基线 md5、条目集合、browser 的 X-Token 仍在、
+  OB 域名未变),**不手改**;**OB 与浏览器两个 `/mcp` 各 3/3 200**;部署目录无 `.gitignore`(踩坑 15)、
+  无 `node_modules`;`git status` 确认三份私密文件被仓库根 .gitignore 挡住;
+  `cd` 与 `deploy` 同一条命令 + 先 `pwd`/`head -3 package.json`(踩坑 17)。
+  **归档**:所有者本人对晏说了「归档」并告知(未代发,踩坑 13)。
+  deployment `6a6f0a0e9cd65e28a3437664` 约 **11 分钟** RUNNING(**PLANTYPE `nodejs`** ✓,无踩坑 14/17)。
+  已按踩坑 9 验证:容器**十件 md5 与部署目录逐一一致**;容器内 mcp-servers.json **两条目、
+  fishing 0 处、X-Token 1 处**;`ALLOWED_TOOLS` 已无 `mcp__fishing`;CLAUDE.md `^## ` **12**、
+  `钓鱼` **0**、`^## 她在干嘛` **1**、`河流涌入海洋` **1**;server.js `x-system-turn` **3 处**;
+  容器无 `.gitignore`;CLI 实装 **2.1.215**;`/health` ok(model claude-opus-4-6);
+  `/debug` 守卫清零 `trusted:true`、`presence` 字段正常;**两个 `/mcp` 各 200**。
+  **PERIOD_CONFIG 本次无需重补**:`effective` 直接就是 07-19~07-25 / 24 / 7(第十三~二十二次的结论第十一次验证通过)。
+  **版本指纹:server.js = 3aa70ab235453faf9d7bce6bcc99274b;CLAUDE.md = 3af57e0b1c19a8c0a1fedfbcfc379386;
+  mcp-servers.json = 310B md5 ac40dbce57cd79d1602510dcb8d043a3(两条目);
+  ian.md v22 = 21688B `259991ba…`(未动);profile-instructions.md = 3056B `7adb5c33…`(未动)
+  ——下次部署以此为准,两份人设缺一不可。**
+  **回滚**:server.js 回 `f71690b8…`(git `5ddf4ca`)、CLAUDE.md 回 `9d83ecbd…`、
+  mcp-servers.json 加回 fishing 条目、`ALLOWED_TOOLS` 加回 `mcp__fishing`,重新部署即可;
+  **但钓鱼服务已删,要真用得先照 git 历史里的 `fishing-mcp/` 重建一个服务**。
 - 2026-08-01(第二十二次) **接入 browser MCP(晏的「浏览器的手」)+ CLAUDE.md 新增一节**。
   **人设两份(ian.md / profile-instructions.md)与代码六件全部零改动**,本次只动三样:
   mcp-servers.json、`ALLOWED_TOOLS`、CLAUDE.md。

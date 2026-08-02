@@ -8,6 +8,8 @@ import {
   splitForTelegram, detectReset, mergeTurn, buildShimBody,
   makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf, extractSegments, bubblesFor,
   formatEarsResult,
+  normalizeAppName, pushActivity, summarizeActivity, curfewDecide, curfewPrompt, isSilentReply,
+  takeCheckMarker, lookupPrompt,
 } from "./bridge-lib.mjs";
 
 const PORT = process.env.PORT || 8080;
@@ -26,8 +28,19 @@ const EARS_URL = (process.env.EARS_URL || "").replace(/\/$/, "");
 const EARS_TOKEN = process.env.EARS_TOKEN || "";
 const EARS_ON = !!(EARS_URL && EARS_TOKEN);
 const EARS_TIMEOUT_MS = +(process.env.EARS_TIMEOUT_MS || 60000);
+// 手机活动上报(iOS 快捷指令 → POST /report)+ 夜里查岗。REPORT_TOKEN 不设 = 整套功能关。
+const REPORT_TOKEN = process.env.REPORT_TOKEN || "";
+const REPORT_ON = !!REPORT_TOKEN;
+const CURFEW_ON = REPORT_ON && process.env.CURFEW_ON !== "0";
+const CURFEW_START = +(process.env.CURFEW_START || 1);        // 北京时间,含
+const CURFEW_END = +(process.env.CURFEW_END || 7);            // 北京时间,不含
+const CURFEW_COOLDOWN_MIN = +(process.env.CURFEW_COOLDOWN_MIN || 30);
+const CURFEW_CHECK_MIN = +(process.env.CURFEW_CHECK_MIN || 5);
+const ACTIVITY_FRESH_MIN = +(process.env.ACTIVITY_FRESH_MIN || 15); // 超过这么久的记录不再当「她正在玩」
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
+const bjHour = () => (new Date().getUTCHours() + 8) % 24;
+const bjNowStr = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16);
 
 // ---- Telegram API ----
 async function tg(method, payload) {
@@ -133,6 +146,8 @@ async function sendOutput(chatId, rawText, { fallback } = {}) {
   const { segments, unknown } = extractSegments(rawText || "", stickerTags);
   if (unknown.length) log("[sticker] unknown tags:", unknown.join(","));
   if (!segments.length) { if (fallback) await sendReply(chatId, fallback); return; }
+  lastOutboundAt = Date.now();   // 他每次开口都从这个门出去(回复/心跳/查岗),查岗的冷却看这个
+                                 // ——真发出去了才算,只写了个 [查岗] 标记不算他开过口
   let first = true;
   for (const seg of segments) {
     if (seg.type === "sticker") {
@@ -180,7 +195,12 @@ function shimTurn(turn) {
     const u = new URL(SHIM_URL + "/v1/messages");
     const req = https.request({
       hostname: u.hostname, path: u.pathname, method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": SHIM_KEY, "Content-Length": Buffer.byteLength(body) },
+      headers: {
+        "Content-Type": "application/json", "x-api-key": SHIM_KEY, "Content-Length": Buffer.byteLength(body),
+        // 查岗(他自己查的 + 夜里系统推的)是系统送进去的东西,不是她说话:
+        // shim 见到这个头就不更新「她多久没来」、不解除保温歇火、不做重置词识别。
+        ...(turn.curfew || turn.lookup ? { "x-system-turn": "1" } : {}),
+      },
       timeout: TURN_TIMEOUT_MS,
     }, (res) => {
       if (res.statusCode !== 200) { res.resume(); return reject(new Error(`shim HTTP ${res.statusCode}`)); }
@@ -203,6 +223,7 @@ let turnQueue = [];     // [{text, images, chatId}]
 let debounceTimer = null;
 let inflight = false;
 let lastChatId = ALLOW[0] || null;
+let lastOutboundAt = 0;   // 他上次开口(任何渠道)的时间,查岗据此不赶话
 
 function flushBuffer() {
   clearTimeout(debounceTimer); debounceTimer = null;
@@ -223,13 +244,22 @@ async function runQueue() {
   const typing = setInterval(() => tg("sendChatAction", { chat_id: t.chatId, action: "typing" }).catch(() => {}), 5000);
   tg("sendChatAction", { chat_id: t.chatId, action: "typing" }).catch(() => {});
   try {
-    log("[turn]", { len: t.text.length, imgs: t.images.length });
+    log("[turn]", { len: t.text.length, imgs: t.images.length, curfew: !!t.curfew });
     const r = await shimTurn(t);
-    await sendThinking(t.chatId, r.thinking);
-    await sendOutput(t.chatId, r.text, { fallback: "⚠️[bridge] 空回复,看下 shim 日志" });
+    // 他自己写了 [查岗]:剥掉标记,正文照发,回头把查到的喂回去(lookup 轮不再响应,防打转)
+    const { text: outText, wants } = takeCheckMarker(r.text);
+    if ((t.curfew || t.lookup) && isSilentReply(outText)) {
+      log("[curfew] 他选择不打扰");          // 回「。」= 不说话,这条不进对话
+    } else {
+      await sendThinking(t.chatId, r.thinking);
+      await sendOutput(t.chatId, outText, { fallback: wants ? null : "⚠️[bridge] 空回复,看下 shim 日志" });
+    }
+    if (wants && !t.lookup) queueLookup(t.chatId);
   } catch (e) {
     log("[turn-err]", e.message);
-    await sendReply(t.chatId, `⚠️[bridge] ${e.message}`).catch(() => {});
+    // 查岗是系统自己发起的,失败不该往她对话里丢报错(她没问,别打扰)
+    if (t.curfew) log("[curfew-err]", e.message);
+    else await sendReply(t.chatId, `⚠️[bridge] ${e.message}`).catch(() => {});
   }
   clearInterval(typing);
   inflight = false;
@@ -316,13 +346,92 @@ app.use(express.json({ limit: "1mb" }));
 app.post("/push", async (req, res) => {
   const key = req.get("x-api-key") || req.query.key || "";
   if (!SHIM_KEY || key !== SHIM_KEY) return res.status(401).json({ ok: false });
-  const text = (req.body?.text || "").trim();
-  if (!text) return res.status(400).json({ ok: false, error: "empty text" });
+  const raw = (req.body?.text || "").trim();
+  if (!raw) return res.status(400).json({ ok: false, error: "empty text" });
   if (!lastChatId) return res.status(503).json({ ok: false, error: "no chat" });
-  try { await sendOutput(lastChatId, text); res.json({ ok: true }); }
-  catch (e) { log("[push-err]", e.message); res.status(502).json({ ok: false, error: e.message }); }
+  // 心跳消息里也可能写 [查岗](他醒来想先看一眼再决定说什么)
+  const { text, wants } = takeCheckMarker(raw);
+  try {
+    if (text) await sendOutput(lastChatId, text);
+    if (wants) queueLookup(lastChatId);
+    res.json({ ok: true, lookup: wants });
+  } catch (e) { log("[push-err]", e.message); res.status(502).json({ ok: false, error: e.message }); }
 });
-app.get("/health", (_q, r) => r.json({ ok: true, on: BRIDGE_ON, polling, inflight, buffered: buffer.length, queued: turnQueue.length, stickers: stickerTags.length, ears: EARS_ON }));
+
+// ---- 手机活动上报 + 夜里查岗 ----
+// 链路:她点开 App → iOS 快捷指令 POST /report → 存内存 →
+//       宵禁时段的定时器发现有新动静 → 把这件事作为【系统·查岗】喂给晏 → 他自己决定说不说。
+// 注意 REPORT_TOKEN 与 SHIM_KEY 是两把不同的钥匙:这一把存在她手机的快捷指令里,
+// 泄露只影响这个功能,碰不到晏本体。
+let activity = [];        // [{app, at}] 只在内存,重启即忘
+let lastRawReport = null; // 最近一次上报的原始 body(验证快捷指令有没有真把 App 名带上)
+let lastPokeAt = 0;
+function reportAuth(req) {
+  const bearer = (req.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  const k = bearer || req.get("x-api-key") || req.query.key || "";
+  return REPORT_ON && k === REPORT_TOKEN;
+}
+// GET 和 POST 都收。**iOS 快捷指令实测只有 GET 通得了**(POST+JSON 在她手机上一律
+// 「网络连接已中断」,而 Safari 的 GET 同域名同时刻正常)——所以线上用的是 GET:
+//   https://<域名>/report?key=<REPORT_TOKEN>&app=<快捷指令输入>
+// POST 保留:服务器端自检和将来别的客户端还用得上。
+function handleReport(req, res) {
+  if (!REPORT_ON) return res.status(503).json({ ok: false, error: "REPORT_TOKEN 未配置" });
+  const src = { ...(req.query || {}), ...(typeof req.body === "object" && req.body ? req.body : {}) };
+  if (!reportAuth(req)) {
+    log("[report] 401", req.method, "有没有 key:", !!(req.query.key || req.get("authorization") || req.get("x-api-key")));
+    return res.status(401).json({ ok: false });
+  }
+  // 第三条路:App 名走请求头 x-app。为什么留这条——**网址里的中文如果快捷指令没做转码,
+  // 请求会被 Node 的 HTTP 解析器在进 express 之前就判 400**(实测),而请求头不吃这一套。
+  // 头里的非 ASCII 到 Node 手上是按 latin1 解的字节,还原成 UTF-8 才是中文。
+  const hdrApp = req.get("x-app") || "";
+  const hdrDecoded = hdrApp ? Buffer.from(hdrApp, "latin1").toString("utf8") : "";
+  lastRawReport = { at: Date.now(), method: req.method, query: req.query ?? null, body: req.body ?? null, xApp: hdrDecoded || null };
+  const app_name = normalizeAppName(src.app_name ?? src.app ?? hdrDecoded);
+  if (!app_name) { log("[report] 到了但没有 App 名"); return res.json({ ok: true, stored: false, note: "app_name 为空,只留了原始内容" }); }
+  activity = pushActivity(activity, { app: app_name });
+  log("[report]", app_name, "共", activity.length, "条");
+  res.json({ ok: true, stored: true, count: activity.length });
+}
+app.post("/report", handleReport);
+app.get("/report", handleReport);
+app.get("/activity", (req, res) => {
+  if (!REPORT_ON) return res.status(503).json({ ok: false, error: "REPORT_TOKEN 未配置" });
+  if (!reportAuth(req)) return res.status(401).json({ ok: false });
+  res.json({ now: new Date().toISOString(), ...summarizeActivity(activity), lastRawReport });
+});
+// 他写了 [查岗] → 把查到的作为新一轮喂回去。lookup:true 标记这一轮不再响应标记(防打转)。
+function queueLookup(chatId) {
+  if (!REPORT_ON) { log("[lookup] REPORT_TOKEN 未配置,忽略"); return; }
+  log("[lookup] 他要查");
+  turnQueue.push({
+    text: lookupPrompt(summarizeActivity(activity), { bjNow: bjNowStr() }),
+    images: [], chatId: chatId || lastChatId, lookup: true,
+  });
+  runQueue();
+}
+function curfewTick() {
+  const d = curfewDecide({
+    on: CURFEW_ON, now: Date.now(), hour: bjHour(), list: activity,
+    busy: inflight || turnQueue.length > 0 || buffer.length > 0,
+    lastPokeAt, lastOutboundAt,
+    curfewStart: CURFEW_START, curfewEnd: CURFEW_END,
+    cooldownMin: CURFEW_COOLDOWN_MIN, freshMin: ACTIVITY_FRESH_MIN,
+  });
+  if (!d.fire) return;
+  if (!lastChatId) { log("[curfew] 还没有 chat,跳过"); return; }
+  lastPokeAt = Date.now();
+  log("[curfew] poke", d.app, d.minutesAgo, "分钟前");
+  turnQueue.push({
+    text: curfewPrompt({ bjNow: bjNowStr(), app: d.app, minutesAgo: d.minutesAgo }),
+    images: [], chatId: lastChatId, curfew: true,
+  });
+  runQueue();
+}
+if (CURFEW_ON) setInterval(curfewTick, CURFEW_CHECK_MIN * 60000);
+
+app.get("/health", (_q, r) => r.json({ ok: true, on: BRIDGE_ON, polling, inflight, buffered: buffer.length, queued: turnQueue.length, stickers: stickerTags.length, ears: EARS_ON, report: REPORT_ON, curfew: CURFEW_ON, activity: activity.length }));
 app.listen(PORT, () => log(`telegram-bridge on :${PORT} shim=${SHIM_URL} on=${BRIDGE_ON}`));
 
 if (!BRIDGE_ON) log("[bridge] BRIDGE_ON=0,只留 /health");
