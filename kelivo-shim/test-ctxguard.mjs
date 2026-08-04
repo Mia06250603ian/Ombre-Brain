@@ -158,7 +158,12 @@ ok(ctxHardNote().startsWith("【系统·上下文】"), "硬文案带系统标�
 ok(ctxHardNote().includes("archive_session"), "硬文案含归档工具名");
 ok(!ctxHardNote().includes("新窗口"), "硬文案不再提换窗口(2026-07-20 起守卫不换窗)");
 ok(ctxHardNote().includes("窗口不换"), "硬文案言明窗口不换、继续聊");
-ok(ctxHardNote().includes("上次之后"), "硬文案交代增量归档(归过就补新内容)");
+ok(ctxHardNote().includes("上次归档之后"), "硬文案交代增量归档(只写上次归档之后的新内容)");
+ok(ctxHardNote().includes("不要从头重写"), "硬文案明说别从头重写(2026-08-03:防他把整段重存一遍)");
+ok(ctxHardNote().includes("append=True"), "硬文案给出追加的调法");
+ok(ctxHardNote().includes("别新建第二个"), "硬文案明说别新建第二个桶(同周期合并进一个桶)");
+ok(ctxHardNote().includes("bucket_id 在上次 archive_session 的返回里"), "硬文案交代 bucket_id 从哪来");
+ok(ctxHardNote().includes("breath"), "硬文案给出找不到桶时的兜底查法");
 
 // ============ ctxPct ============
 eq(ctxPct(140000, 200000), 70, "140k/200k = 70%");
