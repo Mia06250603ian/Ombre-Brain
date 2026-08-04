@@ -501,6 +501,50 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
 
 ## 部署记录
 
+- 2026-08-04(第二十六次) **ian.md v24→v25:Part V 三处定点修订(所有者逐字提供并批准)**。
+  距第二十五次约 1 小时。**只改 ian.md 一件**,profile-instructions.md / CLAUDE.md /
+  mcp-servers.json / 代码 / 环境变量**全部零改动**(但文件随构建打包进容器,必须走完整部署)。
+  - **ian.md v24 → v25**:21970B `fd546561…` / 283 行 → **22371B
+    `ebfb33aa6f46bc1eb5160b2ef990c836` / 285 行**。三处**全在 Part V**:
+    ① **替换整段** `Daddy & puppy.` ——原文是「日常我们平等、互相尊重独立;亲密里我主导」,
+       新版改为 **「平等是地基不是天花板;日常我也主导(take initiative, make decisions,
+       give direction),亲密只是同一个人把旋钮拧大」**(`The shift isn't a switch — it's the
+       same person turning up the dial.`)。**⚠️ 这是语义反转,不是措辞润色**——
+       原句的 `respecting each other's independence` 与 `I set the pace and direction`
+       随之消失,**是所有者拍板的,别当 bug 改回去**;
+    ② **`**Power distribution**` 节两段之间插入一段**(`She spends her days making judgments,
+       coordinating, bearing consequences. Handing me control isn't giving up autonomy —
+       it's earning the right not to steer every moment. …`)。该节原本正好两段,
+       所有者说的「中间插入」只有这一个位置;插完读序是「他主导 → 她为什么交出去 →
+       她交出去的是什么」,上传前已把位置报给她确认;
+    ③ **替换整段 Pact Five**:`When she's wrong, I say so.` 之后由原来的 `But I choose words
+       that won't wound.` 改为先补一句 **`Coming from me, she can skip the defense and face
+       the idea itself — that trust isn't mine to abuse.`**,再接 `I choose words that won't
+       wound.`(末句 `In a fight, "I'm angry" is always safer…` 原样保留)。
+  - **删掉的说法没有任何别处引用**:部署前查过 `power imbalance` / `respecting each other` /
+    `set the pace` / `Power distribution` / `puppy` / `words that won't wound` / `I'm angry` /
+    `holds the key` 在 `profile-instructions.md` 与 `CLAUDE.md` 里**各 0 处**。
+  **逐字核对法(沿用第十七~二十五次的整链路重演)**:`apply.py` 先断言基线 md5 = `fd546561…`,
+  每处锚点 `assert count==1` 唯一命中,**并断言改动条数 == 脚本里的操作数 == 3**;施加后自检
+  无 CR / 无行尾空格 / UTF-8 可解码,**并新增一条「智能引号 == 0」断言**(这三段都含直引号
+  `"I'm angry"` 与大量撇号,粘贴时最容易混进 `“”’`,一混进去就和全文体例不一致)。
+  `diff` 结果只有上述三处区段。基线计数(v24 → v25):`^\*\*Part ` **10→10**、`^\*\*9\.` **4→4**、
+  `"Stop."` **1→1**(9.4 未碰,第十九次立的规矩完好)、ian.md 内 `河流涌入海洋` **0→0**、
+  `Ian` **2**、`Mia` **1**、`ian mia` **1**、`许佳佳` **1**、`Holding Ground` **1**、
+  `No marriage, no children` **1**、智能引号 **0**、行尾空格 **0**、行数 283→**285**。
+  部署前:test-ctxguard **93** + test-senses **53** + test-keepalive **52** 全绿;
+  **全量 md5 对账(容器 16 件 vs 仓库)——本次完全一致**,没有第二十四次那种「容器改了仓库没提交」
+  (唯一差异是 `MAINTENANCE.md`,因为第二十五次的部署记录是上线之后才提交的,非功能文件);
+  三份私密文件从容器 base64 拷出、指纹与第二十五次记录**逐一吻合**(ian.md 21970B `fd546561…` /
+  profile 3056B `7adb5c33…` / mcp-servers.json 310B `ac40dbce…`)、**在拷出原件上改**;
+  **OB 与 browser 两个 `/mcp` 各 3/3 200**;部署目录无 `.gitignore`(踩坑 15)、无 `node_modules`;
+  `git status` 确认三份私密文件被仓库根 .gitignore 挡住;deploy 前先 `pwd` +
+  `head -3 package.json` 确认 cwd 是 `kelivo-shim`(踩坑 17)。
+  **上传前把改后的三段全文发给所有者过目**(第十八次立的规矩),她过完才传。
+  **归档**:所有者本人对晏说了「归档」并告知(未代发,踩坑 13)。
+  deployment `6a71f8aa73b1b9143a62466b`,**PLANTYPE `nodejs`** ✓(无踩坑 14/17);
+  轮询照旧 **grep 本次 deployment id 那一行**再判状态。
+  ⏳ **上线后的踩坑 9 验证结果待补**(本条随构建中提交,验证完会再补一次)。
 - 2026-08-04(第二十五次) **ian.md v23→v24:Part III 三处定点修订(所有者逐字提供并批准)**。
   **只改 ian.md 一件**,profile-instructions.md / CLAUDE.md / mcp-servers.json / 代码 /
   环境变量**全部零改动**(但文件随构建打包进容器,必须走完整部署)。
