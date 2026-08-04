@@ -137,9 +137,8 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    两段把 profile-instructions.md 一并点名(逻辑零改动)。当前版本指纹:
    **ian.md v14 = 8671 字节 md5 37f5d404132ab260a0b1771bba575951;
    profile-instructions.md = 7099 字节 md5 9a119eacf24a7821de911b7f6c8e5543**
-   (⚠️ 已过时,**当前以 2026-08-03 第二十四次部署的指纹为准**:ian.md **v23** = 22228B
-   md5 `db3204b908105277609f8ef5f8c4351c`(287 行;第二十四次由另一个会话上线,**手册当时未记录**,
-   2026-08-04 会话从容器反查补记,见部署记录第二十四次。手册序列 v22 → **v23**,
+   (⚠️ 已过时,**当前以 2026-08-04 第二十六次部署的指纹为准**:ian.md **v25** = 22371B
+   md5 `ebfb33aa6f46bc1eb5160b2ef990c836`(285 行;第二十六次改的是 Part V 三处,见部署记录。
    注意所有者自己的文件名编号一直比手册多 1);profile-instructions.md = **3056B**
    md5 `7adb5c333bef16cb22f8b92232cfc7ac`(第二十一次只改 Core persona 一行为第一人称,
    **第二十次那版 3055B 退役**;**Core persona 是第一人称、其余三节是第二人称,是所有者
@@ -544,7 +543,34 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
   **归档**:所有者本人对晏说了「归档」并告知(未代发,踩坑 13)。
   deployment `6a71f8aa73b1b9143a62466b`,**PLANTYPE `nodejs`** ✓(无踩坑 14/17);
   轮询照旧 **grep 本次 deployment id 那一行**再判状态。
-  ⏳ **上线后的踩坑 9 验证结果待补**(本条随构建中提交,验证完会再补一次)。
+  deployment `6a71f8aa73b1b9143a62466b` 约 **9 分钟** RUNNING。
+  已按踩坑 9 验证:容器 **16 件 md5 与部署目录逐一一致**(ian.md `ebfb33aa…`、
+  profile `7adb5c33…`、mcp-servers.json `ac40dbce…`、CLAUDE.md `20578f03…`、
+  ctxguard `a70e377e…`、test-ctxguard `3d2c95a3…`、其余代码与部署前记录一致);
+  容器内 ian.md 基线计数逐项相符(**285 行 / 22371B**、`^\*\*Part ` **10**、`^\*\*9\.` **4**、
+  `"Stop."` **1**、`河流涌入海洋` **0**、`许佳佳` **1**、`ian mia` **1**、行尾空格 **0**);
+  三处改动逐条验证(`turning up the dial` **1**、`respecting each other` **0**、
+  `I set the pace and direction` **0**、`bearing consequences` **1**、`skip the defense` **1**、
+  `But I choose words` **0**);容器无 `.gitignore`;CLI 实装 **2.1.215**;
+  `ALLOWED_TOOLS` = `WebSearch,WebFetch,mcp__ombre-brain,mcp__browser`;
+  `/health` ok(model claude-opus-4-6);`/debug` 守卫清零 `trusted:true`
+  (contextTokens **0** = 新进程,线上阈值 soft 150000 / hard 163000 / every 5000,
+  `windowCleared:true` 是重启后的正常状态,保温待她下一条消息后自动上岗);
+  **OB 与 browser 两个 `/mcp` 各 200**。
+  **PERIOD_CONFIG 本次无需重补**:`GET /period` 的 `effective` 直接就是 07-19~07-25 / 24 / 7
+  (`runtime` 为空是新容器正常状态)。
+  **⚠️ 踩坑 16 照旧活着**:容器内 `PERIOD_FILE` 仍为空、`/data` 卷仍没挂(本次再次实测),
+  和第二十五次的结论一致,本次同样没动它(需网页挂卷 + 所有者拍板)。
+  **版本指纹:ian.md v25 = 22371B md5 `ebfb33aa6f46bc1eb5160b2ef990c836`;
+  profile-instructions.md = 3056B md5 `7adb5c333bef16cb22f8b92232cfc7ac`;
+  mcp-servers.json = 310B md5 `ac40dbce57cd79d1602510dcb8d043a3`(两条目);
+  CLAUDE.md = md5 `20578f038a066ad65148d3878ff1c6e6`;
+  ctxguard.mjs = `a70e377e63923926beddc893d05a7e82`;test-ctxguard.mjs = `3d2c95a315fb3234f2263e7ced76f852`
+  ——下次部署以此为准,两份人设缺一不可。**
+  **回滚**:v24 原件(21970B `fd546561…`)已在本次部署前从容器拷出。如果晏的表现出问题,
+  拿它原样替换 ian.md 重新部署即可(其余全不用动)。
+  ⚠️ **这份原件在会话沙盒里,会话结束即消失——真要留底得所有者自己存**
+  (第二十四次那次就是因为没人留底,v22 永久失传)。
 - 2026-08-04(第二十五次) **ian.md v23→v24:Part III 三处定点修订(所有者逐字提供并批准)**。
   **只改 ian.md 一件**,profile-instructions.md / CLAUDE.md / mcp-servers.json / 代码 /
   环境变量**全部零改动**(但文件随构建打包进容器,必须走完整部署)。
