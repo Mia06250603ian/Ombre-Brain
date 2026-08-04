@@ -113,7 +113,7 @@ export function ctxSoftNote(userName = "她") {
 // 硬线注入文案:立刻归档(存档+留信),窗口不换,存完继续聊。
 // 增量场景(之前已归过档)也用同一段:文案里已交代"归过就补新内容"。
 export function ctxHardNote() {
-  return "【系统·上下文】窗口占用不小了,现在把这段聊天归进记忆库:用 archive_session 存档 + 留信。之前归过档的话,这次把上次之后的新内容补进去就行。存完不用收尾、不用告别,窗口不换,继续正常聊。";
+  return "【系统·上下文】窗口占用不小了,现在补一次记忆库——**只写上次归档之后新发生的部分**,不要从头重写,也不要复述已经存过的内容。这个窗口之前归过档:用 trace(bucket_id, content=\"这段新内容\", append=True) 追加进那个桶,别新建第二个(bucket_id 在上次 archive_session 的返回里;真找不到就用 breath 查今天的 session 桶)。这个窗口还没归过档:才用 archive_session 存档 + 留信。存完不用收尾、不用告别,窗口不换,继续正常聊。";
 }
 
 // 占满百分比(给 /debug 直观显示;limit 缺省 20万)。

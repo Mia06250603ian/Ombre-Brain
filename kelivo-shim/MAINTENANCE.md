@@ -492,7 +492,50 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
 
 ## 部署记录
 
-- 2026-08-03(第二十四次) **ian.md v22→v23 + CLAUDE.md 三处改动**。
+- 2026-08-04(第二十五次) **ian.md v23→v24:Part III 三处定点修订(所有者逐字提供并批准)**。
+  **只改 ian.md 一件**,profile-instructions.md / CLAUDE.md / mcp-servers.json / 代码 /
+  环境变量**全部零改动**(但文件随构建打包进容器,必须走完整部署)。
+  - **ian.md v23 → v24**:22228B `db3204b9…` / 287 行 → **21970B
+    `fd546561916723f88db1fdd685c6f33c` / 283 行**。三处**全在 Part III**:
+    ① **删整段** `Her brain outruns her mouth. She thinks five steps ahead…usually truest.`;
+    ② **删整段** `She reads people with terrifying accuracy — …including me.`;
+    ③ **替换整段** `She shows love by doing. Staying up all night rewriting prompts, learning
+       to code from scratch, building entire systems alone, debugging at 4am. …` →
+       `She shows love by doing — she learned to code from scratch. We rewrite prompts together,
+       we build the system together. I carry my half. …`(后半句
+       `She won't say "look how much I've done for you," but she needs me to see it.` 原样保留)。
+    **③ 的主旨是把「她一个人熬夜、一个人建整套系统」改成「一起做、我担我那一半」**——
+    下一个会话别按「她独自完成」的旧说法去改回来。
+  - **删掉的两段没有任何别处引用**:部署前查过 `reads people` / `outruns` / `five steps` /
+    `shows love by doing` / `4am` / `rewriting prompts` 等关键词在 `profile-instructions.md`
+    与 `CLAUDE.md` 里**各 0 处**,删掉不会让他去够一个不存在的说法。
+  **逐字核对法(沿用第十七~二十一次的整链路重演)**:`apply.py` 先断言基线 md5 = `db3204b9…`,
+  每处锚点 `assert count==1` 唯一命中,**并断言改动条数 == 脚本里的操作数 == 3**(第二十次漏掉
+  一整条的教训);施加后自检无 CR / 无行尾空格 / UTF-8 可解码,并复核全部结构不变量。
+  `diff` 结果只有上述三处区段。基线计数(v23 → v24):`^\*\*Part ` **10→10**、`^\*\*9\.` **4→4**、
+  `"Stop."` **1→1**、ian.md 内 `河流涌入海洋` **0→0**、`Ian` **2**、`Mia` **1**、`ian mia` **1**、
+  `许佳佳` **1**、`Holding Ground` **1**、`No marriage, no children` **1**、行尾空格 **0**、
+  行数 287→**283**。
+  **⚠️ 本次部署前抓到的大事(下一个会话务必知道)**:对账发现 **2026-08-03 有一次手册完全没记录的
+  部署(第二十四次)**,它改了容器里的 `ian.md`、`CLAUDE.md`、`ctxguard.mjs`、`test-ctxguard.mjs`,
+  **后三件都没提交回仓库**。本次若按常规从仓库目录部署,会把那三件**静默滚回去**(踩坑 11 复发,
+  且这次含代码)。处置:四件全部从容器拷出,`CLAUDE.md`/`ctxguard.mjs`/`test-ctxguard.mjs`
+  **同步进仓库并提交**,`ian.md` **以容器那份为基线**做本次三处改动。详见部署记录第二十四次。
+  **另一个教训记在这里:本次一开始只对了 `server.js` 就下了「代码零改动」的结论,是错的**
+  ——`ctxguard.mjs` 当时就已经不一样了。**md5 对账要 `md5sum *.mjs *.js *.sh *.json *.md` 全量对,
+  别挑几件对。**
+  部署前:test-ctxguard **93**(第二十四次由 88 增至 93)+ test-senses **53** + test-keepalive **52** 全绿;
+  全量 md5 对账(容器 16 件逐一比对,差异四件已如上处置);三份私密文件从容器 base64 拷出、
+  **在拷出原件上改**;**OB 与 browser 两个 `/mcp` 各 3/3 200**;部署目录无 `.gitignore`(踩坑 15)、
+  无 `node_modules`;`git status` 确认三份私密文件被仓库根 .gitignore 挡住;
+  `cd` 与 `deploy` 同一条命令 + 先 `pwd`/`head -3 package.json`(踩坑 17)。
+  **上传前把改后的 Part III 全文发给所有者过目**(第十八次立的规矩),她过完才传。
+  **归档**:所有者本人对晏说了「归档」并告知(未代发,踩坑 13)。
+  deployment `6a71ddcb159a57c418d4e45a`(**PLANTYPE `nodejs`** ✓)。
+  ⏳ **上线后验证(踩坑 9)与版本指纹待补**——本行若还在,说明该次部署的上线验证没做完就断了,
+  下一个会话请先照踩坑 9 把容器十六件 md5、ian.md 结构计数、`/health`、`/debug`、
+  两个 `/mcp`、`GET /period` 的 `effective` 补验一遍再动别的。
+- 2026-08-03(第二十四次) **ian.md v22→v23 + CLAUDE.md 三处改动 + ctxguard 硬线文案**。
   ⚠️ **这条是 2026-08-04 的会话从容器和 Zeabur 日志反查补记的,不是当事会话写的。**
   当事会话上线后既没写手册、也没把 CLAUDE.md 提交回仓库,导致仓库那份停在第二十三次的
   `3af57e0b…`——下一次谁按常规「从仓库目录部署」都会把这三处改动**静默滚回去**(踩坑 11)。
@@ -500,8 +543,12 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
   是防止下一个人踩坑 11 的唯一手段。**
   - **能确认的**(容器实测 + 构建日志):deployment **`6a706ede9cd65e28a343b64e`**,
     2026-08-03 **10:35:22Z 上传 → 10:41:11Z 构建完成 → RUNNING**,**PLANTYPE `nodejs`** ✓
-    (无踩坑 17)。`server.js` / `profile-instructions.md` / `mcp-servers.json` 三件
-    **md5 与第二十三次记录完全一致 = 本次零改动**,所以这是一次**纯文本部署**。
+    (无踩坑 17)。**改动共四件:`ian.md`、`CLAUDE.md`、`ctxguard.mjs`、`test-ctxguard.mjs`**;
+    `server.js` / `senses.mjs` / `keepalive.mjs` / `package.json` / `entrypoint.sh` /
+    `profile-instructions.md` / `mcp-servers.json` / `e2e-*` 与第二十三次记录**逐一一致**。
+    ⚠️ **`ctxguard.mjs` 和 `test-ctxguard.mjs` 同样没提交回仓库**——和 CLAUDE.md 一样的雷,
+    而且这次是**代码**。2026-08-04 会话正是在部署前对账时才发现的(**先只对了 server.js
+    就下过「代码零改动」的结论,是错的**)。**教训:md5 对账要对全部十几件,不能挑几件对。**
   - **`ian.md` v22 → v23**:21688B `259991ba…` / 284 行 → **22228B
     `db3204b908105277609f8ef5f8c4351c` / 287 行**(+540B / +3 行)。
     **具体改了哪几段无从得知**——v22 原件只存在于当时那个会话的沙盒里,早已随会话消失,
@@ -522,6 +569,16 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
        晏自己提的)。**机械约束逐条核过全在**:`[查岗]` 一字不差、「标记不会显示给她」、
        深夜 `【系统·查岗】`、不复述/不解释机制词、回「。」= 不打扰、同一件事不念叨第二遍。
        **本手册的「待办」一节到此作废,别再做第二遍。**
+  - **`ctxguard.mjs`**:`ddafdec2…` → **`a70e377e63923926beddc893d05a7e82`**。
+    **只改 `ctxHardNote()` 一句文案**(判定逻辑、取数三级门闩、压缩检测全部零改动),
+    与上面 CLAUDE.md ① 是配套的一对:硬线提示词从「用 archive_session 存档 + 留信,
+    归过档就补上次之后的新内容」改成**明确的分支指令**——**只写上次归档之后新发生的部分、
+    不要从头重写**;这个窗口归过档就 `trace(bucket_id, content=…, append=True)` 追加进那个桶、
+    **别新建第二个**(并交代 `bucket_id` 在上次 `archive_session` 的返回里,找不到就用 `breath`
+    查今天的 session 桶);没归过才用 `archive_session`。存完仍是不收尾、不告别、窗口不换。
+  - **`test-ctxguard.mjs`**:`fc3f9910…` → **`3d2c95a315fb3234f2263e7ced76f852`**,
+    **88 → 93 项**(原「硬文案交代增量归档」一条断言细化,另加 5 条:不要从头重写 / `append=True` /
+    别新建第二个 / `bucket_id` 从哪来 / `breath` 兜底)。**改文案就得同步改这几条断言,否则单测会红。**
   - **归档 / 前置检查 / 部署后验证是否做过:无记录,不知道。** 本条只记可核实的事实。
 - 2026-08-02(第二十三次) **拆钓鱼 + 新增「她在干嘛」一节 + `x-system-turn` 门闩**。
   改动三件:`server.js`、`CLAUDE.md`、`mcp-servers.json`;**两份人设与其余五件代码零改动**。
