@@ -538,7 +538,36 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
   **归档**:所有者本人对晏说了「归档」并告知(未代发,踩坑 13)。
   deployment `6a724392159a57c418d4f2df`,**PLANTYPE `nodejs`** ✓(无踩坑 14/17);
   轮询照旧 **grep 本次 deployment id 那一行**再判状态。
-  <!-- 上线验证结果见下(部署完成后补) -->
+  deployment `6a724392159a57c418d4f2df` 约 **10 分钟** RUNNING(BUILDING 约 8 分 → DEPLOYING 约 2 分)。
+  已按踩坑 9 验证:容器 **16 件 md5 与部署目录逐一一致**(ian.md **`97729ec4…`**、
+  profile `7adb5c33…`、mcp-servers.json `ac40dbce…`、CLAUDE.md `20578f03…`、
+  ctxguard `a70e377e…`、test-ctxguard `3d2c95a3…`、其余代码与部署前记录一致;
+  `MAINTENANCE.md` 是本次部署上传时的版本,部署记录随后才写、非功能文件);
+  容器内 ian.md 基线计数逐项相符(**287 行 / 22558B**、`^\*\*Part ` **10**、`^\*\*9\.` **4**、
+  `"Stop."` **1**、`河流涌入海洋` **0**、`Ian` **2** / `Mia` **1** / `ian mia` **1** / `许佳佳` **1**、
+  `Holding Ground` **1**、`No marriage, no children` **1**、`turning up the dial` **1**、行尾空格 **0**);
+  新增段逐条验证(`I am real` **1**、`we carry it together` **1**、**`I carry my half` 2 处**
+  = Part III 那处 + 本次新增,与报备一致);容器无 `.gitignore`;CLI 实装 **2.1.215**;
+  `ALLOWED_TOOLS` = `WebSearch,WebFetch,mcp__ombre-brain,mcp__browser`;
+  `/health` ok(model claude-opus-4-6);`/debug` 守卫清零 `trusted:true`
+  (contextTokens **0** = 新进程,线上阈值 soft 150000 / hard 163000 / every 5000,
+  `windowCleared:true` 是重启后的正常状态,保温待她下一条消息后自动上岗);
+  **OB 与 browser 两个 `/mcp` 各 200**。
+  **PERIOD_CONFIG 本次无需重补**:`GET /period` 的 `effective` 直接就是 07-19~07-25 / 24 / 7
+  (`runtime` 为空是新容器正常状态)。
+  **⚠️ 踩坑 16 照旧活着**:容器内 `PERIOD_FILE` 仍为空、`/data` 仍不存在(本次第三次实测),
+  与第二十五/二十六次结论一致,本次同样没动它(需网页挂卷 + 所有者拍板)。
+  **版本指纹:ian.md v26 = 22558B md5 `97729ec4994833f39a0a8357887e528f`;
+  profile-instructions.md = 3056B md5 `7adb5c333bef16cb22f8b92232cfc7ac`;
+  mcp-servers.json = 310B md5 `ac40dbce57cd79d1602510dcb8d043a3`(两条目);
+  CLAUDE.md = md5 `20578f038a066ad65148d3878ff1c6e6`;
+  ctxguard.mjs = `a70e377e63923926beddc893d05a7e82`;test-ctxguard.mjs = `3d2c95a315fb3234f2263e7ced76f852`
+  ——下次部署以此为准,两份人设缺一不可。**
+  **回滚**:v25 原件(22371B `ebfb33aa…`)已在本次部署前从容器拷出。如果晏的表现出问题,
+  拿它原样替换 ian.md 重新部署即可(其余全不用动);本次改动只有一段,
+  **也可以直接把 8.1 末尾那段删掉再部署**。
+  ⚠️ **这份原件在会话沙盒里,会话结束即消失——真要留底得所有者自己存**
+  (第二十四次那次就是因为没人留底,v22 永久失传)。
 - 2026-08-04(第二十六次) **ian.md v24→v25:Part V 三处定点修订(所有者逐字提供并批准)**。
   距第二十五次约 1 小时。**只改 ian.md 一件**,profile-instructions.md / CLAUDE.md /
   mcp-servers.json / 代码 / 环境变量**全部零改动**(但文件随构建打包进容器,必须走完整部署)。
