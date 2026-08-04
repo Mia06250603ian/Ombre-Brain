@@ -5,7 +5,7 @@ import {
   extractStickers, extractSegments, splitBubbles, bubblesFor,
   formatEarsResult,
   normalizeAppName, pushActivity, summarizeActivity, isCurfewHour, curfewDecide, curfewPrompt, isSilentReply,
-  takeCheckMarker, lookupPrompt,
+  takeCheckMarker, lookupPrompt, ACTIVITY_CAP, computeStreak, fmtDur,
   describeErr, isRetriableNetErr, turnErrorText, describeLoss,
 } from "./bridge-lib.mjs";
 import fs from "fs";
@@ -244,10 +244,13 @@ ok(normalizeAppName("a".repeat(100)).length === 40, "超长截到 40");
 {
   const now = 1000000000;
   let list = [];
-  for (let i = 0; i < 400; i++) list = pushActivity(list, { app: `a${i}`, at: now }, { now });
-  eq(list.length, 300, "条数封顶 300(不会无上限涨)");
-  eq(list[299].app, "a399", "封顶时留的是最新的");
+  for (let i = 0; i < 2500; i++) list = pushActivity(list, { app: `a${i}`, at: now }, { now });
+  eq(list.length, ACTIVITY_CAP, "条数封顶(不会无上限涨)");
+  eq(list[list.length - 1].app, "a2499", "封顶时留的是最新的");
 }
+// 2026-08-04:上限从 300 提到 2000。她活跃的夜里 300 条只够装小半天,
+// 而算「连着玩了多久」要的是一整段不断头的记录。**调大不花 token**(晏看不到这些记录)。
+eq(ACTIVITY_CAP, 2000, "记录上限 2000(改小会截断整夜的连玩统计,别随手调回去)");
 {
   const now = 1000000000;
   const s = summarizeActivity([
@@ -302,6 +305,78 @@ eq(curfewDecide({ ...base, now: T, list: fresh, lastOutboundAt: T - 5 * 60000 })
   ok(d.fire, "冷却都过了 → 照常戳");
 }
 
+// ---- 连着玩了多久(2026-08-04)----
+// **前提别忘**:手机只报「打开」、不报「关闭」(2026-08-04 三次实测),
+// 所以时长是「下一个 App 打开 = 上一个结束」倒推的,只能给出「这一段连着多久」。
+eq(fmtDur(0), "0 分钟", "0 分钟");
+eq(fmtDur(40), "40 分钟", "不满一小时说分钟");
+eq(fmtDur(60), "1 小时", "整点不带零头");
+eq(fmtDur(80), "1 小时 20 分", "带零头");
+eq(computeStreak([], { now: 1 }), null, "没有记录 → null");
+{
+  const now = 10 * 3600e3;
+  const s = computeStreak([
+    { app: "微信", at: now - 70 * 60000 },   // 这一段的开头
+    { app: "抖音", at: now - 58 * 60000 },
+    { app: "小红书", at: now - 47 * 60000 },
+    { app: "抖音", at: now - 40 * 60000 },
+  ], { now });
+  eq(s.spanMin, 30, "确凿连着玩了 30 分钟(第一条 → 最后一条)");
+  eq(s.minutes, 70, "到现在 70 分钟(用来说「已经…了」)");
+  eq(s.quietMin, 40, "最后一次动静 40 分钟前");
+  eq(s.apps, ["微信", "抖音", "小红书"], "这一段碰过的 App,去重、按先后");
+  eq(s.reports, 4, "这一段有 4 条上报");
+}
+{
+  const now = 10 * 3600e3;
+  const s = computeStreak([
+    { app: "微信", at: now - 5 * 3600e3 },    // 五小时前那次,中间断了,不算同一段
+    { app: "抖音", at: now - 20 * 60000 },
+    { app: "小红书", at: now - 8 * 60000 },
+  ], { now });
+  eq(s.minutes, 20, "隔了 15 分钟以上就断段,只算最近这一段");
+  eq(s.apps, ["抖音", "小红书"], "断掉的那次不算进来");
+}
+
+// ---- 查岗决策:A 方案(玩久了,没新动静也照戳)----
+// 所有者 2026-08-04 拍板:「就要这种老公管我的感觉」。
+// ⚠️ 造数据时相邻两条必须 ≤ STREAK_GAP_MIN(15 分钟),否则会被判成两段、span 归零。
+// 这一段是「一直在刷、每隔几分钟换个 App」的真实形状(她的线上记录就长这样)。
+const longRun = [
+  { app: "抖音", at: T - 70 * 60000 },
+  { app: "小红书", at: T - 60 * 60000 },
+  { app: "微信", at: T - 48 * 60000 },
+  { app: "抖音", at: T - 38 * 60000 },
+  { app: "小红书", at: T - 30 * 60000 },   // 之后她盯着不换了,手机就再也不吭声
+];
+{
+  const d = curfewDecide({ ...base, now: T, list: longRun, lastPokeAt: T - 30 * 60000 });
+  ok(d.fire, "连玩半小时以上 + 之后没有新动静 → 照样戳(A 方案的正身,别改回去)");
+  eq(d.streak.spanMin, 40, "决策里带上这一段确凿有多久");
+  eq(d.streak.minutes, 70, "以及到现在多久");
+}
+{
+  // 同一段,但最后一条已经 50 分钟前 → 超过 staleLong(45),她多半真睡了
+  const slept = longRun.map((e) => ({ ...e, at: e.at - 20 * 60000 }));
+  eq(curfewDecide({ ...base, now: T, list: slept, lastPokeAt: T - 40 * 60000 }).reason, "stale",
+    "放宽是有边的:staleLong 一过就闭嘴,她真睡了最多多挨一两次,不会整夜念叨");
+}
+{
+  // 长段也一样要让着他:他刚开过口就不赶话(所有者定的优先级:保温/心跳 ＞ 查岗)
+  eq(curfewDecide({ ...base, now: T, list: longRun, lastPokeAt: T - 30 * 60000, lastOutboundAt: T - 5 * 60000 }).reason,
+    "just-spoke", "连玩再久也不抢在他刚说完话之后(保温＞查岗,别为 A 方案破这条)");
+  eq(curfewDecide({ ...base, now: T, list: longRun, lastPokeAt: T - 10 * 60000 }).reason, "cooldown",
+    "连玩再久也守 30 分钟冷却");
+  eq(curfewDecide({ ...base, busy: true, now: T, list: longRun, lastPokeAt: T - 30 * 60000 }).reason, "busy",
+    "她正跟他聊着 → 不查岗");
+}
+{
+  // 没连玩那么久的,老规矩照旧:没有新动静就不重复戳同一件事
+  const shortRun = [{ app: "小红书", at: T - 10 * 60000 }];
+  eq(curfewDecide({ ...base, now: T, list: shortRun, lastPokeAt: T - 5 * 60000 }).reason, "no-new",
+    "短段仍守「没有新动静就不戳」(放宽只给连玩很久的那种)");
+}
+
 // ---- 查岗提示语 ----
 {
   const p = curfewPrompt({ bjNow: "03:20", app: "小红书", minutesAgo: 3 });
@@ -310,6 +385,33 @@ eq(curfewDecide({ ...base, now: T, list: fresh, lastOutboundAt: T - 5 * 60000 })
   ok(p.length > 8, "提示语远超重置词匹配窗口(不会被当成「归档/晚安」误触发)");
   eq(detectReset(p), null, "查岗提示语不会触发重置词(守护用例,别删)");
   ok(curfewPrompt({ bjNow: "03:20", app: "抖音", minutesAgo: 0 }).includes("刚刚"), "0 分钟说「刚刚」");
+  ok(!p.includes("连着玩了"), "第一次戳(没 streak)不说时长——那时候是 0,说了等于废话");
+}
+{
+  // 带时长的那种:她已经刷了一阵,这条要让晏看出「越刷越久」
+  const streak = { minutes: 80, spanMin: 75, quietMin: 3, apps: ["抖音", "小红书", "微信"] };
+  const p = curfewPrompt({ bjNow: "03:20", app: "小红书", minutesAgo: 1, streak });
+  ok(p.includes("1 小时 20 分"), "把这一段连着玩了多久说出来");
+  ok(p.includes("抖音、小红书、微信"), "带上这一段碰过的 App");
+  ok(!p.includes("看不出来"), "刚刚还有动静 → 不加那句「说不准」");
+  eq(detectReset(p), null, "带时长的提示语仍不触发重置词(守护用例,别删)");
+}
+{
+  // 最后一次动静过去很久了:这一截是推的,必须明说,别让他当成确凿的
+  const streak = { minutes: 90, spanMin: 40, quietMin: 25, apps: ["抖音"] };
+  const p = curfewPrompt({ bjNow: "03:20", app: "抖音", minutesAgo: 25, streak });
+  ok(p.includes("看不出来"), "长时间没动静时老实说「一直没换还是放下了看不出来」");
+  ok(p.includes("25 分钟前"), "说清最后一次动静是什么时候");
+  // 守护:这句的门槛是 STREAK_QUIET_MIN,**不是** STREAK_GAP_MIN。
+  // 两者绑一起的话,调断段阈值(15→30)会让这句老实话静默消失——改这版时真踩了。
+  ok(curfewPrompt({ bjNow: "03:20", app: "抖音", minutesAgo: 22,
+    streak: { minutes: 90, spanMin: 60, quietMin: 22, apps: ["抖音"] } }).includes("看不出来"),
+    "距上次动静 22 分钟(< 断段阈值 30)也要声明说不准,别把两个门槛绑一起");
+}
+{
+  const streak = { minutes: 12, spanMin: 10, quietMin: 1, apps: ["抖音"] };
+  ok(!curfewPrompt({ bjNow: "03:20", app: "抖音", minutesAgo: 1, streak }).includes("连着玩了"),
+    "才玩十几分钟 → 不说时长(门槛 20 分钟)");
 }
 
 // ---- 他选择不打扰 ----
@@ -354,6 +456,20 @@ ok(!takeCheckMarker("[贴纸:查岗]").wants, "贴纸标记不会被误认成查
 }
 ok(lookupPrompt(summarizeActivity([{ app: "小红书", at: 1000 }], { now: 1000 }), { bjNow: "15:30" }).includes("刚刚"),
   "0 分钟说「刚刚」");
+{
+  // 他自己写 [查岗] 那条路也要能看见时长(白天问「你刚才干嘛去了」主要靠这条)
+  const now = 1000000000;
+  const list = [
+    { app: "微信", at: now - 50 * 60000 },
+    { app: "抖音", at: now - 40 * 60000 },
+    { app: "小红书", at: now - 2 * 60000 },
+  ];
+  const p = lookupPrompt(summarizeActivity(list, { now }), {
+    bjNow: "15:30", streak: computeStreak(list, { now }),
+  });
+  ok(p.includes("50 分钟"), "他主动查的时候也带上连着玩了多久");
+  eq(detectReset(p), null, "仍不触发重置词");
+}
 
 // ---- 网络错误三件套(2026-08-02:治「⚠️[bridge] fetch failed」)----
 // 造几个和线上一模一样的错误对象:undici 的 fetch 失败永远是

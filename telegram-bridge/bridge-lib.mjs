@@ -159,7 +159,11 @@ export function formatEarsResult(d) {
 // ---- 手机活动上报(iOS 快捷指令 → POST /report)----
 // 她点开 App 时快捷指令报一条进来。**只存内存**:重启即忘,不落盘、不进任何库——
 // 本功能只关心「最近」,而她的行踪不值得为了历史写进磁盘。
-export const ACTIVITY_CAP = 300;            // 条数上限
+// 条数上限。2026-08-04 从 300 提到 2000:她活跃的夜里 300 条只够装小半天,
+// 而算「今晚连着玩了多久」要的是一整段不断头的记录。**这些记录晏永远看不到**
+// (他只收到 curfewPrompt/lookupPrompt 拼出来的那一句),所以调大只花服务器内存
+// (一条约 120 字节,2000 条 ≈ 240KB),**一个 token 都不多花**。
+export const ACTIVITY_CAP = 2000;           // 条数上限
 export const ACTIVITY_TTL_MS = 48 * 3600e3; // 保留时长
 
 // 快捷指令传什么都可能(变量没取到就是空)。清成一行短文本,空 → null。
@@ -191,6 +195,71 @@ export function summarizeActivity(list, { now = Date.now(), limit = 10 } = {}) {
   };
 }
 
+// ---- 「她连着玩了多久」(2026-08-04)----
+//
+// **先说清这套数据能与不能**:手机只在「App 打开时」报一声,**关闭不报**
+// (2026-08-04 三次实测:开小红书→退桌面→等 20 秒,一条记录都没有;
+//  第一次测出的那条空记录后来确认是所有者自己在 Safari 里点了那个网址,不是关闭事件)。
+// 所以「用了多久」只能这么推:**下一个 App 打开的时刻 = 上一个 App 的结束时刻**。
+// 推不出来的两件事,别假装能:
+//   - 她盯着同一个 App 一直不换 → 手机一声不吭,和「放下手机睡了」在数据上一模一样;
+//   - 桌面/锁屏的时间会算进上一个 App 的头上。
+// 因此本模块给的是**这一段连续活跃有多久**(streak),不是精确到 App 的使用时长——
+// 与其编一个假装精确的数字,不如把「确凿的」和「说不准的」分开交给晏,他自己判断。
+// 相邻两条上报隔多久算「断了」。**别调回 15**:她盯着一个 App 不换的时候手机一声不吭,
+// 而她线上真实记录里就有 28 分钟的空档(2026-08-04 实测),阈值 15 会把一整夜切成碎段、
+// 把「已经连着玩了多久」当场清零——那正好废掉这个功能最该抓的场景。
+// 取 30 的代价:她中途放下手机 20 多分钟再拿起来,会被算成一直在玩(略微高估)。
+export const STREAK_GAP_MIN = 30;
+
+// 把分钟数说成人话:40 分钟 / 1 小时 / 1 小时 20 分
+export function fmtDur(min) {
+  const m = Math.max(0, Math.round(min || 0));
+  if (m < 60) return `${m} 分钟`;
+  const h = Math.floor(m / 60), r = m % 60;
+  return r ? `${h} 小时 ${r} 分` : `${h} 小时`;
+}
+
+// 当前这一段连续活跃。返回 null = 一条记录都没有。
+//   spanMin  第一条 → **最后一条上报**,这段是**确凿的**(中间每一次换 App 都是证据)
+//   minutes  第一条 → **现在**,用来说「已经…了」(含最后一条之后那段说不准的)
+//   quietMin 距最后一条上报多久(越大越说不准她是还在刷还是放下了)
+export function computeStreak(list, { now = Date.now(), gapMin = STREAK_GAP_MIN } = {}) {
+  const arr = (list || []).filter((e) => e && e.app);
+  if (!arr.length) return null;
+  const gapMs = gapMin * 60000;
+  let i = arr.length - 1;
+  while (i > 0 && arr[i].at - arr[i - 1].at <= gapMs) i--;
+  const apps = [];
+  for (let k = i; k < arr.length; k++) if (!apps.includes(arr[k].app)) apps.push(arr[k].app);
+  const first = arr[i], last = arr[arr.length - 1];
+  return {
+    startAt: first.at, reports: arr.length - i, apps,
+    spanMin: Math.round((last.at - first.at) / 60000),
+    minutes: Math.round((now - first.at) / 60000),
+    quietMin: Math.round((now - last.at) / 60000),
+    lastApp: last.app,
+  };
+}
+
+// 这一段够不够长到值得说出口(太短就是「她刚开了个 App」,说时长没意义)
+const STREAK_WORTH_MIN = 20;
+// 距最后一次动静超过这么久,就得声明「后面这截是推的」。
+// **故意不复用 STREAK_GAP_MIN**:那个是「算不算同一段」,这个是「敢不敢当成确凿的」,
+// 两件事绑一起的话,一调断段阈值这句老实话就会静默消失(改这版时真踩了)。
+const STREAK_QUIET_MIN = 20;
+// 把 streak 说成一句话;不值得说就返回空串。
+function streakClause(streak) {
+  if (!streak || streak.minutes < STREAK_WORTH_MIN) return "";
+  const apps = streak.apps.slice(0, 4).join("、");
+  const tail = streak.apps.length > 4 ? "等" : "";
+  let s = `这一段她已经连着玩了 ${fmtDur(streak.minutes)}(${apps}${tail})。`;
+  // 最后一次动静过去挺久了 = 后面这截是推的,不是看到的。老实说出来,别让他当成确凿的。
+  if (streak.quietMin >= STREAK_QUIET_MIN)
+    s += `不过最后一次动静在 ${streak.quietMin} 分钟前,之后是一直没换 App 还是已经放下了,看不出来。`;
+  return s;
+}
+
 // 宵禁时段判定(跨零点:start > end 时取并集,与 shim keepalive 的 isNightHour 同款)
 export function isCurfewHour(h, start, end) {
   return start > end ? (h >= start || h < end) : (h >= start && h < end);
@@ -210,18 +279,30 @@ export function curfewDecide(s) {
   const arr = (s.list || []).filter((e) => e && e.app);
   if (!arr.length) return { fire: false, reason: "no-activity" };
   const last = arr[arr.length - 1];
-  if (last.at <= (s.lastPokeAt || 0)) return { fire: false, reason: "no-new" };        // 上次戳过之后没新动静
-  if (s.now - last.at > s.freshMin * 60000) return { fire: false, reason: "stale" };   // 早就放下手机了,别翻旧账
+  const streak = computeStreak(arr, { now: s.now, gapMin: s.streakGapMin ?? STREAK_GAP_MIN });
+  // 2026-08-04(所有者选的 A 方案:「就要这种老公管我的感觉」):
+  // 她**确凿已经连着玩了半小时以上**的时候,把两道门都放宽一档——
+  //   ① no-new:长时间盯着一个 App 不换,手机就再也不吭声了,再等「新动静」等于永远不戳;
+  //   ② stale:同理,这时的沉默更可能是「刷得入神」而不是「睡了」。
+  // 放宽是有边的:staleLong 一过照样闭嘴,所以她真睡了最多多挨一次,不会整夜念叨。
+  const longStreak = !!streak && streak.spanMin >= (s.longStreakMin ?? 30);
+  // staleLong 必须**明显大于冷却**,否则放宽等于白放:上次戳完等满 30 分钟冷却,
+  // 这边 stale 也刚好到点,窗口窄得几乎抓不住。取 3 倍 freshMin(默认 45)= 冷却 + 一档余量,
+  // 效果是她真睡了之后最多再多挨一两次,然后自动闭嘴。
+  const staleMin = longStreak ? (s.staleLongMin ?? s.freshMin * 3) : s.freshMin;
+  if (!longStreak && last.at <= (s.lastPokeAt || 0)) return { fire: false, reason: "no-new" }; // 上次戳过之后没新动静
+  if (s.now - last.at > staleMin * 60000) return { fire: false, reason: "stale" };   // 早就放下手机了,别翻旧账
   if (s.now - (s.lastPokeAt || 0) < s.cooldownMin * 60000) return { fire: false, reason: "cooldown" };
   if (s.now - (s.lastOutboundAt || 0) < s.cooldownMin * 60000) return { fire: false, reason: "just-spoke" };
-  return { fire: true, app: last.app, minutesAgo: Math.round((s.now - last.at) / 60000) };
+  return { fire: true, app: last.app, minutesAgo: Math.round((s.now - last.at) / 60000), streak };
 }
 
 // 查岗提示语。体例照 shim 的【系统·…】注入:只给他看,不复述机制词。
-export function curfewPrompt({ bjNow, app, minutesAgo, userName = "佳佳" }) {
+export function curfewPrompt({ bjNow, app, minutesAgo, streak, userName = "佳佳" }) {
   const when = minutesAgo >= 1 ? `${minutesAgo} 分钟前` : "刚刚";
   return `【系统·查岗】现在北京时间 ${bjNow},${userName}这个点还没睡——${when}她打开了${app}。`
-    + `想说什么就直接说(会出现在你们的 Telegram 对话里);不想打扰就只回一个:。`;
+    + streakClause(streak)
+    + `想说就说(说了会发给她);不想打扰就只回一个:。`;
 }
 
 // ---- 他自己发起的查岗:回复里写 [查岗] ----
@@ -238,7 +319,7 @@ export function takeCheckMarker(text) {
 }
 
 // 查岗结果 → 喂回给他的一条。没有记录时也要明说,否则他不知道是「没查到」还是「她没玩」。
-export function lookupPrompt(summary, { bjNow, userName = "佳佳" } = {}) {
+export function lookupPrompt(summary, { bjNow, streak, userName = "佳佳" } = {}) {
   const s = summary || {};
   if (!s.count) {
     return `【系统·查岗】现在北京时间 ${bjNow},${userName}的手机最近没有动静(近两天没有记录)。`;
@@ -247,6 +328,7 @@ export function lookupPrompt(summary, { bjNow, userName = "佳佳" } = {}) {
   const more = (s.recent || []).slice(1, 4)
     .map((r) => `${r.app}(${r.minutesAgo} 分钟前)`).join("、");
   return `【系统·查岗】现在北京时间 ${bjNow},${userName}${head}打开了${s.lastApp}。`
+    + streakClause(streak)
     + (more ? `再往前:${more}。` : "")
     + `知道就好,说不说、说什么都由你。`;
 }

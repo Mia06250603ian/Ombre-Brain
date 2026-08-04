@@ -9,7 +9,7 @@ import {
   makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf, extractSegments, bubblesFor,
   formatEarsResult,
   normalizeAppName, pushActivity, summarizeActivity, curfewDecide, curfewPrompt, isSilentReply,
-  takeCheckMarker, lookupPrompt,
+  takeCheckMarker, lookupPrompt, computeStreak, ACTIVITY_CAP, STREAK_GAP_MIN,
   describeErr, isRetriableNetErr, turnErrorText,
 } from "./bridge-lib.mjs";
 
@@ -38,6 +38,12 @@ const CURFEW_END = +(process.env.CURFEW_END || 7);            // 北京时间,�
 const CURFEW_COOLDOWN_MIN = +(process.env.CURFEW_COOLDOWN_MIN || 30);
 const CURFEW_CHECK_MIN = +(process.env.CURFEW_CHECK_MIN || 5);
 const ACTIVITY_FRESH_MIN = +(process.env.ACTIVITY_FRESH_MIN || 15); // 超过这么久的记录不再当「她正在玩」
+// 「她连着玩了多久」相关(2026-08-04)。手机只报「打开」不报「关闭」,所以时长是
+// 从「下一个 App 打开」倒推的,细节见 bridge-lib 的 computeStreak 那段注释。
+const ACTIVITY_CAP_N = +(process.env.ACTIVITY_CAP || ACTIVITY_CAP);
+const STREAK_GAP = +(process.env.STREAK_GAP_MIN || STREAK_GAP_MIN);   // 相邻上报隔多久算断段
+const CURFEW_LONG_STREAK_MIN = +(process.env.CURFEW_LONG_STREAK_MIN || 30); // 连玩这么久 = 放宽两道门
+const CURFEW_STALE_LONG_MIN = +(process.env.CURFEW_STALE_LONG_MIN || ACTIVITY_FRESH_MIN * 3);
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const bjHour = () => (new Date().getUTCHours() + 8) % 24;
@@ -464,7 +470,7 @@ function handleReport(req, res) {
   lastRawReport = { at: Date.now(), method: req.method, query: req.query ?? null, body: req.body ?? null, xApp: hdrDecoded || null };
   const app_name = normalizeAppName(src.app_name ?? src.app ?? hdrDecoded);
   if (!app_name) { log("[report] 到了但没有 App 名"); return res.json({ ok: true, stored: false, note: "app_name 为空,只留了原始内容" }); }
-  activity = pushActivity(activity, { app: app_name });
+  activity = pushActivity(activity, { app: app_name }, { cap: ACTIVITY_CAP_N });
   log("[report]", app_name, "共", activity.length, "条");
   res.json({ ok: true, stored: true, count: activity.length });
 }
@@ -473,14 +479,20 @@ app.get("/report", handleReport);
 app.get("/activity", (req, res) => {
   if (!REPORT_ON) return res.status(503).json({ ok: false, error: "REPORT_TOKEN 未配置" });
   if (!reportAuth(req)) return res.status(401).json({ ok: false });
-  res.json({ now: new Date().toISOString(), ...summarizeActivity(activity), lastRawReport });
+  // streak 只在这个带钥匙的口子暴露,别放进无鉴权的 /health(那等于公开她的作息)
+  res.json({
+    now: new Date().toISOString(), ...summarizeActivity(activity),
+    streak: computeStreak(activity, { gapMin: STREAK_GAP }), cap: ACTIVITY_CAP_N, lastRawReport,
+  });
 });
 // 他写了 [查岗] → 把查到的作为新一轮喂回去。lookup:true 标记这一轮不再响应标记(防打转)。
 function queueLookup(chatId) {
   if (!REPORT_ON) { log("[lookup] REPORT_TOKEN 未配置,忽略"); return; }
   log("[lookup] 他要查");
   turnQueue.push({
-    text: lookupPrompt(summarizeActivity(activity), { bjNow: bjNowStr() }),
+    text: lookupPrompt(summarizeActivity(activity), {
+      bjNow: bjNowStr(), streak: computeStreak(activity, { gapMin: STREAK_GAP }),
+    }),
     images: [], chatId: chatId || lastChatId, lookup: true,
   });
   runQueue();
@@ -492,13 +504,14 @@ function curfewTick() {
     lastPokeAt, lastOutboundAt,
     curfewStart: CURFEW_START, curfewEnd: CURFEW_END,
     cooldownMin: CURFEW_COOLDOWN_MIN, freshMin: ACTIVITY_FRESH_MIN,
+    streakGapMin: STREAK_GAP, longStreakMin: CURFEW_LONG_STREAK_MIN, staleLongMin: CURFEW_STALE_LONG_MIN,
   });
   if (!d.fire) return;
   if (!lastChatId) { log("[curfew] 还没有 chat,跳过"); return; }
   lastPokeAt = Date.now();
-  log("[curfew] poke", d.app, d.minutesAgo, "分钟前");
+  log("[curfew] poke", d.app, d.minutesAgo, "分钟前", "连玩", d.streak?.minutes ?? 0, "分钟");
   turnQueue.push({
-    text: curfewPrompt({ bjNow: bjNowStr(), app: d.app, minutesAgo: d.minutesAgo }),
+    text: curfewPrompt({ bjNow: bjNowStr(), app: d.app, minutesAgo: d.minutesAgo, streak: d.streak }),
     images: [], chatId: lastChatId, curfew: true,
   });
   runQueue();
