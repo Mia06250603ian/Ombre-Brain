@@ -7,6 +7,7 @@ import {
   normalizeAppName, pushActivity, summarizeActivity, isCurfewHour, curfewDecide, curfewPrompt, isSilentReply,
   takeCheckMarker, lookupPrompt, ACTIVITY_CAP, computeStreak, fmtDur,
   describeErr, isRetriableNetErr, turnErrorText, describeLoss,
+  letterDecide, letterPrompt, LETTER_HOUR, LETTER_MIN, LETTER_WINDOW_MIN,
 } from "./bridge-lib.mjs";
 import fs from "fs";
 
@@ -536,6 +537,56 @@ const undiciErr = (causeName, causeMsg, code) => {
     ok(!/fetch failed/i.test(s), "**给她看的话里永远不许出现 fetch failed**(守护用例,别删)");
     ok(s.startsWith("⚠️[bridge]"), "仍然标明是桥在说话,不是晏在说话");
   }
+}
+
+// ---- 每天一次的「写信」提醒(2026-08-06)----
+{
+  const base = {
+    on: true, now: 1_000_000_000_000, hour: 22, minute: 30,
+    today: "2026-08-06", lastDay: "", atHour: 22, atMinute: 30,
+    windowMin: 90, quietMin: 30, busy: false, lastOutboundAt: 0,
+  };
+  const D = (o) => letterDecide({ ...base, ...o });
+
+  ok(D({}).fire, "写信-到点就提醒");
+  eq(D({ on: false }).reason, "off", "写信-关掉就不提醒");
+  eq(D({ hour: 22, minute: 29 }).reason, "too-early", "写信-差一分钟不提醒");
+  ok(D({ hour: 22, minute: 31 }).fire, "写信-过一分钟照样提醒(不是只卡那一秒)");
+  ok(D({ hour: 23, minute: 59 }).fire, "写信-窗口内最后一分钟还能提醒");
+  eq(D({ hour: 0, minute: 0 }).reason, "too-early", "写信-过了零点不补(窗口不跨天)");
+  eq(D({ hour: 12, minute: 0 }).reason, "too-early", "写信-白天不提醒");
+
+  // 一天只一次
+  eq(D({ lastDay: "2026-08-06" }).reason, "done-today", "写信-今天提醒过就不再提醒");
+  ok(D({ lastDay: "2026-08-05" }).fire, "写信-昨天提醒过不影响今天");
+  // 用日期字符串而不是布尔:重启后同一天仍然记得提醒过了
+  eq(D({ lastDay: "2026-08-06", now: base.now + 3600_000 }).reason, "done-today",
+     "写信-一天一次是按北京日期比的(重启也不会重复提醒)");
+
+  // 让路
+  eq(D({ busy: true }).reason, "busy", "写信-她正在聊就不插队");
+  eq(D({ lastOutboundAt: base.now - 60_000 }).reason, "just-spoke", "写信-他刚开过口就等一等");
+  ok(D({ lastOutboundAt: base.now - 31 * 60_000 }).fire, "写信-过了安静期就可以提醒");
+
+  // 时间可配
+  ok(D({ hour: 9, minute: 0, atHour: 9, atMinute: 0 }).fire, "写信-时间可以改");
+
+  // 提示语
+  const p = letterPrompt({ bjNow: "22:30" });
+  ok(p.includes("【系统·写信】"), "写信-带【系统·写信】标记(和 CLAUDE.md 里的字一模一样)");
+  ok(p.includes("22:30"), "写信-带当前时间");
+  ok(p.includes("佳佳"), "写信-点名给谁写");
+  ok(p.includes("草稿"), "写信-说明给别人的要存草稿");
+  ok(/没有就只回一个/.test(p), "写信-给他「不写」的出口");
+  // 和 curfewPrompt / formatEarsResult 同款守护:必须远超重置词匹配窗口
+  ok(p.length > 60, "写信-提示语够长,不会被 detectReset 误判成归档/晚安(守护用例,别删)");
+  eq(detectReset(p), null, "写信-提示语不触发重置词(归档/晚安/换窗口)");
+  // 他回「。」= 不写,这条不该进对话
+  ok(isSilentReply("。"), "写信-回「。」算不说话(和查岗共用同一判定)");
+  // 默认值
+  eq([LETTER_HOUR, LETTER_MIN, LETTER_WINDOW_MIN], [22, 30, 90], "写信-默认 22:30 + 90 分钟窗口");
+  ok(LETTER_HOUR * 60 + LETTER_MIN + LETTER_WINDOW_MIN <= 24 * 60,
+     "写信-默认窗口不跨零点(跨了的话「今天提醒过没」的日期比较会错乱)");
 }
 
 console.log(fail ? `\n${fail}/${n} FAILED` : `${n} 项全绿 ✓`);
