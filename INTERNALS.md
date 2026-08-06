@@ -130,7 +130,7 @@
 **`pulse`** — 系统状态：
 - 返回各类型桶数量、衰减引擎状态、未解决/钉选/feel 统计
 
-**REST API（17 个端点）**
+**REST API（19 个端点）**
 
 | 端点 | 方法 | 功能 |
 |---|---|---|
@@ -140,6 +140,8 @@
 | `/dashboard` | GET | Dashboard 页面 |
 | `/api/buckets` | GET | 桶列表 🔒 |
 | `/api/bucket/{id}` | GET | 桶详情 🔒 |
+| `/api/bucket/{id}` | PATCH | 改桶（名称/内容/域/标签/重要度/情感/钉选/触发日期，白名单字段；改内容会重建向量）🔒 |
+| `/api/bucket/{id}` | DELETE | 删桶（默认真删，写前快照；`?mode=archive` 只归档；钉选桶需 `?force=1`）🔒 |
 | `/api/search?q=` | GET | 搜索 🔒 |
 | `/api/network` | GET | 向量相似网络 🔒 |
 | `/api/breath-debug` | GET | 评分调试 🔒 |
