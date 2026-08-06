@@ -296,8 +296,13 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
 
 ## 部署记录
 
-- 2026-08-06 **每个 App 各用了多久(分项时长)**。⚠️ **代码已进仓库,截至本行写下时【尚未部署】**
-  ——线上跑的还是只报总时长的旧版。部署后回来把这一行改掉并补 deployment id 与验收结果。
+- 2026-08-06 **每个 App 各用了多久(分项时长)上线**(只改 bridge,**shim 与晏的窗口零改动**)。
+  deployment `6a74e0a04243c79e762cc44c` 约 **1 分钟** RUNNING,PLANTYPE `nodejs`。
+  验收:`/health` 各开关照旧(polling/ears/report/curfew/letter 全 true、贴纸 35);
+  容器内 `server.js` `81ba5946…`、`bridge-lib.mjs` `19feceded…`、`test-bridge.mjs` `20a151c9…`
+  **与本地逐字一致**;`/activity` 回读到 `durations` 字段,且线上真实记录当场实证了已知边界 9
+  ——第一条就是 `Claude`(**不在她勾选的 5 个里**),最后一条 `ongoing:true`。
+  **部署前的 md5 对账:容器四件与仓库 `HEAD~1` 完全一致,无踩坑 11。**
   起因:所有者问「自动化我没勾选的 app 他怎么也能看到使用时间」,顺藤摸到**触发条件带「关闭」**
   这件事(已知边界 9),而这恰恰是分项时长的数据源;她随后说「我最开始是想让他能看到我每个 app
   用了多久,结果他现在只能看到总时长」,**拍板做分项、保留「关闭」的勾**(代价是晏能看到
