@@ -1303,7 +1303,8 @@ function renderDetailView() {
     '<div class="detail-content">' + esc(b.content) + '</div>' +
     '<div class="detail-actions">' +
       '<button class="btn-secondary" onclick="renderDetailEdit()">✎ 编辑</button>' +
-      '<button class="btn-secondary" onclick="archiveBucket()">🗄 归档</button>' +
+      // feel 桶永不归档(规格),这里就不给按钮
+      (meta.type === 'feel' ? '' : '<button class="btn-secondary" onclick="archiveBucket()">🗄 归档</button>') +
       '<button class="btn-danger" onclick="deleteBucket()">🗑 删除</button>' +
     '</div>' +
     '<div class="detail-msg" id="detail-msg"></div>';
@@ -1333,9 +1334,10 @@ function renderDetailEdit() {
         chk('digested', '已消化', meta.digested) +
         chk('pinned', '钉选', meta.pinned) +
         chk('dormant', '休眠', meta.dormant) +
+        chk('trigger_handled', '触发已处理', meta.trigger_handled) +
       '</div>' +
       '<label>内容</label><textarea id="ed-content" rows="12">' + esc(b.content || '') + '</textarea>' +
-      '<p class="detail-hint">改内容会重建该桶的向量；钉选桶的重要度锁定为 10。</p>' +
+      '<p class="detail-hint">只有真改过的字段才会提交；动了内容才重建向量、才留写前快照。钉选桶的重要度锁定为 10。</p>' +
     '</div>' +
     '<div class="detail-actions">' +
       '<button class="btn-primary" onclick="saveDetailEdit()">保存</button>' +
@@ -1354,33 +1356,46 @@ function detailMsg(text, isError) {
 
 async function saveDetailEdit() {
   if (!detailBucket) return;
+  var meta = detailBucket.metadata || {};
+  var isFeel = meta.type === 'feel';
   var val = function(id) { return document.getElementById(id).value.trim(); };
   var chk = function(id) { return document.getElementById(id).checked; };
 
   var name = val('ed-name');
   var domain = val('ed-domain');
   if (!name) { detailMsg('桶名不能为空', true); return; }
-  if (!domain) { detailMsg('域不能为空', true); return; }
+  // feel 桶按规格就是空 domain,别逼用户填一个
+  if (!domain && !isFeel) { detailMsg('域不能为空', true); return; }
 
   var trigger = val('ed-trigger');
   if (trigger && !/^\d{4}-\d{2}-\d{2}$/.test(trigger)) {
     detailMsg('触发日期格式应为 YYYY-MM-DD', true); return;
   }
 
-  var payload = {
-    name: name,
-    domain: domain,
-    tags: val('ed-tags'),
-    importance: Number(val('ed-importance')),
-    valence: Number(val('ed-valence')),
-    arousal: Number(val('ed-arousal')),
-    trigger_date: trigger,
-    resolved: chk('ed-resolved'),
-    digested: chk('ed-digested'),
-    pinned: chk('ed-pinned'),
-    dormant: chk('ed-dormant'),
-    content: document.getElementById('ed-content').value,
+  // 只提交真改过的字段:整包发会让「纯元数据改动不写快照」失效,
+  // 每存一次都白留一份历史,还会白重建一次向量。
+  var payload = {};
+  var put = function(key, now, before) {
+    if (JSON.stringify(now) !== JSON.stringify(before)) payload[key] = now;
   };
+  var listify = function(s) {
+    return s.split(',').map(function(x) { return x.trim(); }).filter(Boolean);
+  };
+  put('name', name, meta.name || '');
+  put('domain', listify(domain), meta.domain || []);
+  put('tags', listify(val('ed-tags')), meta.tags || []);
+  put('importance', Number(val('ed-importance')), meta.importance != null ? meta.importance : 5);
+  put('valence', Number(val('ed-valence')), meta.valence != null ? meta.valence : 0.5);
+  put('arousal', Number(val('ed-arousal')), meta.arousal != null ? meta.arousal : 0.3);
+  put('trigger_date', trigger, meta.trigger_date || '');
+  put('resolved', chk('ed-resolved'), !!meta.resolved);
+  put('digested', chk('ed-digested'), !!meta.digested);
+  put('pinned', chk('ed-pinned'), !!meta.pinned);
+  put('dormant', chk('ed-dormant'), !!meta.dormant);
+  put('trigger_handled', chk('ed-trigger_handled'), !!meta.trigger_handled);
+  put('content', document.getElementById('ed-content').value, detailBucket.content || '');
+
+  if (!Object.keys(payload).length) { renderDetailView(); detailMsg('没有改动'); return; }
 
   detailMsg('保存中…');
   try {
@@ -1423,8 +1438,15 @@ async function removeBucket(mode, force) {
     var res = await authFetch(url, { method: 'DELETE' });
     if (!res) return;
     var data = await res.json();
-    if (res.status === 409 && !force) {
-      if (confirm('这是钉选/保护桶。确认仍要删除吗？')) return removeBucket(mode, true);
+    if (res.status === 409) {
+      // feel 桶永不归档,这条不给重试的口子
+      if (data.error === 'feel_never_archives' || force) {
+        detailMsg(data.detail || data.error, true);
+        return;
+      }
+      if (confirm('这是钉选/固化桶。确认仍要' + (mode === 'archive' ? '归档' : '删除') + '吗？')) {
+        return removeBucket(mode, true);
+      }
       detailMsg('已取消');
       return;
     }

@@ -2122,7 +2122,8 @@ async def api_bucket_update(request):
     仪表板改桶：只改传入的字段，其余保持不动。
 
     Body (all optional): name, content, tags[], domain[], importance,
-    valence, arousal, resolved, pinned, digested, dormant, trigger_date.
+    valence, arousal, resolved, pinned, digested, dormant, trigger_date,
+    trigger_handled. Same field set trace() exposes to the model side.
     Content edits re-generate the embedding so search stays in sync.
     """
     from starlette.responses import JSONResponse
@@ -2144,7 +2145,7 @@ async def api_bucket_update(request):
     allowed = {
         "name", "content", "tags", "domain", "importance",
         "valence", "arousal", "resolved", "pinned", "digested",
-        "dormant", "trigger_date",
+        "dormant", "trigger_date", "trigger_handled",
     }
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
@@ -2158,8 +2159,16 @@ async def api_bucket_update(request):
                 val = [s.strip() for s in val.split(",")]
             updates[key] = [str(s).strip() for s in (val or []) if str(s).strip()]
 
-    if "domain" in updates and not updates["domain"]:
+    # feel buckets are created with an empty domain on purpose (B-10) —
+    # only ordinary buckets must keep one.
+    # feel 桶按规格就是空 domain，别在这儿硬塞一个回去。
+    is_feel = bucket.get("metadata", {}).get("type") == "feel"
+    if "domain" in updates and not updates["domain"] and not is_feel:
         return JSONResponse({"error": "domain cannot be empty"}, status_code=400)
+
+    if "trigger_date" in updates and updates["trigger_date"]:
+        if not _valid_date(str(updates["trigger_date"])):
+            return JSONResponse({"error": "trigger_date must be YYYY-MM-DD"}, status_code=400)
     if "name" in updates and not str(updates["name"]).strip():
         return JSONResponse({"error": "name cannot be empty"}, status_code=400)
 
@@ -2222,13 +2231,21 @@ async def api_bucket_delete(request):
         return JSONResponse({"error": "not found"}, status_code=404)
 
     meta = bucket.get("metadata", {})
-    if (meta.get("pinned") or meta.get("protected")) and not force:
+    if (meta.get("pinned") or meta.get("protected") or meta.get("type") == "permanent") and not force:
         return JSONResponse(
-            {"error": "protected", "detail": "钉选/保护桶需 force=1 才能删除"},
+            {"error": "protected", "detail": "钉选/固化桶需 force=1 才能删除或归档"},
             status_code=409,
         )
 
     if mode == "archive":
+        # Spec: feel buckets never archive — decay_engine skips them on purpose,
+        # so the dashboard must not be the one back door that files them away.
+        # 规格：feel 桶永不归档（衰减引擎明确跳过），网页端不能开这个后门。
+        if meta.get("type") == "feel":
+            return JSONResponse(
+                {"error": "feel_never_archives", "detail": "feel 桶按规格永不归档；要清掉请用删除"},
+                status_code=409,
+            )
         ok = await bucket_mgr.archive(bucket_id)
         if not ok:
             return JSONResponse({"error": "archive failed"}, status_code=500)

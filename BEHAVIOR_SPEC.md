@@ -595,7 +595,7 @@ feel 桶自身:
 | ⚠️-2 | `run_decay_cycle()` auto_resolved 实现存疑 | ✅ 已确认实现 | `decay_engine.py` 完整实现 imp≤4 + >30天 + 未解决 → `bucket_mgr.update(resolved=True)` |
 | ⚠️-3 | `list_all()` 是否遍历 `feel/` 子目录 | ✅ 已确认实现 | `list_all()` dirs 明确包含 `self.feel_dir`，递归遍历 |
 | ⚠️-4 | `_time_ripple()` 浮点增量被 `int()` 截断 | ❌ 已确认 Bug | 见 B-03，决策见下 |
-| ⚠️-5 | Dashboard `/api/*` 路由认证覆盖 | ✅ 已确认覆盖 | 所有 `/api/buckets`、`/api/search`、`/api/network`、`/api/bucket/{id}`、`/api/breath-debug` 均调用 `_require_auth(request)` |
+| ⚠️-5 | Dashboard `/api/*` 路由认证覆盖 | ✅ 已确认覆盖 | 所有 `/api/buckets`、`/api/search`、`/api/network`、`/api/bucket/{id}`、`/api/breath-debug` 均调用 `_require_auth(request)`；2026-08 新增的 `/api/bucket/{id}` PATCH/DELETE（Dashboard 改桶/删桶）同样覆盖 |
 
 ---
 
@@ -624,7 +624,8 @@ feel 桶自身:
 - `urgency_boost`：`arousal > 0.7 && !resolved → ×1.5`
 - `dream()` 连接提示（best_sim > 0.5）+ 结晶提示（feel 相似度 > 0.7 × ≥2 个）
 - 所有 `/api/*` Dashboard 路由均受 `_require_auth` 保护
-- `trace(delete=True)` 同步调用 `embedding_engine.delete_embedding()`
+- `trace(delete=True)` 同步调用 `embedding_engine.delete_embedding()`；Dashboard 的 `DELETE /api/bucket/{id}` 走同一条路径
+- Dashboard 改桶/删桶遵守同一批约束：feel 桶空 domain 保留且永不归档、resolved 不自动归档、钉选桶 importance 锁 10、纯元数据改动不写快照
 - `grow()` 单条失败 `try/except` 隔离，标注 `⚠️条目名`，其他条继续
 
 ---

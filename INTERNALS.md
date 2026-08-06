@@ -140,8 +140,8 @@
 | `/dashboard` | GET | Dashboard 页面 |
 | `/api/buckets` | GET | 桶列表 🔒 |
 | `/api/bucket/{id}` | GET | 桶详情 🔒 |
-| `/api/bucket/{id}` | PATCH | 改桶（名称/内容/域/标签/重要度/情感/钉选/触发日期，白名单字段；改内容会重建向量）🔒 |
-| `/api/bucket/{id}` | DELETE | 删桶（默认真删，写前快照；`?mode=archive` 只归档；钉选桶需 `?force=1`）🔒 |
+| `/api/bucket/{id}` | PATCH | 改桶（白名单字段：名称/内容/域/标签/重要度/情感/已解决/已消化/钉选/休眠/触发日期，与 `trace` 同一套；改内容才重建向量、才留写前快照；feel 桶允许空 domain）🔒 |
+| `/api/bucket/{id}` | DELETE | 删桶（默认真删，写前快照 + 清向量；`?mode=archive` 只归档，feel 桶按规格拒绝归档；钉选/固化桶需 `?force=1`）🔒 |
 | `/api/search?q=` | GET | 搜索 🔒 |
 | `/api/network` | GET | 向量相似网络 🔒 |
 | `/api/breath-debug` | GET | 评分调试 🔒 |
