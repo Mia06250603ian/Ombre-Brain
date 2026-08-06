@@ -1,0 +1,91 @@
+# ============================================================
+# gmail-mcp 镜像构建
+#
+# 为什么要有这个:这个 Zeabur 账号**禁止平台内构建**(ears 和 browser-hands 都栽过),
+# 所以镜像必须在 GitHub Actions 里构建、推到镜像仓库,Zeabur 那边拉现成的。
+#
+# 为什么推 Docker Hub 而不是 ghcr:本仓库已有的 docker-publish.yml 就是推 Docker Hub
+# (p0luz/ombre-brain),secrets 现成、镜像默认公开、Zeabur 免凭据可拉。
+# browser-hands 走 ghcr 是因为那个仓库是 fork 且公开,情况不同——照本仓库已有的来。
+#
+# 触发:只在 gmail-mcp/ 或本文件变动时跑,不影响 OB 自己的构建流程。
+#   main 分支    → :latest 和 :<sha>
+#   claude/** 分支 → :dev 和 :<sha>(没验过的分支构建不许占 :latest)
+# ============================================================
+
+name: Build & Push gmail-mcp Image
+
+on:
+  push:
+    branches:
+      - main
+      - 'claude/**'
+    paths:
+      - 'gmail-mcp/**'
+      - '.github/workflows/build-gmail-image.yml'
+  workflow_dispatch:      # 手动触发(注意:要本文件先进了 main 才会出现这个按钮)
+
+jobs:
+  # --- 先跑单测,红的就不构建 ---
+  # 照 kelivo-shim 的规矩:单测全绿才谈部署。
+  # 这两份测试不碰网络、不需要任何凭据,几秒钟跑完。
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r gmail-mcp/requirements.txt
+
+      - name: Run tests (167 项,不碰网络)
+        working-directory: gmail-mcp
+        run: |
+          python test_mailfilter.py
+          python test_server.py
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # main → latest;其他分支 → dev。没验过的构建不许顶掉 latest。
+      - name: Decide tag
+        id: tag
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "moving=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "moving=dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./gmail-mcp
+          push: true
+          platforms: linux/amd64
+          tags: |
+            p0luz/gmail-mcp:${{ steps.tag.outputs.moving }}
+            p0luz/gmail-mcp:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 说明
+        run: |
+          echo "镜像已推送:p0luz/gmail-mcp:${{ steps.tag.outputs.moving }}"
+          echo "Zeabur 用 PREBUILT_V2 模板拉这个标签即可(该账号禁止平台内构建)。"
