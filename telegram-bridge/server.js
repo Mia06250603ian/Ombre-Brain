@@ -9,7 +9,7 @@ import {
   makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf, extractSegments, bubblesFor,
   formatEarsResult,
   normalizeAppName, pushActivity, summarizeActivity, curfewDecide, curfewPrompt, isSilentReply,
-  takeCheckMarker, lookupPrompt, computeStreak, ACTIVITY_CAP, STREAK_GAP_MIN,
+  takeCheckMarker, lookupPrompt, computeStreak, appDurations, ACTIVITY_CAP, STREAK_GAP_MIN,
   letterDecide, letterPrompt, LETTER_HOUR, LETTER_MIN, LETTER_WINDOW_MIN, LETTER_QUIET_MIN,
   describeErr, isRetriableNetErr, turnErrorText,
 } from "./bridge-lib.mjs";
@@ -483,7 +483,9 @@ app.get("/activity", (req, res) => {
   // streak 只在这个带钥匙的口子暴露,别放进无鉴权的 /health(那等于公开她的作息)
   res.json({
     now: new Date().toISOString(), ...summarizeActivity(activity),
-    streak: computeStreak(activity, { gapMin: STREAK_GAP }), cap: ACTIVITY_CAP_N, lastRawReport,
+    streak: computeStreak(activity, { gapMin: STREAK_GAP }),
+    durations: appDurations(activity, { gapMin: STREAK_GAP }),
+    cap: ACTIVITY_CAP_N, lastRawReport,
   });
 });
 // 他写了 [查岗] → 把查到的作为新一轮喂回去。lookup:true 标记这一轮不再响应标记(防打转)。
@@ -493,6 +495,7 @@ function queueLookup(chatId) {
   turnQueue.push({
     text: lookupPrompt(summarizeActivity(activity), {
       bjNow: bjNowStr(), streak: computeStreak(activity, { gapMin: STREAK_GAP }),
+      durations: appDurations(activity, { gapMin: STREAK_GAP }),
     }),
     images: [], chatId: chatId || lastChatId, lookup: true,
   });
@@ -512,7 +515,7 @@ function curfewTick() {
   lastPokeAt = Date.now();
   log("[curfew] poke", d.app, d.minutesAgo, "分钟前", "连玩", d.streak?.minutes ?? 0, "分钟");
   turnQueue.push({
-    text: curfewPrompt({ bjNow: bjNowStr(), app: d.app, minutesAgo: d.minutesAgo, streak: d.streak }),
+    text: curfewPrompt({ bjNow: bjNowStr(), app: d.app, minutesAgo: d.minutesAgo, streak: d.streak, durations: d.durations }),
     images: [], chatId: lastChatId, curfew: true,
   });
   runQueue();
