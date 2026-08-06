@@ -15,6 +15,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from mailfilter import (
     is_security_mail,
+    parse_address,
+    parse_allowlist,
+    is_send_allowed,
     redact_summary,
     wrap_untrusted,
     html_to_text,
@@ -150,6 +153,52 @@ check_true("占位-主题被换掉", "已屏蔽" in _r["subject"])
 check_false("占位-主题不含原文", "验证码是 123456" in _r["subject"])
 _r2 = redact_summary("", "")
 check("占位-空发件人有兜底", _r2["from"], "(未知发件人)")
+
+
+# ============================================================
+# 三点五、发送白名单
+#
+# ⚠️ 这一节守的是「他能不能以佳佳的名义给真人发邮件」，是全服务最要紧的一道闸。
+#    最重要的是那条「白名单空 = 一封都不能发」——配置漏了必须是发不出去，
+#    绝不能变成发给任何人。
+# ============================================================
+
+_AL = ["3848378505@qq.com"]
+
+check("地址-裸地址", parse_address("a@b.com"), "a@b.com")
+check("地址-带名字", parse_address("小明 <a@b.com>"), "a@b.com")
+check("地址-大写转小写", parse_address("A@B.COM"), "a@b.com")
+check("地址-抠不出来给空串", parse_address("这不是邮箱"), "")
+check("地址-空输入", parse_address(""), "")
+
+check("白名单-解析逗号", parse_allowlist("a@b.com,c@d.com"), ["a@b.com", "c@d.com"])
+check("白名单-解析中文逗号", parse_allowlist("a@b.com，c@d.com"), ["a@b.com", "c@d.com"])
+check("白名单-解析分号", parse_allowlist("a@b.com;c@d.com"), ["a@b.com", "c@d.com"])
+check("白名单-带空格", parse_allowlist(" a@b.com , c@d.com "), ["a@b.com", "c@d.com"])
+check("白名单-空串", parse_allowlist(""), [])
+
+check_true("发送-白名单内放行", is_send_allowed("3848378505@qq.com", _AL))
+check_true("发送-带名字也放行", is_send_allowed("佳佳 <3848378505@qq.com>", _AL))
+check_true("发送-大写也放行", is_send_allowed("3848378505@QQ.COM", _AL))
+check_false("发送-不在白名单拒绝", is_send_allowed("stranger@example.com", _AL))
+check_false("发送-空收件人拒绝", is_send_allowed("", _AL))
+
+# 铁律一:白名单空 = 一封都不能发(配置漏了必须发不出去)
+check_false("发送-白名单为空时一律拒绝", is_send_allowed("3848378505@qq.com", []))
+check_false("发送-白名单为空时任何地址都拒绝", is_send_allowed("anyone@anywhere.com", []))
+
+# 铁律二:比对解析出的地址,不能被显示名骗过去
+check_false("发送-显示名里塞白名单地址骗不过", is_send_allowed("3848378505@qq.com <evil@x.com>", _AL))
+check_false("发送-相似地址不放行", is_send_allowed("3848378505@qq.com.evil.com", _AL))
+check_false("发送-子串不算命中", is_send_allowed("13848378505@qq.com", _AL))
+
+# 铁律三:不许通配
+check_false("发送-通配符不放行", is_send_allowed("someone@qq.com", _AL))
+check_false("发送-白名单写通配也无效", is_send_allowed("someone@qq.com", parse_allowlist("*@qq.com")))
+
+# 多收件人:必须每一个都在白名单里
+check_true("发送-多收件人全在白名单", is_send_allowed("3848378505@qq.com, 3848378505@qq.com", _AL))
+check_false("发送-多收件人有一个不在就整封拒", is_send_allowed("3848378505@qq.com, x@y.com", _AL))
 
 
 # ============================================================

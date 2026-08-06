@@ -15,6 +15,7 @@
 import re
 import html as _html
 from email.header import decode_header, make_header
+from email.utils import parseaddr
 
 
 # ============================================================
@@ -141,6 +142,73 @@ def redact_summary(sender: str, date: str) -> dict:
         "subject": "🔒 安全类邮件（验证码/密码重置一类），内容已屏蔽",
         "redacted": True,
     }
+
+
+# ============================================================
+# 一点五、发送白名单
+# ============================================================
+#
+# 2026-08-06 所有者改了主意:从「完全不能发」改成「**只能发给白名单里的地址**」，
+# 白名单第一个地址是她自己的 QQ 邮箱。以后加他朋友的地址，改环境变量即可。
+#
+# ⚠️ 三条铁律，改这里之前先读：
+#
+# 1. **白名单是空的时候 = 一封都不能发**，不是「不限制」。
+#    配置漏了的表现必须是「他发不出去」，绝不能是「他能发给任何人」。
+#    (和 GMAIL_TOKEN 没配 = 全拒 同一个道理。)
+# 2. **比对的是解析出来的邮箱地址本身**，不是整个 `名字 <地址>` 字符串——
+#    否则 `坏人 <evil@x.com>` 里只要塞进白名单地址的字样就可能骗过去。
+# 3. **不许通配**（`*@qq.com` 这种一律不支持）。域名级放行等于把一整个邮件服务商放进来了。
+
+_ADDR_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+
+
+def parse_address(raw: str) -> str:
+    """
+    从 `名字 <someone@example.com>` 里抠出 `someone@example.com`，小写返回。
+    抠不出来返回空串（空串永远不会命中白名单，因为白名单条目都非空）。
+
+    ⚠️ 必须用标准库的 `parseaddr`，**不能用「找第一个像邮箱的东西」那种正则搜索**。
+    2026-08-06 写单测时抓到:第一版用 `_ADDR_RE.search()` 取第一个匹配，于是
+    `3848378505@qq.com <evil@x.com>` 会被解析成白名单里那个地址——
+    **真正收信的是尖括号里的 evil@x.com，但白名单检查放行了**。
+    `parseaddr` 认的是尖括号里那个（也就是真正的收件人），显示名骗不过它。
+    正则只留下来做「这看着像不像邮箱」的校验。
+    """
+    if not raw:
+        return ""
+    _, addr = parseaddr(raw)
+    addr = (addr or "").strip().lower()
+    if addr and _ADDR_RE.fullmatch(addr):
+        return addr
+    return ""
+
+
+def parse_allowlist(raw: str) -> list:
+    """把环境变量里的逗号分隔白名单解析成小写地址列表。"""
+    out = []
+    for piece in (raw or "").replace("；", ",").replace(";", ",").replace("，", ",").split(","):
+        addr = parse_address(piece.strip())
+        if addr:
+            out.append(addr)
+    return out
+
+
+def is_send_allowed(to: str, allowlist) -> bool:
+    """
+    这封信能不能直接发出去。
+
+    to 可以是多个收件人（逗号分隔）——**必须每一个都在白名单里**才放行，
+    有一个不在就整封拒绝（不做「发给能发的那部分」这种聪明事，那会让他
+    以为整封都发出去了）。
+    """
+    if not allowlist:
+        return False          # 白名单空 = 一封都不能发
+    targets = [parse_address(p) for p in (to or "").replace("，", ",").split(",")]
+    targets = [t for t in targets if t]
+    if not targets:
+        return False
+    return all(t in allowlist for t in targets)
 
 
 # ============================================================

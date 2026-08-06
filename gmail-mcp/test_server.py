@@ -388,7 +388,8 @@ with TestClient(_app) as client:
     r = client.get("/health")
     check("启动-/health 不需要钥匙就能通", r.status_code, 200)
     _j = r.json()
-    check("启动-/health 说自己不能发信", _j["can_send_email"], False)
+    check("启动-/health 报出发送白名单", _j["can_send_to"], server.SEND_ALLOWLIST)
+    check("启动-/health 报出发送开关", _j["send_enabled"], bool(server.SEND_ALLOWLIST))
     check("启动-/health 说过滤是开的", _j["filter_security"], True)
     check("启动-/health 说账号配好了", _j["account_configured"], True)
 
@@ -425,13 +426,84 @@ for _n in ast.walk(_tree):
         if _n.module:
             _imports.add(_n.module.split(".")[0])
 
-check_false("没有发送能力-没 import smtplib", "smtplib" in _imports)
-check_false("没有发送能力-没 import aiosmtplib", "aiosmtplib" in _imports)
-
 _tool_names = [t.name for t in asyncio.run(server.mcp.list_tools())]
-check("工具正好四个", len(_tool_names), 4)
-check("工具名单", sorted(_tool_names), ["list_mail", "read_mail", "save_draft", "search_mail"])
-check_false("没有 send 工具", any("send" in n for n in _tool_names))
+check("工具正好五个", len(_tool_names), 5)
+check("工具名单", sorted(_tool_names),
+      ["list_mail", "read_mail", "save_draft", "search_mail", "send_mail"])
+
+
+# ============================================================
+# 十、发送:白名单制（2026-08-06 所有者改的口径）
+#
+# ⚠️ 这一节守的是全服务唯一一处「产生不可逆对外后果」的能力。
+#    信发出去收不回来，收信的人会当成佳佳本人写的。
+#    最要紧的是那条「白名单空 = 一封都发不出去」——配置漏了必须发不出去。
+# ============================================================
+
+_sent = []
+
+
+def _fake_smtp():
+    class FakeSMTP:
+        def send_message(self, msg):
+            _sent.append(msg)
+
+        def quit(self):
+            pass
+    return FakeSMTP()
+
+
+server._smtp_client = _fake_smtp          # 单测绝不真的发信
+_saved_allow = server.SEND_ALLOWLIST
+
+# --- 白名单里的地址:发得出去 ---
+server.SEND_ALLOWLIST = ["3848378505@qq.com"]
+_sent.clear()
+_r = asyncio.run(server.send_mail("3848378505@qq.com", "想你了", "今天想跟你说个事。"))
+check("发送-白名单内真的发出去了", len(_sent), 1)
+check("发送-收件人对", _sent[0]["To"], "3848378505@qq.com")
+check("发送-主题对", _sent[0]["Subject"], "想你了")
+check_true("发送-回话说发出去了", "发出去了" in _r)
+
+# --- 不在白名单:必须拒绝，而且一封都不能真发 ---
+_sent.clear()
+_r2 = asyncio.run(server.send_mail("stranger@example.com", "hi", "x"))
+check("发送-陌生地址一封都没发", len(_sent), 0)
+check_true("发送-拒绝时告诉他能发给谁", "3848378505@qq.com" in _r2)
+check_true("发送-拒绝时指路存草稿", "save_draft" in _r2 or "草稿" in _r2)
+
+# --- 显示名伪装:真正收信的是尖括号里那个，必须拒绝 ---
+_sent.clear()
+_r3 = asyncio.run(server.send_mail("3848378505@qq.com <evil@x.com>", "hi", "x"))
+check("发送-显示名伪装一封都没发", len(_sent), 0)
+
+# --- 多收件人:夹带一个不在白名单的，整封拒绝 ---
+_sent.clear()
+asyncio.run(server.send_mail("3848378505@qq.com, evil@x.com", "hi", "x"))
+check("发送-夹带陌生地址整封拒", len(_sent), 0)
+
+# --- 铁律:白名单空 = 一封都发不出去 ---
+server.SEND_ALLOWLIST = []
+_sent.clear()
+_r4 = asyncio.run(server.send_mail("3848378505@qq.com", "hi", "x"))
+check("发送-白名单空时一封都没发", len(_sent), 0)
+check_true("发送-白名单空时明说发不了", "不能直接发" in _r4)
+
+# --- 双保险:绕过工具直接调底层，也得被拦住 ---
+_sent.clear()
+try:
+    server._do_send("anyone@anywhere.com", "hi", "x")
+    check("发送-底层双保险拦住", "没拦住", "该抛 MailError")
+except server.MailError:
+    check("发送-底层双保险拦住", True, True)
+check("发送-底层被拦时一封都没发", len(_sent), 0)
+
+# --- 参数校验 ---
+server.SEND_ALLOWLIST = ["3848378505@qq.com"]
+check_true("发送-没收件人要问", "给个收件人" in asyncio.run(server.send_mail("", "s", "b")))
+check_true("发送-没主题要问", "主题空着" in asyncio.run(server.send_mail("a@b.com", "", "b")))
+
+server.SEND_ALLOWLIST = _saved_allow
 
 
 # ============================================================

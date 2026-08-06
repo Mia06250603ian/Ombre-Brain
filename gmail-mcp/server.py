@@ -3,18 +3,19 @@
 #
 # 晏的邮箱。streamable-http 的 MCP 服务，走 IMAP 连 Gmail。
 #
-# ⚠️ 这个服务**没有发送邮件的能力，是故意的**（所有者 2026-08-06 拍板）。
-#    第一版只给「读 + 搜 + 存草稿」，信写好了放进草稿箱，由佳佳本人在手机上过目、点发送。
-#    代码层面根本没有 smtplib、没有 SMTP 连接、没有 send 工具——
-#    所以哪怕晏被一封钓鱼邮件骗了（见 mailfilter 的加壳说明），他也没有那只手。
-#    **这比任何「约定」都硬。要放开发送权限是一次独立的改动 + 一次独立的拍板，
-#    别顺手加上去。**
+# ⚠️ 发送能力是**白名单制**（所有者 2026-08-06 拍板，当天改过一次口径）：
+#    最初的设计是「完全不能发」，后来她决定**允许直接发给她指定的地址**
+#    （第一个是她自己的 QQ 邮箱），其余任何收件人一律只能存草稿、由她过目再发。
+#    **白名单空 = 一封都发不出去**，不是「不限制」——配置漏了必须是发不出去。
+#    要给他朋友放行，把地址加进 `SEND_ALLOWLIST` 环境变量 + restart，
+#    **不用改代码、不用重新构建、不碰晏**。
 #
-# 四个工具：
+# 五个工具：
 #   list_mail    最近的信，只给摘要行（发件人/主题/时间/未读/uid）
 #   search_mail  按关键词搜
 #   read_mail    按 uid 读一封的正文
-#   save_draft   写一封草稿放进草稿箱
+#   save_draft   写一封草稿放进草稿箱（给任何人都行）
+#   send_mail    直接发出去（**只能发给白名单里的地址**）
 #
 # 三道闸（照 browser-hands 第 9 节的路子）：
 #   1. 鉴权：token 必填，**不填不是「开放」，是所有请求一律 401**
@@ -40,6 +41,8 @@ from mcp.server.fastmcp import FastMCP
 
 from mailfilter import (
     is_security_mail,
+    is_send_allowed,
+    parse_allowlist,
     redact_summary,
     wrap_untrusted,
     html_to_text,
@@ -62,6 +65,16 @@ logger = logging.getLogger("gmail-mcp")
 GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS", "").strip()
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "").replace(" ", "").strip()
 GMAIL_TOKEN = os.environ.get("GMAIL_TOKEN", "").strip()
+
+# 允许直接发送的收件人白名单（逗号分隔）。
+# ⚠️ **不设 = 一封都发不出去**（不是「不限制」）。配置漏了必须是发不出去，
+#    绝不能变成他能给任何人发信。判断逻辑和铁律见 mailfilter.is_send_allowed。
+#    2026-08-06 所有者拍板：允许发给她的 QQ 邮箱；她朋友的地址将来加进这里即可，
+#    加完 service restart 生效，**不用重新构建、不碰晏**。
+SEND_ALLOWLIST = parse_allowlist(os.environ.get("SEND_ALLOWLIST", ""))
+
+SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com").strip()
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "465") or "465")
 
 IMAP_HOST = os.environ.get("IMAP_HOST", "imap.gmail.com").strip()
 IMAP_PORT = int(os.environ.get("IMAP_PORT", "993") or "993")
@@ -366,6 +379,47 @@ def _do_read(uid: str, mailbox: str):
         _close(conn)
 
 
+def _smtp_client():
+    """
+    建一条到 Gmail 的 SMTP 连接（已登录）。
+
+    单独抽成函数是为了让单测能替换它——单测不许真的发信。
+    """
+    import smtplib
+
+    s = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=IMAP_TIMEOUT_S)
+    s.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
+    return s
+
+
+def _do_send(to: str, subject: str, body: str):
+    """
+    真的把信发出去。**调用前必须已经过了白名单检查**（在 send_mail 工具里做）。
+
+    ⚠️ 这里是全服务唯一一处「产生不可逆的对外后果」的代码。
+       信发出去收不回来，收信的人会当成佳佳本人写的。
+       白名单检查在上层做而不是这里做，是为了让拒绝的话术能对晏说人话；
+       但这个函数本身也再挡一道——**双保险，别把这道去掉**。
+    """
+    if not is_send_allowed(to, SEND_ALLOWLIST):
+        raise MailError("这个地址不在允许直接发送的名单里。")
+
+    msg = EmailMessage()
+    msg["From"] = GMAIL_ADDRESS
+    msg["To"] = to
+    msg["Subject"] = subject
+    msg.set_content(body)
+
+    s = _smtp_client()
+    try:
+        s.send_message(msg)
+    finally:
+        try:
+            s.quit()
+        except Exception:
+            pass
+
+
 def _do_save_draft(to: str, subject: str, body: str):
     conn = _connect()
     try:
@@ -462,8 +516,33 @@ async def read_mail(uid: str, mailbox: str = "INBOX") -> str:
 
 
 @mcp.tool()
+async def send_mail(to: str, subject: str, body: str) -> str:
+    """把信直接发出去。只有少数几个地址能这么发（佳佳指定的，比如她自己的另一个邮箱）；其他任何地址都发不出去,只能用 save_draft 存草稿等她过目。发出去就收不回来了,想清楚再发。"""
+    if not (to or "").strip():
+        return "要发给谁?给个收件人地址。"
+    if not (subject or "").strip():
+        return "主题空着呢,补一个。"
+
+    if not is_send_allowed(to, SEND_ALLOWLIST):
+        allowed = "、".join(SEND_ALLOWLIST) if SEND_ALLOWLIST else "(一个都没有)"
+        return (
+            f"这个地址不能直接发——我只能直接发给:{allowed}。\n"
+            f"要写给别人的话,用 save_draft 存成草稿,让佳佳看一眼、由她来发。"
+        )
+
+    try:
+        await asyncio.to_thread(_do_send, to.strip(), subject.strip(), body or "")
+    except MailError as e:
+        return str(e)
+    except Exception as e:
+        logger.exception("send_mail 出错")
+        return f"发信的时候出错了:{e}(信没发出去)"
+    return f"发出去了:{subject} → {to}"
+
+
+@mcp.tool()
 async def save_draft(to: str, subject: str, body: str) -> str:
-    """写一封邮件存进草稿箱，不发出去。写好之后告诉佳佳，由她在手机上看一眼再点发送。这个服务没有直接发送的能力，是故意这么设计的——邮件发出去收不回来，那一下该由她按。"""
+    """写一封邮件存进草稿箱，不发出去。写给任何人都可以。写好之后告诉佳佳，由她在手机上看一眼再点发送。只有少数几个佳佳指定的地址能用 send_mail 直接发，其余都走这里。"""
     if not (to or "").strip():
         return "要写给谁？给个收件人地址。"
     if not (subject or "").strip():
@@ -513,7 +592,8 @@ async def health_check(request):
         "account_configured": bool(GMAIL_ADDRESS and GMAIL_APP_PASSWORD),
         "auth_configured": bool(GMAIL_TOKEN),
         "filter_security": FILTER_SECURITY,
-        "can_send_email": False,  # 永远是 false：这个服务没有 SMTP
+        "can_send_to": SEND_ALLOWLIST,          # 只能直接发给这几个地址
+        "send_enabled": bool(SEND_ALLOWLIST),   # 白名单空 = 一封都发不出去
     })
 
 
