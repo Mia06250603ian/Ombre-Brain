@@ -8,17 +8,28 @@
 给晏一个邮箱:**能读、能搜、能写草稿,不能发信**。
 用的是佳佳自己的 `yukiclaude25@gmail.com`,走 IMAP,凭据是一串应用专用密码。
 
-## 1. 当前状态:⚠️ **代码写完了,但一步都还没部署**
+## 1. 当前状态:✅ **服务已上线并验收通过;❌ 还没接到晏身上**
 
 | 项 | 状态 |
 |---|---|
-| 源码 + 单测 | ✅ 写完,**167 项全绿**(mailfilter 93 + server 74) |
-| 真实 IMAP 连通性 | ❌ **没验过**——开发沙盒不放行 993 端口(见踩坑 1) |
-| 镜像构建 | ❌ 没做 |
-| Zeabur 服务 | ❌ 没建 |
-| 接到晏身上 | ❌ 没接(mcp-servers.json / ALLOWED_TOOLS / CLAUDE.md 都没动) |
+| 源码 + 单测 | ✅ **175 项全绿**(mailfilter 93 + server 82) |
+| 镜像构建 | ✅ Actions → ghcr,匿名可拉 |
+| Zeabur 服务 | ✅ 已上线,`yan-gmail.zeabur.app` |
+| 真实 IMAP | ✅ **已验**:容器里登录成功(这是上线前最大的未知数) |
+| 读 / 写草稿 | ✅ 已验(写测试草稿 → 列出来 → 读回来 → 删掉) |
+| **接到晏身上** | ❌ **没接**(mcp-servers.json / ALLOWED_TOOLS / CLAUDE.md 都没动)|
 
-**所有者只批准了「写服务 + 本地跑通 + 拿给她看」这一段。往下每一步都要单独问过她。**
+**所有者批准的是「打包 + 建服务 + 验收」这三步。接到晏身上是第四步,要单独问过她**
+——那一步会重启晏、清掉他当前窗口,必须她本人先对晏说「归档」。
+
+### 服务坐标
+
+- 项目 `cli-proxy-api--cpa`:id `6a53a9fc22dd6ef375eb7484`,env `6a53a9fcb6ce8edcb0163f97`
+- 服务 `gmail-mcp`:id **`6a74a107e4a69d66638c4650`**,域名 **`yan-gmail.zeabur.app`**
+- 类型 `PREBUILT_V2`,镜像 `ghcr.io/mia06250603ian/gmail-mcp:dev`
+- **没有持久卷**(这个服务不存任何东西,容器随便重启)
+- **拉新镜像用 `service restart`**,不是 `redeploy`(ears 那条踩坑同款:预构建镜像的服务
+  没绑 GitHub 仓库,`redeploy` 会报 `CANNOT_REDEPLOY_INPLACE`)
 
 ## 2. 所有者定下的边界(2026-08-06,别自己改)
 
@@ -41,7 +52,7 @@
 晏的常驻 claude 进程
    │  mcp-servers.json 里一条 http 服务(带 X-Token 头)—— 【尚未添加】
    ▼
-gmail-mcp 容器(Zeabur)—— 【尚未创建】
+gmail-mcp 容器(Zeabur)—— 已上线 yan-gmail.zeabur.app
    ├── server.py       鉴权 → 四个工具 → 安全过滤 → 加壳 → 截断
    ├── mailfilter.py   纯逻辑层(过滤/加壳/清洗),不碰网络、不碰凭据
    └── imaplib         → imap.gmail.com:993 (SSL)
@@ -80,13 +91,27 @@ gmail-mcp 容器(Zeabur)—— 【尚未创建】
 
 ## 6. 踩过的坑 / 设计要点
 
-1. **⚠️ 开发沙盒连不上 993,真实 IMAP 从没验过(最重要的一条)。**
+0. **⚠️⚠️ 只在启动时才跑的代码,单测摸不到——这条是用一次线上 502 换来的,最该记住。**
+   2026-08-06 首次部署,容器起来就崩、反复重启、域名 502。日志:
+   `AttributeError: 'Starlette' object has no attribute 'middleware'`。
+   原因是鉴权用了 `@app.middleware("http")`,这个装饰器在新版 Starlette 里已经删了。
+   **为什么 167 项单测一个都没拦住**:那段代码写在 `if __name__ == "__main__"` 里,
+   单测只 `import server`、**从来不执行它**。
+   修法有两半,缺一不可:①改用 `add_middleware(BaseHTTPMiddleware, dispatch=…)`;
+   ②**把组装应用的那段抽成 `build_app()` 函数**,让单测能真的调用它、真的发请求
+   (test_server.py 第八点五节)。**以后往启动路径加任何东西,都要想一下单测够不够得着。**
+   另外:本地真跑一次 `python server.py` + curl,比任何测试框架都实在。
+
+1. **~~开发沙盒连不上 993,真实 IMAP 从没验过~~ → 2026-08-06 已验通,但坑本身还在。**
    Claude Code 的会话沙盒只放行走代理的 HTTPS,直连 `imap.gmail.com:993` 是 `TimeoutError`
-   (DNS 能解析、TCP 握不上手)。所以**登录、搜索、读信、存草稿这四件在真实 Gmail 上到底通不通,
-   谁都还没验过**。写单测时用假 IMAP 服务器覆盖了协议解析那一层,但那验不了网络。
-   **部署后第一件事就是验这个**(见第 7 节验收清单)。
-   顺带:**Zeabur 的容器能不能出站连 993 也是未知数**,同样得实测。真被挡了,退路是改用
-   Gmail API(HTTPS,443),但那要走 OAuth,成本见下面「未决」。
+   (DNS 能解析、TCP 握不上手)。**所以任何跟真实邮箱有关的事,在开发沙盒里都验不了**,
+   只能部署后进容器验:
+   ```bash
+   zeabur service exec --id 6a74a107e4a69d66638c4650 --env-id 6a53a9fcb6ce8edcb0163f97 \
+     -i=false -- python -c "import server; c=server._connect(); print('ok'); server._close(c)"
+   ```
+   **好消息:Zeabur 的容器出站 993 是通的**(2026-08-06 实测登录成功),
+   所以不用退到 Gmail API + OAuth 那条贵路上去。
 
 2. **中文邮件头会解成一串 �(真 bug,写单测时抓到的)。**
    规范的中文主题是 MIME 编码的(`=?utf-8?B?…?=`),怎么解都对;但**有的发件方直接把 UTF-8 字节
@@ -127,22 +152,29 @@ gmail-mcp 容器(Zeabur)—— 【尚未创建】
 9. **本目录里永远不要放 `.gitignore`。** 这条是 kelivo-shim 踩坑 15 的教训(zeabur 上传遵循
    `.gitignore`,会静默丢文件)。本服务虽然走镜像构建、不直接 zeabur upload,但别开这个头。
 
+11. **本仓库是 fork,上游的 secrets 不会跟过来。**
+    第一版构建 workflow 照仓库已有的 `docker-publish.yml` 推 Docker Hub,
+    登录那步当场失败——`DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` 在这个 fork 里根本不存在。
+    (顺带一提:同一个原因,仓库里那份 `docker-publish.yml` 在这个 fork 上多半也一直是失败的,
+    **没查、也没动它**。)改用 ghcr + Actions 内置的 `GITHUB_TOKEN` 就不需要任何额外密钥。
+
 10. **放在本仓库子目录不会触发 OB 重建。** OB 的监控路径是六行、`/*.py` 锚在仓库根,
     子目录里的 `.py` 不命中(OPERATIONS.md「OB 依赖钉版本」那节写了)。所以往
     `gmail-mcp/` 里提交代码是安全的,**不会像 07-29 那样把 OB 摇下线**。
 
-## 7. 怎么部署(**全部未做**,做的时候照这个走)
+## 7. 怎么部署(**第 1~3 步 2026-08-06 已做完;第 4 步没做**)
 
 **⚠️ 第 4 步会重启晏、清掉他当前窗口。按 OPERATIONS.md 的规矩,
 必须佳佳本人先对晏说「归档」(踩坑 13:代发归档他会起疑、可能拒绝,窗口照丢)。**
 
-1. **建服务**:这个 Zeabur 账号**禁止平台内构建**(ears 和 browser-hands 都栽过),
-   所以要走 GitHub Actions → ghcr → `PREBUILT_V2` 模板。
-   ⚠️ 本仓库还没有构建这个镜像的 workflow,要新加一个。
-   (browser-hands 那边还踩过「fork 仓库 Actions 默认关、事后打开也不补扫」的坑,本仓库不是 fork,
-   大概率没这个问题,但工作流第一次推上去之后确认一下有没有登记。)
-2. **配环境变量**(第 5 节那张表),至少 `GMAIL_ADDRESS` / `GMAIL_APP_PASSWORD` / `GMAIL_TOKEN`。
-3. **验收(一项都别跳)**:
+1. ✅ **建服务**:这个 Zeabur 账号**禁止平台内构建**(ears 和 browser-hands 都栽过),
+   所以走 GitHub Actions → ghcr → `PREBUILT_V2` 模板。
+   workflow 是 `.github/workflows/build-gmail-image.yml`。
+   **⚠️ 本仓库确实是 fork**(`fork: true`)——所以上游的 secrets 不会跟过来,这正是
+   第一版推 Docker Hub 失败的原因(踩坑 11)。不过 **Actions 本身是开着的、工作流一推就登记了**,
+   没踩到 browser-hands 那个「fork 仓库 Actions 不补扫」的坑。
+2. ✅ **配环境变量**(第 5 节那张表),至少 `GMAIL_ADDRESS` / `GMAIL_APP_PASSWORD` / `GMAIL_TOKEN`。
+3. ✅ **验收(结果见第 8.5 节部署记录)**:
    | 项 | 期望 |
    |---|---|
    | `/health` | 200,且 `can_send_email: false`、`filter_security: true` |
@@ -154,7 +186,7 @@ gmail-mcp 容器(Zeabur)—— 【尚未创建】
    | 真实存草稿 | 草稿出现在她手机 Gmail 的草稿箱里 |
    | **安全过滤实弹** | 找一封真的验证码邮件,确认 `read_mail` 拒绝、列表里显示成 🔒 |
    | 容器内存 | 预期 50~70MB(本地实测 FastMCP+imaplib 冷启 51MB) |
-4. **接到晏身上**(照 browser-hands 第 7 节 / shim 第二十二次):
+4. ❌ **接到晏身上(没做,要单独拍板)**(照 browser-hands 第 7 节 / shim 第二十二次):
    - 从**运行中的容器**把 `mcp-servers.json` base64 拷出来(别用会话里的旧副本),加一条:
      ```json
      "gmail": {
@@ -202,15 +234,55 @@ cd gmail-mcp && python3 test_mailfilter.py && python3 test_server.py   # 93 + 74
 ```
 测试文件也拷进了镜像,出问题时可以直接进容器跑一遍验证过滤逻辑没坏。
 
+## 8.5 部署记录
+
+- **2026-08-06(第一次) 从零上线。** 所有者批准的范围是「打包 + 建服务 + 验收」三步,
+  **接到晏身上没做**(第四步,要单独拍板)。
+  - **镜像**:第一版 workflow 照仓库已有的 `docker-publish.yml` 推 Docker Hub,
+    **登录那步当场失败**——本仓库是 fork,上游的 secrets 不会跟过来(见踩坑 11)。
+    改推 ghcr + 内置 `GITHUB_TOKEN` 后一次过。**用匿名身份验过标签能拉**
+    (`ghcr.io/v2/mia06250603ian/gmail-mcp/tags/list` 返 200),证明包是公开的、
+    Zeabur 免凭据能拉——没有只看「Actions 绿了」就当上线。
+  - **建服务**:`zeabur template deploy -f <模板> --project-id …`,
+    模板里**不含任何密钥**(邮箱/密码/token 事后用 `variable create` 单独写进环境变量)。
+  - **⚠️ 第一次起来 502**:容器启动即崩,见踩坑 0。修完重新构建 + `service restart` 拉新镜像。
+  - **验收(全过)**:
+    | 项 | 结果 |
+    |---|---|
+    | `/health` | 200,`can_send_email:false`、`filter_security:true`、`account_configured:true` |
+    | 不带 token 打 `/mcp` | **401**(没裸奔) |
+    | 带 token 打 `/mcp` initialize | **200** |
+    | **真实 IMAP 登录** | **成功**(这是上线前最大的未知数,见踩坑 1) |
+    | 草稿箱识别 | `[Gmail]/Drafts`(该账号是英文界面;中文账号会是 `[Gmail]/草稿`,代码按 `\Drafts` 标记找,两种都认) |
+    | **写草稿** | 成功,草稿真的出现在草稿箱里 |
+    | **列草稿箱** | 成功,中文主题显示正常(没有踩坑 2 的乱码) |
+    | **读回正文** | 成功,加壳正常、中文正文正确 |
+    | 晏受影响 | **无**,全程没碰他 |
+  - **验收方式的一个刻意选择**:为了不看所有者的真实邮件,读写验证是**拿服务自己写的一封
+    测试草稿**做的(写 → 列 → 读 → 删),全程只碰这封自造的信。
+    **代价是「列草稿箱」那步顺带带出了她另外两封草稿的标题**(只有标题,没点开),
+    已当场向她报备。**下次要更干净的话:列的时候按 uid 精确取自己那封,别列整个文件夹。**
+  - **测试草稿已删干净**(UID EXPUNGE 只删那一封,草稿箱 5 → 4 封)。
+  - **⚠️ 遗留:线上这串应用专用密码经过了会话记录。** 所有者说过要在上线时重新生成一串、
+    自己贴进 Zeabur 面板。**接到晏身上之前把这件事做掉**:
+    https://myaccount.google.com/apppasswords 删旧的、生成新的 →
+    Zeabur 改 `GMAIL_APP_PASSWORD` → `service restart`(不用重新构建、不碰晏)。
+
 ## 9. 未决 / 待办
 
-- **真实 IMAP 连通性从没验过**(踩坑 1)。这是上线前最大的未知数。
-- **Zeabur 容器能不能出站连 993**,未知。挡了的话要改走 Gmail API(HTTPS/443)+ OAuth,
-  那条路的成本是:要在 Google Cloud 建项目、配 OAuth 客户端、把应用**发布到生产**
-  (发布状态是 Testing 的话 **refresh token 7 天就过期**,等于每周重新授权一次);
-  发布但不做验证会有「未验证的应用」警告页 + 100 用户上限(她一个人够用),
+- ~~真实 IMAP 连通性~~ **2026-08-06 已验通**(容器出站 993 没问题)。
+- ~~构建 workflow~~ **已写**(`.github/workflows/build-gmail-image.yml`)。
+- **安全过滤还没拿真实的验证码邮件实弹验过**——单测里覆盖得很密(93 项),
+  但线上没试过真货。接晏之前值得找一封真的验证码邮件试一次
+  (`read_mail` 应该拒绝,列表里应该是一行 🔒)。
+- **`search_mail` 还没在真实邮箱上跑过**(读、写草稿都验了,搜索没验)。
+  中文搜索走的是 `CHARSET UTF-8` + UTF-8 字节,单测覆盖了拼命令那一层,
+  但真 Gmail 上没试过。接晏之前补验一次。
+- 万一哪天要退到 Gmail API(HTTPS/443)+ OAuth:成本是要在 Google Cloud 建项目、
+  配 OAuth 客户端、把应用**发布到生产**(发布状态是 Testing 的话
+  **refresh token 7 天就过期**,等于每周重新授权一次);发布但不做验证会有
+  「未验证的应用」警告页 + 100 用户上限(她一个人够用),
   **不需要 CASA 安全评估**(那是走正式验证才要的)。
-- **构建 workflow 还没写**(第 7 节第 1 步)。
 - **CLAUDE.md 那一节的文案没写**,要佳佳定。
 - **应用专用密码目前那串是开发期用的、经过了会话记录**。上线时建议她撤销重生成一串,
   自己贴进 Zeabur 面板,我全程不经手。撤销在 https://myaccount.google.com/apppasswords ,
