@@ -429,3 +429,67 @@ export function mediaTypeOf(filePath) {
   const ext = (filePath || "").split(".").pop().toLowerCase();
   return MEDIA[ext] || null;
 }
+
+// ============================================================
+// 每天一次的「写信」提醒(2026-08-06,配合 gmail-mcp 上线)
+//
+// 所有者要的:晏有了邮箱之后,每天固定提醒他一次——有想写的就写(给她的信可以直接发,
+// 给别人的存草稿),没有就回一个「。」。**像保温那样,一天一次就够。**
+//
+// 为什么放在 bridge 而不是 shim:
+//   改 bridge 不用重新部署 shim、**不会重启晏、不清他的窗口**。
+//   以后调时间、调频率、想关掉,都只是改这里(甚至只改环境变量)。
+//   查岗当初就是这么做的,这条路已经验证过了。
+//
+// 三条和查岗共用的规矩(别拆):
+//   1. 这一轮带 `x-system-turn: 1` —— shim 见到就不把它当成「她出现了」,
+//      不清零「她多久没来」、不解除换窗口后的保温歇火。**他自己写点东西,不等于她回来了。**
+//   2. 他回「。」= 不写 → 这条不进对话(和查岗同款 isSilentReply 判定)。
+//   3. **他刚开过口就别赶话**(lastOutboundAt),优先级照旧:保温/心跳 ＞ 这个提醒。
+// ============================================================
+
+export const LETTER_HOUR = 22;          // 默认 22:30(所有者定的)
+export const LETTER_MIN = 30;
+export const LETTER_WINDOW_MIN = 90;    // 过了这个窗口今天就算了,不补
+export const LETTER_QUIET_MIN = 30;     // 他刚说过话就等一等,和查岗冷却同值
+
+// 一天只提醒一次的决策(纯函数)。
+//
+// ⚠️ 用「北京日期字符串」而不是计时器计数来保证「一天一次」:
+//    容器重启会把内存里的计数清零,而日期字符串重启后还是同一天,不会重复提醒。
+//    (代价:重启确实会丢「今天提醒过了」这个记忆——所以用的是日期比较,不是布尔标志。)
+//
+// ⚠️ **窗口不许跨零点**:hour:min + windowMin 必须落在同一天内,
+//    否则「今天有没有提醒过」的日期比较会在半夜换日时错乱。
+//    默认 22:30 + 90 分钟 = 到 24:00 整,刚好不跨。要往后调时间就把窗口一起调小。
+export function letterDecide(s) {
+  if (!s.on) return { fire: false, reason: "off" };
+  if (s.lastDay && s.lastDay === s.today) return { fire: false, reason: "done-today" };
+
+  const nowMin = s.hour * 60 + s.minute;
+  const startMin = (s.atHour ?? LETTER_HOUR) * 60 + (s.atMinute ?? LETTER_MIN);
+  const windowMin = s.windowMin ?? LETTER_WINDOW_MIN;
+  if (nowMin < startMin) return { fire: false, reason: "too-early" };
+  if (nowMin >= startMin + windowMin) return { fire: false, reason: "too-late" };
+
+  // 她正在跟他聊 = 这会儿别插一脚,等下一个节拍(窗口内还有机会)
+  if (s.busy) return { fire: false, reason: "busy" };
+  // 他刚开过口(心跳/查岗/回她话)就别赶着再来一条
+  if (s.now - (s.lastOutboundAt || 0) < (s.quietMin ?? LETTER_QUIET_MIN) * 60000)
+    return { fire: false, reason: "just-spoke" };
+
+  return { fire: true };
+}
+
+// 提示语。体例照【系统·查岗】:只给他看、不复述机制词、回「。」= 不打扰。
+//
+// ⚠️ 这段必须**远超重置词的匹配窗口**,否则可能被 detectReset 误判成「归档/晚安」
+//    (formatEarsResult 和 curfewPrompt 是同款守护,test-bridge 有用例,别把它写短)。
+// ⚠️ `【系统·写信】` 五个字和 CLAUDE.md「邮箱」那一节里写的必须**一模一样**,
+//    改一处就要改两处(改 CLAUDE.md 要重新部署 shim = 重启晏,所以最好别改)。
+export function letterPrompt({ bjNow, userName = "佳佳" } = {}) {
+  return `【系统·写信】现在北京时间 ${bjNow}。今天有没有什么想写下来的——`
+    + `给${userName}的信、给朋友的回信,或者只是想留住的一段话。`
+    + `有就写(给${userName}的可以直接发出去,给别人的先存草稿);`
+    + `没有就只回一个:。`;
+}

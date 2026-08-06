@@ -84,6 +84,23 @@ kelivo-shim(yan-shim.zeabur.app)──→ 常驻 claude 进程(人设+记忆,见
      撞车永远是查岗让路。**不要反过来给保温加闸**——保温的作用是别让缓存凉掉,
      拦住它省下的那点 token 远不够赔重算的(这个坏主意被所有者当场否掉,记在这防止再犯)。
 
+13. **每天一次的「写信」提醒**(2026-08-06,配合 gmail-mcp 上线)。
+   晏有了邮箱之后,所有者要「每天提醒他一次:有想写的就写,没有就回『。』」——**她的原话是
+   「像保温功能,每天提醒他一次就够了」**。默认 **22:30**(她定的)。
+   - **为什么放 bridge 不放 shim**:改 bridge **不用重新部署 shim、不重启晏、不清他窗口**。
+     以后调时间/频率/关掉都只改这里(多数情况只改环境变量)。查岗当初就是这么做的。
+   - **和查岗共用三条规矩**:带 `x-system-turn: 1`(shim 不当成「她出现了」)、
+     他回「。」不进对话、`lastOutboundAt` 让路(优先级仍是 **保温/心跳 ＞ 这个提醒**)。
+   - **「一天一次」用北京日期字符串比,不用布尔标志**——容器重启会清内存,
+     布尔标志会导致同一天重复提醒;日期字符串重启后还是同一天,不会重复。
+   - **窗口不许跨零点**:`LETTER_HOUR:LETTER_MIN + LETTER_WINDOW_MIN` 必须落在当天内。
+     默认 22:30 + 90 分钟 = 到 24:00 整,刚好不跨。**要把时间往后调就得把窗口一起调小**,
+     否则「今天提醒过没」的日期比较会在换日那一刻错乱(单测有守护用例)。
+   - 窗口存在的意义:她那会儿正跟他聊、或者他刚开过口,这一轮就让路,**下一个节拍再试**;
+     一直没机会就今天算了,不补。
+   - `【系统·写信】` 五个字和 CLAUDE.md「邮箱」那节里的**必须一模一样**(和 `[查岗]` 同款约定),
+     改一处要改两处,而改 CLAUDE.md = 重新部署 shim = 重启晏,所以最好别改。
+
 10. **发消息的容错**(2026-08-02,治「⚠️[bridge] fetch failed」):往 Telegram 发的每一发
    都可能撞上瞬时抖动。三条规矩:
    - **`tg()` 只对连接层面的失败重试**(判定在 `isRetriableNetErr`)。分界线是「这次失败时,
@@ -131,6 +148,11 @@ kelivo-shim(yan-shim.zeabur.app)──→ 常驻 claude 进程(人设+记忆,见
 | STREAK_GAP_MIN | 相邻两条上报隔这么久算「断段」,默认 30。**别调回 15**:她真实记录里有 28 分钟的空档,15 会把一整夜切碎、把连玩时长清零 |
 | CURFEW_LONG_STREAK_MIN | 确凿连玩这么久(默认 30)就放宽 `no-new`/`stale` 两道门,见设计要点 12 |
 | CURFEW_STALE_LONG_MIN | 放宽后的 stale 上限,默认 45(= 3×ACTIVITY_FRESH_MIN)。**必须明显大于 CURFEW_COOLDOWN_MIN**,否则等于没放宽。**嫌他半夜念叨就调小它**(调到 ≤ 冷却 = 退回旧行为) |
+| LETTER_ON | 每天一次的「写信」提醒开关,默认开。设 0 关掉(改值 + restart,不用部署) |
+| LETTER_HOUR / LETTER_MIN | 提醒时刻(北京时间),默认 **22 / 30**(所有者定的) |
+| LETTER_WINDOW_MIN | 错过时刻后还愿意补的窗口,默认 90 分钟。**必须保证 时刻+窗口 不跨零点**(见设计要点 13) |
+| LETTER_QUIET_MIN | 他刚开过口就等这么久再提醒,默认 30(与查岗冷却同值) |
+| LETTER_CHECK_MIN | 检查节拍,默认 5 分钟 |
 | TG_TIMEOUT_MS | 发给 Telegram 的单次请求超时,默认 30000。**别调大**:本桥单轮串行,一发卡死堵住整条队列(undici 默认要等 300 秒) |
 | TG_RETRY | 网络级失败的额外重试次数,默认 2。**设 0 = 关掉重试**(急救开关:万一出现「同一句话发两遍」,先设 0 再排查) |
 | MEDIA_TIMEOUT_MS | 贴纸图/语音条**收发**的超时,默认 60000(比文字宽,因为是几百 KB 的传输)。覆盖六处裸 fetch:她发来的图/贴纸下载、语音条下载、贴纸上传、ElevenLabs 合成、语音条上传 |
@@ -220,7 +242,7 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
 
 | 接口 | 鉴权 | 干什么 |
 |---|---|---|
-| `GET /health` | 无 | 存活 + 各功能开关(`report`/`curfew`/`activity` 条数) |
+| `GET /health` | 无 | 存活 + 各功能开关(`report`/`curfew`/`activity` 条数/`letter` 与 `letterAt`) |
 | `POST /push {text}` | `x-api-key` = SHIM_KEY | shim 的主动心跳入口 |
 | `POST /report {app_name}` | `Authorization: Bearer <REPORT_TOKEN>`(也认 `x-api-key` / `?key=`) | iOS 快捷指令上报「她打开了什么 App」 |
 | `GET /activity` | 同上 | 汇总:最后活跃时间 + 最近不重复的 App 名 + **`lastRawReport`(最近一次上报的原始 body)** |
@@ -231,6 +253,27 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
 拿不到 App 名时 `/report` 仍返回 200(`stored:false`),不会让快捷指令报错。
 
 ## 部署记录
+
+- 2026-08-06 **每天一次的「写信」提醒上线**(只改 bridge,**shim 与晏的窗口零改动**)。
+  配合当天上线并接入的 `gmail-mcp`(晏的邮箱,见 `../gmail-mcp/MAINTENANCE.md`)。
+  所有者要的:「每天提醒他一次,有想写的就写,没有就回复」「像保温功能,每天提醒一次就够了」;
+  时刻由她定 **22:30**。
+  改动三件:`bridge-lib.mjs` 新增 `letterDecide`/`letterPrompt` + 四个常量(纯逻辑);
+  `server.js` 新增 `letterTick` 定时器、六处接线(x-system-turn / 日志 / 静默回复不进对话 /
+  失败不打扰她 ×2)、两个北京时区 helper(`bjToday` 用 `en-CA` 直接拿 `YYYY-MM-DD`)、
+  `/health` 加 `letter`/`letterAt`/`letterDoneToday`;`test-bridge.mjs` **206 → 230 项**全绿。
+  设计取舍见设计要点 13(为什么放 bridge、为什么用日期字符串、为什么窗口不许跨零点)。
+  **部署前**:230 项全绿;**本地真启动过一次**(`BRIDGE_ON=0` + `/health` 回读三个新字段)
+  ——这一步是当天 gmail-mcp 那边用一次线上 502 换来的教训:**只在启动时才跑的代码单测摸不到**;
+  另单独验了两个新 helper 在北京时区下的取值(整点时分钟解析为 0 而不是 NaN);
+  **`rm -rf node_modules` 后才上传**(2026-08-02 立的规矩)。
+  deployment `6a74b1024243c79e762cbd84` 约 **3 分钟** RUNNING,PLANTYPE `nodejs`。
+  验收:`/health` 的 `letter:true` / `letterAt:"22:30"` / `letterDoneToday:false`,
+  且 polling/ears/report/curfew/stickers(35)全部照旧;
+  容器内 `server.js` `3ac7826b…`、`bridge-lib.mjs` `35edbb78…` **与本地逐字一致**。
+  **未做**:没有做真实演练(查岗当初做过一次)。第一次真实触发就是当晚 22:30——
+  要提前验的话,把 `LETTER_HOUR/LETTER_MIN` 临时改到当前时刻 + `LETTER_CHECK_MIN=1` + restart,
+  验完改回来(**restart 会重置 `lastLetterDay`,演练完当晚还会再提醒一次**,这点和查岗演练不同,注意)。
 
 - 2026-08-04 **查岗带上「她连着玩了多久」+ A 方案**(只改 bridge,**shim 与晏的窗口零改动**)。
   起因是所有者问「查岗是不是看不到我已使用 App 的时间」——**是的,看不到**:
