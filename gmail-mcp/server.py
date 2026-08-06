@@ -517,22 +517,40 @@ async def health_check(request):
     })
 
 
-if __name__ == "__main__":
-    import uvicorn
-    from starlette.middleware.cors import CORSMiddleware
+async def _auth_dispatch(request, call_next):
+    """鉴权中间件。/health 放行，其余一律验 token。"""
     from starlette.responses import JSONResponse
+
+    # /health 不要鉴权（给平台探活用，不含任何邮件内容）
+    if request.url.path.rstrip("/") == "/health":
+        return await call_next(request)
+    if not _token_ok(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    return await call_next(request)
+
+
+def build_app():
+    """
+    组装最终跑起来的 ASGI 应用（鉴权 + CORS）。
+
+    ⚠️ 单独抽成函数，是为了让单测能真的把它建出来——
+    2026-08-06 第一次部署就栽在这儿：这段原本写在 `if __name__ == "__main__"` 里，
+    单测只 import 模块、从来不执行它，于是一个**启动即崩**的写法一路过关到线上，
+    容器起来就 Traceback、反复重启、域名 502。
+    **凡是只在启动时才跑的代码，单测都摸不到——所以它必须是个能被调用的函数。**
+
+    当时的具体错误：`@app.middleware("http")` 这个装饰器在新版 Starlette 里没有了
+    （`'Starlette' object has no attribute 'middleware'`），要改用
+    `add_middleware(BaseHTTPMiddleware, dispatch=…)`。
+    """
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.middleware.cors import CORSMiddleware
 
     app = mcp.streamable_http_app()
 
-    @app.middleware("http")
-    async def auth_middleware(request, call_next):
-        # /health 不要鉴权（给平台探活用，不含任何邮件内容）
-        if request.url.path.rstrip("/") == "/health":
-            return await call_next(request)
-        if not _token_ok(request):
-            return JSONResponse({"error": "unauthorized"}, status_code=401)
-        return await call_next(request)
-
+    # 先加鉴权、再加 CORS：后加的在外层，
+    # 这样浏览器的预检请求（OPTIONS）先被 CORS 处理掉，不会被鉴权拦住。
+    app.add_middleware(BaseHTTPMiddleware, dispatch=_auth_dispatch)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -540,6 +558,13 @@ if __name__ == "__main__":
         allow_headers=["*"],
         expose_headers=["*"],
     )
+    return app
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    app = build_app()
 
     if not GMAIL_TOKEN:
         logger.warning("GMAIL_TOKEN 没设——所有请求都会被拒。这是故意的，不是 bug。")

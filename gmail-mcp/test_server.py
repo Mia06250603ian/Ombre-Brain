@@ -367,6 +367,49 @@ server.GMAIL_TOKEN = _saved_token
 
 
 # ============================================================
+# 八点五、应用真的能启动（2026-08-06 线上事故的回归测试）
+#
+# ⚠️ 这一节是用一次线上 502 换来的，别删。
+# 当时鉴权中间件写在 `if __name__ == "__main__"` 里，用了新版 Starlette 已经删掉的
+# `@app.middleware("http")`。单测只 import 模块、从不执行那段，于是这个**启动即崩**的写法
+# 一路过关上了线：容器起来就 Traceback、反复重启、域名 502。
+# 所以现在 build_app() 是个能被调用的函数，这里真的把它建出来、真的发请求。
+# ============================================================
+
+from starlette.testclient import TestClient
+
+_app = server.build_app()          # 建不出来就当场炸，正是我们要的
+check_true("启动-app 建得出来", _app is not None)
+
+_saved = server.GMAIL_TOKEN
+server.GMAIL_TOKEN = "test-token"
+
+with TestClient(_app) as client:
+    r = client.get("/health")
+    check("启动-/health 不需要钥匙就能通", r.status_code, 200)
+    _j = r.json()
+    check("启动-/health 说自己不能发信", _j["can_send_email"], False)
+    check("启动-/health 说过滤是开的", _j["filter_security"], True)
+    check("启动-/health 说账号配好了", _j["account_configured"], True)
+
+    # 不带钥匙访问 /mcp → 必须 401
+    r2 = client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "initialize"})
+    check("启动-没钥匙访问 /mcp 被拒", r2.status_code, 401)
+
+    # 带错钥匙 → 也必须 401
+    r3 = client.post("/mcp", headers={"X-Token": "wrong"},
+                     json={"jsonrpc": "2.0", "id": 1, "method": "initialize"})
+    check("启动-钥匙不对也被拒", r3.status_code, 401)
+
+    # 带对钥匙 → 不该是 401（具体状态码由 MCP 协议层决定，不做断言）
+    r4 = client.post("/mcp", headers={"X-Token": "test-token"},
+                     json={"jsonrpc": "2.0", "id": 1, "method": "initialize"})
+    check_true("启动-钥匙对了不再是 401", r4.status_code != 401)
+
+server.GMAIL_TOKEN = _saved
+
+
+# ============================================================
 # 九、没有发送能力（这条是设计核心，用 AST 验，不靠肉眼）
 # ============================================================
 
