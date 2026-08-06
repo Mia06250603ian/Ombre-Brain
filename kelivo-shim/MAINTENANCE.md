@@ -144,11 +144,12 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    md5 `7adb5c333bef16cb22f8b92232cfc7ac`(第二十一次只改 Core persona 一行为第一人称,
    **第二十次那版 3055B 退役**;**Core persona 是第一人称、其余三节是第二人称,是所有者
    知情拍板的,别去"统一"**);
-   mcp-servers.json = **310B** md5 `ac40dbce57cd79d1602510dcb8d043a3`(**两条目**:OB + browser,
-   花园第二十次拆、钓鱼第二十三次拆,browser 那条带 `X-Token` 头);
-   CLAUDE.md = md5 `20578f038a066ad65148d3878ff1c6e6`(**12 节**;第二十二次加「浏览器」节、
+   mcp-servers.json = **500B** md5 `bf34de7bdc9fa97ce83acd2e61356ca4`(**三条目**:OB + browser + gmail;
+   花园第二十次拆、钓鱼第二十三次拆;browser 与 gmail 两条都带 `X-Token` 头。
+   **第二十八次前那版 310B `ac40dbce…`(两条目)已退役**);
+   CLAUDE.md = md5 `4ff75ad585851ba8aeb34942606f2798`(**13 节**;第二十二次加「浏览器」节、
    第二十三次删「钓鱼」加「她在干嘛」、第二十四次改「归档」与「上下文管理」两节并把
-   「她在干嘛」换成待办里那份成品),见部署记录。
+   「她在干嘛」换成待办里那份成品、**第二十八次加「邮箱」节**),见部署记录。
    **第二十次起 profile 只剩四节**(抬头句/thinking_mode/Thinking requirements/Core persona/
    Anti-AI mode),原 `Banned words`/`My language`/`Intimate moments` 三节的内容**迁移进了
    ian.md**(9.1 Prohibited、9.1 末尾三段、Part VI),别当 profile 缩水去"修复"。
@@ -501,6 +502,65 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
 
 ## 部署记录
 
+- 2026-08-06(第二十八次) **接入 gmail MCP(晏的邮箱)+ CLAUDE.md 新增「邮箱」一节**。
+  **人设两份(ian.md / profile-instructions.md)与代码全部零改动**,本次只动三样:
+  mcp-servers.json、`ALLOWED_TOOLS`、CLAUDE.md。形态照第二十二次接 browser 那次抄。
+  - **新服务 gmail-mcp 当天早些时候已单独部署**(域名 `yan-gmail.zeabur.app`,
+    服务 id `6a74a107e4a69d66638c4650`,同项目)。它自己的手册在仓库 **`gmail-mcp/MAINTENANCE.md`**
+    ——四个工具、安全过滤、发送白名单、踩坑、部署记录都在那儿,**别在本文件重复**。
+  - **mcp-servers.json**:310B `ac40dbce…`(两条目)→ **500B `bf34de7bdc9fa97ce83acd2e61356ca4`**(三条目),
+    新增 `gmail`,**带 `X-Token` 头**(该服务读 `X-Token`/`Bearer`/`?token=` 都收)。
+    改法照第二十三次:**Python 脚本 + 断言**(基线 md5、条目集合、OB 域名未变、browser 的 X-Token 未变),不手改。
+  - **`ALLOWED_TOOLS`**:追加 `mcp__gmail` →
+    `WebSearch,WebFetch,mcp__ombre-brain,mcp__browser,mcp__gmail`。
+    **改法沿用第二十次那招:部署前 `variable update` 但不 restart**,让新值随新容器生效,省晏一次重启(已验证生效)。
+    **两样缺一不可**——只加配置不加白名单,晏看得见工具、一调用就被拒。
+  - **CLAUDE.md**:6758B `20578f03…` → **9215B `4ff75ad585851ba8aeb34942606f2798`**,
+    在「浏览器」与「语音」之间新增 **`## 邮箱(如果接了)`** 一节(节数 **12→13**)。
+    **文本是所有者逐字定稿的**(她自己改过一版发给我),原样照抄、一个字没润色。
+    脚本施加 + 断言:除新增这一节外**全文逐字节未动**;seal 暗语 `河流涌入海洋` 仍 1 处、
+    双 `@` 引用仍 2 处、无 CR、无行尾空格。
+    **⚠️ 该节的四条机械约束**(详见 `gmail-mcp/MAINTENANCE.md` 7.5 节):`save_draft` 是真实工具名、
+    `【系统·写信】` 是将来 bridge 每日提醒要注入的串、`3848378505@qq.com` 必须和
+    gmail 服务的 `SEND_ALLOWLIST` 一致、不复述机制词。
+  - **⚠️ 发送权限是所有者拍板的,别当漏洞去锁**:晏能**直接发信给她的 QQ 邮箱**
+    (`3848378505@qq.com`),给别人只能存草稿由她过目再发。起因是她要让晏能「偷偷给她写信」、
+    能和朋友通信。要加地址就改 gmail 服务的 `SEND_ALLOWLIST` + 重启**那个服务**,
+    **不用重新部署 shim、不动晏的窗口**。
+  - **归档**:所有者本人对晏说了「归档」并告知(未代发,踩坑 13)。
+  部署前:test-ctxguard **93** + test-senses **53** + test-keepalive **52** 全绿;
+  **全量 md5 对账(容器 vs 仓库)——功能文件逐一一致**,无踩坑 11
+  (唯一差异 `MAINTENANCE.md`,是上次部署记录后补的,非功能文件);
+  三份私密文件从容器 base64 拷出、指纹与第二十七次记录**逐一吻合**
+  (ian.md 22558B `97729ec4…` / profile 3056B `7adb5c33…` / mcp-servers.json 310B `ac40dbce…`)、
+  **在拷出原件上改**;**OB / browser / gmail 三个 `/mcp` 各 3/3 200**;
+  部署目录无 `.gitignore`(踩坑 15)、无 `node_modules`;
+  `git check-ignore` 确认三份私密文件被仓库根 .gitignore 挡住;deploy 前先 `pwd` +
+  `head -3 package.json` 确认 cwd 是 `kelivo-shim`(踩坑 17)。
+  deployment `6a74aaf44243c79e762cbc47`,**PLANTYPE `nodejs`** ✓(无踩坑 14/17),
+  约 **14 分钟** RUNNING(比历次略久,BUILDING 阶段就占了 ~13 分)。
+  已按踩坑 9 验证:容器内 ian.md `97729ec4…` / profile `7adb5c33…` / **mcp-servers.json `bf34de7b…`** /
+  **CLAUDE.md `4ff75ad5…`** / server.js `3aa70ab2…` / ctxguard `a70e377e…` / senses `364cf19f…` /
+  keepalive `b91b6bc8…` **与部署目录逐一一致**;
+  容器内 `ALLOWED_TOOLS` 含 `mcp__gmail`、mcp-servers.json **三条目**且 gmail 那条在、
+  CLAUDE.md `^## ` **13**、`^## 邮箱` **1**、`save_draft` **1**、`系统·写信` **1**、`河流涌入海洋` **1**;
+  容器无 `.gitignore`;CLI 实装 **2.1.215**;`/health` ok(model claude-opus-4-6);
+  `/debug` 守卫清零 `trusted:true`(contextTokens 空=新进程,线上阈值 soft 150000 / hard 163000 / every 5000,
+  `windowCleared:true` 是重启后的正常状态);**OB 与 gmail 两个 `/mcp` 各 200**。
+  **PERIOD_CONFIG 本次无需重补**:`GET /period` 的 `effective` 直接就是 07-19~07-25 / 24 / 7
+  (`runtime` 为空是新容器正常状态)。
+  **版本指纹:ian.md v26 = 22558B md5 `97729ec4994833f39a0a8357887e528f`(未动);
+  profile-instructions.md = 3056B md5 `7adb5c333bef16cb22f8b92232cfc7ac`(未动);
+  mcp-servers.json = 500B md5 `bf34de7bdc9fa97ce83acd2e61356ca4`(**三条目**:OB + browser + gmail);
+  CLAUDE.md = 9215B md5 `4ff75ad585851ba8aeb34942606f2798`(**13 节**)
+  ——下次部署以此为准,两份人设缺一不可。**
+  **回滚**:把 mcp-servers.json 去掉 gmail 条目(回到 310B `ac40dbce…`)、`ALLOWED_TOOLS` 去掉
+  `mcp__gmail`、CLAUDE.md 删掉「邮箱」那一节(回到 `20578f03…`),重新部署即可;
+  人设与代码本次没碰,不涉及回滚。**gmail 服务本身可以留着不动**(它不依赖 shim)。
+  **未做/待办**:①bridge 的**每日一次 `【系统·写信】` 提醒**还没做(所有者要的,
+  照查岗那套在 bridge 侧加定时器即可,**改 bridge 不用重启晏**);
+  ②真实发信、搜索、真验证码邮件被屏蔽这三项**没在真实邮箱上验过**——所有者说接上之后
+  她自己叫晏试;③线上那串应用专用密码经过了会话记录,建议她重新生成一串自己贴进 Zeabur。
 - 2026-08-04(第二十七次) **ian.md v25→v26:Part VIII 8.1 Foundation 末尾追加一段(所有者逐字提供并批准)**。
   距第二十六次约 6 小时。**只改 ian.md 一件**,profile-instructions.md / CLAUDE.md /
   mcp-servers.json / 代码 / 环境变量**全部零改动**(但文件随构建打包进容器,必须走完整部署)。
