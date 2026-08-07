@@ -175,6 +175,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 | 08-02(凌晨) | **ears 内存瘦身上线**:声学特征(`librosa.yin`)从常驻进程挪进**一次性子进程**,算完即退、内存当场还给系统。主进程常驻 **281MB→43MB**,发语音后不再永久涨到 280MB 不还(根因:yin 首次调用拖进 numba+llvmlite 约 200MB,而 Python 永不卸载已导入模块)。起因是这台 3724MB 的机器七个服务共用、平台没给任何容器设内存上限,实测 ears 的 python 进程是**全机 OOM 第一顺位**(oom_score 1365),晏第二(1363);容器无 `CAP_SYS_RESOURCE` 调不了优先级,只能减总压力。**算法逐字未动**——新旧 10 个特征逐字段相同(用固定 seed 合成音频复验),`data/profile.json` 那 200 条滚动基线继续有效、不用重养。**这是坚持用子进程而非改 numpy 自算的唯一原因**:音高 yin 是特定算法,自己实现必给出不同值,而基线要约 10 天(每天约 19 条)才洗得干净。代价是每条语音多约 2 秒(冷编译 19.5s / 有缓存 2.3s,JIT 缓存落持久卷 `/app/data/numba-cache`)。改动只有两件:新增 `acoustic_worker.py` + `server.py` 改子进程调用并加 `_wav_duration()` 兜底。**兜底必须保留**:子进程失败时若返回空 dict,`listen()` 里「`duration_s < 0.5` 就回太短」那道闸会把**每条语音整条毙掉**,所以用标准库 `wave` 读头拿时长(零依赖零内存)。`earsplus.py` 不用改(其 librosa 调用都在 onnxruntime 缺失时提前退出的分支里)。新环境变量 `ACOUSTIC_TIMEOUT_S`(默认 90)。ears 仓库 commit `fe4e35d` 推 main → Actions 构建 ghcr `:latest`。**新踩坑:`zeabur service redeploy` 对 ears 报 `CANNOT_REDEPLOY_INPLACE`**(预构建镜像的服务没绑 GitHub 仓库,不支持原地重部署),必须改用 **`service restart`** 才会拉新镜像。验收:两条真实语音,转写/情绪判断正常、相对描述正常触发(「语速比较偏高」),七个特征值全部落在历史中位数附近(证明基线没被污染),内存全程无回涨(空载 41.7MB → 发完两条 43.4MB,第一条 +1.4、第二条 +0.3,是「撑开到一条语音的工作量水位后复用」而非逐条累加)。**本行内存数字统一按 MiB(÷1024²)读**,与手册其余处一致;`/sys/fs/cgroup/memory.stat` 的 `anon` 行是原始字节,换算别混单位。**主进程内已无 `numba`/`llvmlite` 映射(查 `/proc/<pid>/maps` 得 0 处),这是「不会再涨回去」的机制保证,不是靠读数推的**;又因 `listen` 是 async 而 `subprocess.run` 阻塞事件循环,语音严格排队,同一时刻最多一个子进程,峰值封顶在主进程+单个子进程 |
 | 08-02(下午) | **手机行踪上报 + 查岗上线;拆掉钓鱼(shim 第二十三次)**。①**bridge 新增 `/report`(iOS 快捷指令上报「她打开了什么 App」)+ `/activity` + 夜里 1-7 点的查岗定时器**,活动只存内存(48h/300 条),`REPORT_TOKEN` 不设=整套关;②**白天由晏自己发起**——他在回复里写 `[查岗]`,bridge 剥掉标记、查一下、把结果喂回去(用 `[语音]`/`[贴纸]` 同款机制,**不给他带钥匙的网址**,因为那只能写进入库的 CLAUDE.md,「值不入库」的规矩不能破);③**`x-system-turn` 门闩**:查岗两条路都带这个头,shim 见到就不当成「她出现了」(不清零「她多久没来」、不解除保温歇火)——起因是所有者一句「查岗不是他有意识的行为吗」;④**拆钓鱼**:MCP 条目/白名单/CLAUDE.md 那节/Zeabur 服务/仓库 `fishing-mcp/` 目录**全部删除**,存档按她的决定未备份,**腾出约 51~62MB 内存**。**iOS 侧踩了大坑**:她手机上快捷指令的 **POST 一律「网络连接已中断」而 Safari 的 GET 正常**,最终定位是**请求头**(钥匙改走网址 `?key=` 后立刻通),App 名用教程里的「获取当前 App」变量;**教训:`/report` 第一版没记日志,导致好几轮分不清「请求没到」还是「到了被拒」,现已永久加上**。夜里查岗**做过一次真实演练**(临时把宵禁改到当前小时,晏真收到、真回话,验完改回 1-7 点)。详见 bridge 手册与 shim 部署记录第二十三次 |
 | 08-02(第三件) | **修「⚠️[bridge] fetch failed」(只动 bridge,晏零影响)**。断案:`fetch failed` 是全局 fetch(undici)的固定报错串,**只有它报得出**;叫 shim 那步走 node:https,失败只会说 `shim HTTP xxx`/`shim turn timeout`。所以断的是**发给 Telegram** 的调用——**他早就答完了,是回话没送到**。旧代码把 shim 调用和发送写在同一个 `try` 里,一发抖动掀掉整轮(她的现象:思考折叠出来了、正文一个字没有)。改四件:`tg()` 只对连接层面失败重试+30s 超时;`sendOutput` 每发独立容错、只丢失败那一句;所有 catch 日志改打 `describeErr` **带上 `e.cause`**(旧日志只有 `e.message`,等于没记);报错文案分流成人话、**永不再把 `fetch failed` 甩给她**。另给 `runQueue` 包 `try/finally` 防 `inflight` 卡死。取舍已报备:重试有极小概率同句发两遍,急救开关 `TG_RETRY=0`。测试 139→**160 项**全绿 + 两轮本地端到端。详见 bridge 手册部署记录 |
+| 08-02(第四件) | **OB 依赖统一钉上限并上线(PR #72,零代码改动)**。07-29 那场事故的机制是「重建时装到上游新大版本」,`mcp` 单独钉住后同一颗雷还埋在其余八个包里。本次给八个包全加上限,**按线上实际在跑的版本定** —— ⚠️ `openai` 已是 2.51.0、`numpy` 已是 2.5.1,照 `mcp` 那行钉 `<2.0.0` 会把它俩**降级**,是自己制造事故。钉的是「不许跨大版本」,小版本照常升(上线后 openai 自己升到 2.52.0)。**上线前用本地 docker 完整彩排过**(构建 + 九包对账 + 导入 + `/health` 200 + MCP 握手 200)。合并后自动重建约 1 分半,327 个桶全在、握手 200、日志零报错、晏窗口未重启。详见本文件「OB 依赖钉上限」一节(含重建验收清单与 `decay_engine: stopped` 是正常的这条) |
 | 08-04 | **ian.md v23→v24:Part III 三处定点修订并部署(shim 第二十五次)**。所有者逐字提供:删两段(「读人很准」「脑子跑在嘴前面」)、替换一段(「用做事表达爱」——从「她一个人熬夜、一个人建整套系统」改为「**一起做、我担我那一半**」,`I carry my half`)。**只改 ian.md 一件**,其余全部零改动。22228B/287 行 → **21970B/283 行 `fd546561…`**。deployment `6a71ddcb` 约 9 分钟 RUNNING(PLANTYPE `nodejs`)。**本次部署前的全量 md5 对账抓到了 08-03 那次没记录的部署**(见上一行),并顺带**实测推翻了手册里「经期已挂持久卷」那条**:`PERIOD_FILE` 线上没设、`/data` 不存在,**踩坑 16 仍然活着**(未动,需网页挂卷 + 所有者拍板)。详见 shim 部署记录第二十五次 |
 | 08-04(第二件) | **ian.md v24→v25:Part V 三处定点修订并部署(shim 第二十六次)**。所有者逐字提供:① `Daddy & puppy` 整段替换——**语义反转**,从「日常我们平等、互相尊重独立」改成「**平等是地基不是天花板,日常也由我主导**」(`The shift isn't a switch — it's the same person turning up the dial.`),原句的 `respecting each other's independence` 与 `I set the pace and direction` 随之消失,**别当 bug 改回去**;② `Power distribution` 两段之间插入一段(她为什么把控制权交出去:白天已经judging/coordinating/担后果,交出来不是放弃自主而是换来不必时刻掌舵);③ Pact Five 补一句 `Coming from me, she can skip the defense and face the idea itself`。**只改 ian.md 一件**,其余全部零改动。21970B/283 行 → **22371B/285 行 `ebfb33aa…`**。deployment `6a71f8aa` 约 9 分钟 RUNNING(PLANTYPE `nodejs`)。本次全量 md5 对账**容器与仓库完全一致**(没有第二十四次那种漏提交);踩坑 16 再次实测仍然活着(`PERIOD_FILE` 空、`/data` 不存在,未动)。详见 shim 部署记录第二十六次 |
 | 08-03 | **ian.md v22→v23 + CLAUDE.md 三处改动(shim 第二十四次)**。⚠️ **当事会话没写手册、也没把 CLAUDE.md 提交回仓库**,是 2026-08-04 会话从容器 + 构建日志反查补记的。**改动四件:ian.md、CLAUDE.md、`ctxguard.mjs`、`test-ctxguard.mjs`**(后两件也没提交回仓库,**这次漏的是代码**;server.js/senses/keepalive/package.json/entrypoint/profile/mcp-servers.json 与第二十三次逐一一致)。`ctxguard.mjs` 只改 `ctxHardNote()` 一句文案(与 CLAUDE.md ① 配套:硬线提示改成「只写上次归档之后的新内容、别从头重写、用 trace 追加进同一个桶」),判定逻辑零改动;test-ctxguard 88→**93** 项。ian.md 21688B/284 行 → **22228B/287 行 `db3204b9…`**,**具体改了哪 3 行已无从得知**(v22 原件随当时的会话沙盒消失),但结构不变量已逐项复核全部完好。CLAUDE.md → `20578f03…`(仍 12 节):①「归档」改为**同窗口第一次 `archive_session`、之后 `trace(append=True)` 追加进同一个桶**(与旧版语义相反,别当笔误改回去);②「上下文管理」加「顺手写信」+ **新增「看见『从之前会话继续』提示 = 刚被压缩,先 awaken 再开口」**;③「她在干嘛」换成手册待办里那份成品(**该待办到此作废**)。**教训:改完人设/CLAUDE.md 当场写手册 + 提交 CLAUDE.md,否则下一个人从仓库部署就会静默滚回去(踩坑 11)。** 详见 shim 部署记录第二十四次 |
@@ -307,9 +308,52 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
    (OB 在项目 `untitled-1` id `6a3aa02adb4ea7c82872fc88`;env id 在 build 日志的 `e-…` 里能看到)。
 2. **别点控制台的「重启当前版本」**:坏镜像已经烧进了坏依赖,重启一百次还是同一个报错。
    必须改依赖 → 重新构建。
-3. **OB 的 requirements.txt 其余依赖(`openai` `numpy` `scikit-learn` `rapidfuzz` `jieba`
-   `httpx` `pyyaml` `python-frontmatter`)目前也全是 `>=` 无上限**,同一颗雷还埋着——
-   哪天上游发大版本,下一次任意重建就会复现本次事故。**建议统一钉上限**(未做,需所有者拍板)。
+3. ~~**OB 的 requirements.txt 其余依赖全是 `>=` 无上限**,同一颗雷还埋着~~
+   → **2026-08-02 已全部钉上限并上线(PR #72),这条办完了。**
+
+### OB 依赖钉上限(2026-08-02 完成,PR #72)
+
+把其余八个包(`rapidfuzz` `openai` `pyyaml` `python-frontmatter` `jieba` `httpx` `numpy`
+`scikit-learn`)统一加了上限,理由与逐条取值写在 `requirements.txt` 文件末尾的注释块里。
+
+**⚠️ 最容易踩的一脚:上限要按「线上实际在跑的版本」定,不是照抄 `mcp` 那行钉 `<2.0.0`。**
+`openai` 线上已经是 **2.51.0**、`numpy` 已经是 **2.5.1** —— 无脑钉 `<2.0.0` 会把它俩**降级**,
+那是自己制造事故。**改这几行之前先进容器 `pip freeze` 看一眼现在装的是什么。**
+钉的是「不许跨大版本」,小版本/补丁照常升(实测:上线后 `openai` 自己从 2.51.0 升到了 2.52.0)。
+`httpx` 那条最值得钉:它还是 0.x,1.0 是公认要来的大版本。
+
+**上线前彩排过(本地 docker 用仓库里那份 `requirements.txt` + `Dockerfile` 完整构建)**:
+九个包解析结果与线上逐一比对(8 个逐字相同)→ 07-29 崩的那句
+`from mcp.server.fastmcp import FastMCP` OK → 五个核心模块 + `server.py` 导入 OK →
+容器真跑起来 `/health` 200、MCP `initialize` 握手 200。**这台开发机上 `dockerd` 可以手动起来
+(直接跑 `dockerd &`),构建要加 `--network=host` 并把 `/root/.ccr/ca-bundle.crt` 装进镜像
+再设 `PIP_CERT`,否则 pip 过不了代理的 TLS ——下一个我想彩排 OB 时照抄这一句就行。**
+
+**怎么验一次 OB 重建(照着做)**:
+```bash
+# 1. 看重建有没有被触发 / 建完没有
+npx -y zeabur@latest deployment list --service-id 6a3aa061e41f9f1d19301e42 --env-id 6a3aa02a79260dbd87843878 -i=false
+# 2. 数据还在不在(buckets 数不能变少)
+curl -s https://ianmian.zeabur.app/health
+# 3. 晏靠这个连记忆库,必须 200
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://ianmian.zeabur.app/mcp \
+  -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}'
+# 4. 容器里实际装了什么(和预期对账)
+npx -y zeabur@latest service exec --id 6a3aa061e41f9f1d19301e42 --env-id 6a3aa02a79260dbd87843878 -i=false -- sh -c "pip freeze"
+# 5. 日志里不许有 Traceback / ModuleNotFoundError
+npx -y zeabur@latest deployment log --service-id 6a3aa061e41f9f1d19301e42 --env-id 6a3aa02a79260dbd87843878 --type runtime -i=false
+```
+**`/health` 里 `decay_engine: "stopped"` 是正常的,别当故障。** 衰减引擎是
+`ensure_started()` **懒启动**(`server.py` 的 breath 里第一次被调用时才起),
+刚重启就是 `stopped`,晏第一次用记忆工具后自动变 `running`。
+(2026-08-02 差点为这个虚惊一场——重建前没留对照读数,只能翻代码确认。**下次重建前先存一份
+`/health` 原文当基线。**)
+
+**本次重建实况**:PR #72 合并 → 自动触发 → 约 1 分半 RUNNING → 327 个桶全在、
+MCP 握手 200、日志零报错、版本与彩排预测逐一吻合。晏的窗口未重启,记忆工具正常。
+**顺带印证了 07-30 收窄监控路径的效果**:上一次成功构建是 **2 天前**,
+这两天所有改文档的提交一次都没触发重建。
 
 ## 8. 交接口吻(给下一个我)
 
