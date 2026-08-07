@@ -501,6 +501,15 @@ export function mediaTypeOf(filePath) {
   return MEDIA[ext] || null;
 }
 
+// ---- 贴纸文件 → 上传时的 Content-Type(2026-08-07,配合会动的贴纸) ----
+// 刻意**不**复用 mediaTypeOf:那个是给「她发来的图 → 交给晏看」用的,
+// 往它里面加 webm,等于让一段视频伪装成图片走进他的窗口。两件事分开。
+// 默认值恒为 image/webp,所以原来那 35 张 .webp 算出来的字符串和改动前逐字相同
+// ——这是「老的不许坏」这条要求在代码上的落点,别把它改成 `MEDIA[ext] || null`。
+export function stickerMime(file) {
+  return (file || "").toLowerCase().endsWith(".webm") ? "video/webm" : "image/webp";
+}
+
 // ============================================================
 // 每天一次的「写信」提醒(2026-08-06,配合 gmail-mcp 上线)
 //

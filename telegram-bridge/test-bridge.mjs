@@ -1,7 +1,7 @@
 // 纯逻辑测试:node test-bridge.mjs,不碰网络。部署前必须全绿。
 import {
   splitForTelegram, detectReset, mergeTurn, buildShimBody,
-  makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf,
+  makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf, stickerMime,
   extractStickers, extractSegments, splitBubbles, bubblesFor,
   formatEarsResult,
   normalizeAppName, pushActivity, summarizeActivity, isCurfewHour, curfewDecide, curfewPrompt, isSilentReply,
@@ -215,12 +215,37 @@ eq(splitBubbles("  \n "), [], "纯空白零泡");
 {
   const reg = JSON.parse(fs.readFileSync("stickers/registry.json", "utf8"));
   const tags = Object.keys(reg);
-  ok(tags.length === 35, `registry 35 个标签(实际 ${tags.length})`);
+  ok(tags.length === 59, `registry 59 个标签(实际 ${tags.length})`);
   const missing = tags.filter((t) => !fs.existsSync(`stickers/${reg[t]}`));
   eq(missing, [], "registry 指向的文件全存在");
   const dup = new Set(Object.values(reg));
   ok(dup.size === tags.length, "文件无重复引用");
+  // 两套分开数:老的 35 张静态图是所有者亲选的,少一张就是出事了
+  const webp = Object.values(reg).filter((f) => f.endsWith(".webp"));
+  const webm = Object.values(reg).filter((f) => f.endsWith(".webm"));
+  ok(webp.length === 35, `静态贴纸仍是 35 张(实际 ${webp.length})`);
+  ok(webm.length === 24, `会动的螃蟹 24 张(实际 ${webm.length})`);
+  eq(Object.values(reg).filter((f) => !/\.(webp|webm)$/.test(f)), [], "只允许 webp/webm 两种");
+  // 螃蟹那套一律带前缀,和所有者亲起的那 35 个名字永不撞车
+  eq(Object.entries(reg).filter(([t, f]) => f.endsWith(".webm") && !t.startsWith("螃蟹")).map(([t]) => t),
+     [], "会动的贴纸标签一律以「螃蟹」开头");
+  // Telegram 视频贴纸硬性上限:单文件 256KB
+  const tooBig = webm.filter((f) => fs.statSync(`stickers/${f}`).size > 256 * 1024);
+  eq(tooBig, [], "webm 单张不超过 256KB(Telegram 上限)");
 }
+
+// ---- stickerMime:上传贴纸时的 Content-Type ----
+// 这个函数存在的唯一理由是「别碰老的」——所以第一条断言最重要:
+// 任何非 .webm 的输入都必须算出和改动前逐字相同的 image/webp。
+eq(stickerMime("s01.webp"), "image/webp", "老的静态贴纸仍是 image/webp");
+eq(stickerMime("clawd-happy.webm"), "video/webm", "会动的贴纸是 video/webm");
+eq(stickerMime("CLAWD-HAPPY.WEBM"), "video/webm", "扩展名大小写都认");
+eq(stickerMime("怪东西.txt"), "image/webp", "认不出的一律退回 image/webp,不返回 null");
+eq(stickerMime(""), "image/webp", "空字符串不崩");
+eq(stickerMime(null), "image/webp", "null 不崩");
+eq(stickerMime("webm"), "image/webp", "没有点的 webm 不算(必须是扩展名)");
+// 和 mediaTypeOf 是两件事:webm 绝不能被当成「她发来的图」交给晏
+eq(mediaTypeOf("x.webm"), null, "**mediaTypeOf 不认 webm**(视频不许伪装成图片进他的窗口)");
 
 // ---- 手机活动上报 ----
 eq(normalizeAppName("小红书"), "小红书", "App 名原样");
