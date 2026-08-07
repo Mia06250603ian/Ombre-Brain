@@ -5,7 +5,8 @@ import {
   extractStickers, extractSegments, splitBubbles, bubblesFor,
   formatEarsResult,
   normalizeAppName, pushActivity, summarizeActivity, isCurfewHour, curfewDecide, curfewPrompt, isSilentReply,
-  takeCheckMarker, lookupPrompt, ACTIVITY_CAP, computeStreak, fmtDur,
+  takeCheckMarker, lookupPrompt, ACTIVITY_CAP, computeStreak, fmtDur, appDurations,
+  APP_LIST_TOP, APP_MIN_WORTH,
   describeErr, isRetriableNetErr, turnErrorText, describeLoss,
   letterDecide, letterPrompt, LETTER_HOUR, LETTER_MIN, LETTER_WINDOW_MIN,
 } from "./bridge-lib.mjs";
@@ -337,6 +338,121 @@ eq(computeStreak([], { now: 1 }), null, "没有记录 → null");
   ], { now });
   eq(s.minutes, 20, "隔了 15 分钟以上就断段,只算最近这一段");
   eq(s.apps, ["抖音", "小红书"], "断掉的那次不算进来");
+}
+
+// ---- 每个 App 各用了多久(2026-08-06)----
+// 前提:自动化勾了「打开**或关闭**」+ 动作取「当前 App」,所以记录是
+// 「某时刻起前台是谁」的时间线,分项时长 = 下一条时刻 − 这一条时刻。
+eq(appDurations([], { now: 1 }), [], "没有记录 → 空数组");
+{
+  const now = 10 * 3600e3;
+  // ⚠️ 造数据时相邻两条必须 ≤ STREAK_GAP_MIN(30),否则会被判成两段(写这版时踩了)
+  const d = appDurations([
+    { app: "小红书", at: now - 60 * 60000 },
+    { app: "淘宝", at: now - 32 * 60000 },   // 小红书 28 分钟
+    { app: "抖音", at: now - 5 * 60000 },    // 淘宝 27 分钟
+  ], { now });                                // 抖音 5 分钟,还开着
+  eq(d, [
+    { app: "小红书", min: 28, ongoing: false },
+    { app: "淘宝", min: 27, ongoing: false },
+    { app: "抖音", min: 5, ongoing: true },
+  ], "下一条 = 上一条的结束;最后一条算到现在并标 ongoing");
+}
+{
+  const now = 10 * 3600e3;
+  const d = appDurations([
+    { app: "抖音", at: now - 50 * 60000 },
+    { app: "微信", at: now - 40 * 60000 },   // 抖音 10
+    { app: "抖音", at: now - 30 * 60000 },   // 微信 10
+    { app: "微信", at: now - 6 * 60000 },    // 抖音 +24 = 34
+  ], { now });                                // 微信 +6 = 16,还开着
+  eq(d, [
+    { app: "抖音", min: 34, ongoing: false },
+    { app: "微信", min: 16, ongoing: true },
+  ], "同一个 App 来回切要合并累加,并按时长排序");
+}
+{
+  const now = 10 * 3600e3;
+  const d = appDurations([
+    { app: "微信", at: now - 5 * 3600e3 },   // 五小时前那次,断段了不算
+    { app: "抖音", at: now - 40 * 60000 },
+    { app: "小红书", at: now - 10 * 60000 },
+  ], { now });
+  eq(d.map((x) => x.app), ["抖音", "小红书"], "断段外的不算进来(与 computeStreak 同款阈值)");
+}
+{
+  // 总时长和分项之和必须对得上(累加用毫秒、最后才取整的理由)
+  const now = 10 * 3600e3;
+  const list = [
+    { app: "a", at: now - 71 * 60000 - 20000 },
+    { app: "b", at: now - 44 * 60000 - 40000 },
+    { app: "c", at: now - 21 * 60000 - 10000 },
+  ];
+  const total = computeStreak(list, { now }).minutes;
+  const sum = appDurations(list, { now }).reduce((x, d) => x + d.min, 0);
+  ok(Math.abs(total - sum) <= 1, "分项之和与总时长最多差 1 分钟(取整误差,不许累积)");
+}
+
+// ---- 分项进提示语 ----
+{
+  const now = 10 * 3600e3;
+  const list = [
+    { app: "小红书", at: now - 60 * 60000 },
+    { app: "淘宝", at: now - 32 * 60000 },
+    { app: "抖音", at: now - 5 * 60000 },
+  ];
+  const p = curfewPrompt({
+    bjNow: "03:20", app: "抖音", minutesAgo: 5,
+    streak: computeStreak(list, { now }), durations: appDurations(list, { now }),
+  });
+  ok(p.includes("小红书 28 分钟"), "分项:小红书 28 分钟");
+  ok(p.includes("淘宝 27 分钟"), "分项:淘宝 27 分钟");
+  ok(p.includes("抖音 5 分钟(还开着)"), "此刻在哪个 App 要标「还开着」");
+  ok(p.includes("1 小时"), "总时长照旧要有");
+  ok(!p.includes("(小红书、淘宝、抖音)"), "给了分项就不再退回只列 App 名的老格式");
+  eq(detectReset(p), null, "带分项的提示语仍不触发重置词(守护用例,别删)");
+}
+{
+  // 没给 durations → 退回老格式。**这个回退别删**:老调用点和兜底都靠它
+  const streak = { minutes: 80, spanMin: 75, quietMin: 3, apps: ["抖音", "小红书"] };
+  ok(curfewPrompt({ bjNow: "03:20", app: "小红书", minutesAgo: 1, streak }).includes("(抖音、小红书)"),
+    "没有分项时退回只列 App 名的老格式(兜底,别删)");
+}
+{
+  // 「还开着」的那个哪怕时长很短、排在最末,也必须出现——晏最该知道的就是她此刻在哪
+  const durs = [
+    { app: "抖音", min: 40, ongoing: false }, { app: "微信", min: 12, ongoing: false },
+    { app: "小红书", min: 9, ongoing: false }, { app: "X", min: 7, ongoing: false },
+    { app: "淘宝", min: 5, ongoing: false }, { app: "ChatGPT", min: 4, ongoing: false },
+    { app: "Claude", min: 1, ongoing: true },
+  ];
+  const p = curfewPrompt({ bjNow: "03:20", app: "Claude", minutesAgo: 1,
+    streak: { minutes: 78, spanMin: 77, quietMin: 1, apps: ["抖音"] }, durations: durs });
+  ok(p.includes("Claude 1 分钟(还开着)"), "ongoing 的那个必须挤进列表,哪怕它最短");
+  ok(!p.includes("ChatGPT"), `最多只列 ${APP_LIST_TOP} 个,超出的并进「其他」`);
+  ok(p.includes("其他"), "没列出来的合并成「其他 X」,总账不丢");
+}
+{
+  // 长时间没动静:要点名是**哪个 App** 那一截说不准,别让他以为整段都是推的
+  const durs = [{ app: "抖音", min: 30, ongoing: false }, { app: "小红书", min: 60, ongoing: true }];
+  const p = curfewPrompt({ bjNow: "03:20", app: "小红书", minutesAgo: 55,
+    streak: { minutes: 90, spanMin: 30, quietMin: 55, apps: ["抖音", "小红书"] }, durations: durs });
+  ok(p.includes("看不出来"), "长时间没动静照旧要说老实话");
+  ok(p.includes("小红书那一截"), "点名是哪个 App 说不准");
+}
+{
+  // 不满 APP_MIN_WORTH 的划一下就走的,不占一格
+  const durs = [{ app: "抖音", min: 50, ongoing: true }, { app: "微信", min: 1, ongoing: false }];
+  const p = curfewPrompt({ bjNow: "03:20", app: "抖音", minutesAgo: 1,
+    streak: { minutes: 51, spanMin: 50, quietMin: 1, apps: ["抖音", "微信"] }, durations: durs });
+  ok(!p.includes("微信"), `不满 ${APP_MIN_WORTH} 分钟的一划而过不单列`);
+}
+{
+  // 太短的整段照旧一个字都不说(门槛 20 分钟,分项也不能绕过它)
+  const list = [{ app: "抖音", at: 10 * 3600e3 - 12 * 60000 }];
+  const p = curfewPrompt({ bjNow: "03:20", app: "抖音", minutesAgo: 12,
+    streak: computeStreak(list, { now: 10 * 3600e3 }), durations: appDurations(list, { now: 10 * 3600e3 }) });
+  ok(!p.includes("连着玩了"), "才玩十几分钟 → 分项也不说(20 分钟门槛不许被绕过)");
 }
 
 // ---- 查岗决策:A 方案(玩久了,没新动静也照戳)----

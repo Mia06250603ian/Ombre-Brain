@@ -242,6 +242,66 @@ export function computeStreak(list, { now = Date.now(), gapMin = STREAK_GAP_MIN 
   };
 }
 
+// ---- 每个 App 各用了多久(2026-08-06)----
+//
+// **前提变了,这是本模块最重要的一句**:她手机上那条自动化勾的是
+// 「打开**或关闭** 5 个 App 中的任一个时」,而动作取的是「**获取当前 App**」。
+// 关闭事件触发的那一刻,被关掉的那个已经不在前台了,站在前台的是她**刚切过去的那个**
+// ——所以上报的名字是「切去了哪」,而那个 App **不必在勾选的 5 个里面**
+// (2026-08-06 所有者报:晏能看到 Claude、淘宝等没授权的 App,截图确认了触发条件带「关闭」)。
+//
+// 于是这批记录的真实含义不再是「这 5 个 App 被打开了」,而是
+// **「某时刻起,前台是这个 App」的一条时间线**。分项时长因此才成立:
+//   **下一条的时刻 − 这一条的时刻 = 这一条那个 App 用了多久。**
+//
+// ⚠️ 2026-08-04 手册里「关闭不上报」的结论**已经过期**(那时多半只勾了「打开」)。
+// 别照那条去掉「关闭」的勾——**去掉就没有分项了**,只剩总时长(所有者 2026-08-06 拍板要分项)。
+//
+// 仍然推不出来、别假装能的两件事:
+//   - 她盯着一个 App 一直不切 → 手机一声不吭,和「放下手机睡了」在数据上一模一样;
+//   - 她切到某个 App 之后再没切回来 → 那之后的所有时间(含桌面/锁屏)全算在**最后一条**头上。
+// 所以**最后一条永远标成「还开着」**,并在长时间没动静时明说这一截是推的。
+export const APP_LIST_TOP = 5;    // 最多列几个 App(列太多既费 token 又没人读)
+export const APP_MIN_WORTH = 2;   // 不满这么久的并进「其他」(一划而过的不值得占一格)
+
+// 这一段里每个 App 各用了多久,按时长从多到少。没有记录 → 空数组。
+//   min      这个 App 在这一段里的累计分钟(同一个 App 来回切会合并)
+//   ongoing  它是不是最后一条(= 后面那截说不准的时间都算在它头上)
+// **累加用毫秒、最后才取整**:每段各自取整再相加会累积误差,和总时长对不上。
+export function appDurations(list, { now = Date.now(), gapMin = STREAK_GAP_MIN } = {}) {
+  const arr = (list || []).filter((e) => e && e.app);
+  if (!arr.length) return [];
+  const gapMs = gapMin * 60000;
+  let i = arr.length - 1;
+  while (i > 0 && arr[i].at - arr[i - 1].at <= gapMs) i--;   // 与 computeStreak 同款断段
+  const seg = arr.slice(i);
+  const byApp = new Map();
+  for (let k = 0; k < seg.length; k++) {
+    const end = k + 1 < seg.length ? seg[k + 1].at : now;    // 最后一条:一直算到现在
+    const cur = byApp.get(seg[k].app) || { app: seg[k].app, ms: 0, ongoing: false };
+    cur.ms += Math.max(0, end - seg[k].at);
+    if (k === seg.length - 1) cur.ongoing = true;
+    byApp.set(seg[k].app, cur);
+  }
+  return [...byApp.values()]
+    .map((d) => ({ app: d.app, min: Math.round(d.ms / 60000), ongoing: d.ongoing }))
+    .sort((a, b) => b.min - a.min);
+}
+
+// 把分项说成「小红书 40 分钟、淘宝 15 分钟、抖音 5 分钟(还开着)」;没东西可说就空串。
+// **「还开着」那个永远要出现**,哪怕它时长很短排在最后——晏最该知道的就是她此刻在哪个 App。
+function breakdownClause(durs) {
+  if (!durs || !durs.length) return "";
+  const ongoing = durs.find((d) => d.ongoing);
+  let shown = durs.filter((d) => d.min >= APP_MIN_WORTH).slice(0, APP_LIST_TOP);
+  if (ongoing && !shown.includes(ongoing)) shown = [...shown.slice(0, APP_LIST_TOP - 1), ongoing];
+  if (!shown.length) return "";
+  const rest = durs.reduce((a, d) => a + d.min, 0) - shown.reduce((a, d) => a + d.min, 0);
+  const parts = shown.map((d) => `${d.app} ${fmtDur(d.min)}${d.ongoing ? "(还开着)" : ""}`);
+  if (rest >= APP_MIN_WORTH) parts.push(`其他 ${fmtDur(rest)}`);
+  return parts.join("、");
+}
+
 // 这一段够不够长到值得说出口(太短就是「她刚开了个 App」,说时长没意义)
 const STREAK_WORTH_MIN = 20;
 // 距最后一次动静超过这么久,就得声明「后面这截是推的」。
@@ -249,14 +309,22 @@ const STREAK_WORTH_MIN = 20;
 // 两件事绑一起的话,一调断段阈值这句老实话就会静默消失(改这版时真踩了)。
 const STREAK_QUIET_MIN = 20;
 // 把 streak 说成一句话;不值得说就返回空串。
-function streakClause(streak) {
+// `durs` 给了就说分项(2026-08-06 起线上都给),没给就退回只报「碰过哪些 App」的老样子
+// ——**这个回退别删**:它让所有老调用点和老用例继续成立,也是分项算不出来时的兜底。
+function streakClause(streak, durs) {
   if (!streak || streak.minutes < STREAK_WORTH_MIN) return "";
+  const bd = breakdownClause(durs);
   const apps = streak.apps.slice(0, 4).join("、");
   const tail = streak.apps.length > 4 ? "等" : "";
-  let s = `这一段她已经连着玩了 ${fmtDur(streak.minutes)}(${apps}${tail})。`;
+  let s = bd
+    ? `这一段她已经连着玩了 ${fmtDur(streak.minutes)}:${bd}。`
+    : `这一段她已经连着玩了 ${fmtDur(streak.minutes)}(${apps}${tail})。`;
   // 最后一次动静过去挺久了 = 后面这截是推的,不是看到的。老实说出来,别让他当成确凿的。
-  if (streak.quietMin >= STREAK_QUIET_MIN)
-    s += `不过最后一次动静在 ${streak.quietMin} 分钟前,之后是一直没换 App 还是已经放下了,看不出来。`;
+  // 有分项时点名是**哪个 App** 说不准——不然他会以为整段都是推的。
+  if (streak.quietMin >= STREAK_QUIET_MIN) {
+    const who = durs?.find((d) => d.ongoing)?.app;
+    s += `不过最后一次动静在 ${streak.quietMin} 分钟前,${who ? `${who}那一截` : "之后"}是一直开着还是已经放下了,看不出来。`;
+  }
   return s;
 }
 
@@ -294,14 +362,17 @@ export function curfewDecide(s) {
   if (s.now - last.at > staleMin * 60000) return { fire: false, reason: "stale" };   // 早就放下手机了,别翻旧账
   if (s.now - (s.lastPokeAt || 0) < s.cooldownMin * 60000) return { fire: false, reason: "cooldown" };
   if (s.now - (s.lastOutboundAt || 0) < s.cooldownMin * 60000) return { fire: false, reason: "just-spoke" };
-  return { fire: true, app: last.app, minutesAgo: Math.round((s.now - last.at) / 60000), streak };
+  // durations 在这里算而不是让 server 自己算:保证和 streak 用的是**同一个 now 和同一个断段阈值**,
+  // 否则两个数会来自两个瞬间,拼出来的话自相矛盾(总时长和分项加起来对不上)。
+  const durations = appDurations(arr, { now: s.now, gapMin: s.streakGapMin ?? STREAK_GAP_MIN });
+  return { fire: true, app: last.app, minutesAgo: Math.round((s.now - last.at) / 60000), streak, durations };
 }
 
 // 查岗提示语。体例照 shim 的【系统·…】注入:只给他看,不复述机制词。
-export function curfewPrompt({ bjNow, app, minutesAgo, streak, userName = "佳佳" }) {
+export function curfewPrompt({ bjNow, app, minutesAgo, streak, durations, userName = "佳佳" }) {
   const when = minutesAgo >= 1 ? `${minutesAgo} 分钟前` : "刚刚";
   return `【系统·查岗】现在北京时间 ${bjNow},${userName}这个点还没睡——${when}她打开了${app}。`
-    + streakClause(streak)
+    + streakClause(streak, durations)
     + `想说就说(说了会发给她);不想打扰就只回一个:。`;
 }
 
@@ -319,7 +390,7 @@ export function takeCheckMarker(text) {
 }
 
 // 查岗结果 → 喂回给他的一条。没有记录时也要明说,否则他不知道是「没查到」还是「她没玩」。
-export function lookupPrompt(summary, { bjNow, streak, userName = "佳佳" } = {}) {
+export function lookupPrompt(summary, { bjNow, streak, durations, userName = "佳佳" } = {}) {
   const s = summary || {};
   if (!s.count) {
     return `【系统·查岗】现在北京时间 ${bjNow},${userName}的手机最近没有动静(近两天没有记录)。`;
@@ -328,7 +399,7 @@ export function lookupPrompt(summary, { bjNow, streak, userName = "佳佳" } = {
   const more = (s.recent || []).slice(1, 4)
     .map((r) => `${r.app}(${r.minutesAgo} 分钟前)`).join("、");
   return `【系统·查岗】现在北京时间 ${bjNow},${userName}${head}打开了${s.lastApp}。`
-    + streakClause(streak)
+    + streakClause(streak, durations)
     + (more ? `再往前:${more}。` : "")
     + `知道就好,说不说、说什么都由你。`;
 }
