@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 import {
   splitForTelegram, detectReset, mergeTurn, buildShimBody,
-  makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf, extractSegments, bubblesFor,
+  makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf, stickerMime, extractSegments, bubblesFor,
   formatEarsResult,
   normalizeAppName, pushActivity, summarizeActivity, curfewDecide, curfewPrompt, isSilentReply,
   takeCheckMarker, lookupPrompt, computeStreak, appDurations, ACTIVITY_CAP, STREAK_GAP_MIN,
@@ -116,7 +116,9 @@ async function sendReply(chatId, text) {
   for (const chunk of splitForTelegram(text)) await tg("sendMessage", { chat_id: chatId, text: chunk });
 }
 
-// ---- 贴纸:stickers/registry.json 标签→512px WebP;首次上传后缓存 file_id 复用 ----
+// ---- 贴纸:stickers/registry.json 标签→图;首次上传后缓存 file_id 复用 ----
+// 两种:静态 512px WebP(35 张,所有者亲选)+ 会动的 512px WebM/VP9 带透明(24 张螃蟹,
+// 2026-08-07 加)。发送这条路两者完全一样,只有上传时的 Content-Type 不同(stickerMime)。
 // 必须走 sendSticker(不是 sendPhoto):photo 会被 Telegram 整宽渲染成大图,
 // sticker 才是聊天里小小一块的贴纸尺寸(2026-07-17 实测踩过)。
 const STICKER_DIR = process.env.STICKER_DIR || "stickers";
@@ -133,7 +135,7 @@ async function sendSticker(chatId, tag) {
   if (stickerFileIds[tag]) { const j = await tg("sendSticker", { chat_id: chatId, sticker: stickerFileIds[tag] }); return !!j?.ok; }
   const form = new FormData();
   form.append("chat_id", String(chatId));
-  form.append("sticker", new Blob([fs.readFileSync(path.join(STICKER_DIR, file))], { type: "image/webp" }), file);
+  form.append("sticker", new Blob([fs.readFileSync(path.join(STICKER_DIR, file))], { type: stickerMime(file) }), file);
   const r = await fetch(`https://api.telegram.org/bot${BOT}/sendSticker`, { method: "POST", body: form, signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS) });
   const j = await r.json().catch(() => ({}));
   if (j.ok) { const id = j.result?.sticker?.file_id; if (id) stickerFileIds[tag] = id; return true; }
