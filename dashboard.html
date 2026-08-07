@@ -299,6 +299,96 @@
     box-shadow: inset 3px 3px 6px var(--shadow-dark-subtle), inset -3px -3px 6px var(--shadow-light);
   }
 
+  /* --- Detail panel: edit / archive / delete --- */
+  .detail-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .detail-actions button { padding: 9px 18px; font-size: 12px; }
+  .btn-danger {
+    padding: 9px 18px;
+    background: linear-gradient(145deg, #FAF0EE, #EFDCD8);
+    color: var(--negative);
+    border: none;
+    border-radius: 24px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 5px 5px 10px var(--shadow-dark-subtle), -5px -5px 10px var(--shadow-light);
+  }
+  .btn-danger:hover {
+    box-shadow: 7px 7px 14px var(--shadow-dark), -6px -6px 12px var(--shadow-light);
+    transform: translateY(-2px);
+  }
+  .btn-danger:active {
+    transform: translateY(0);
+    box-shadow: inset 3px 3px 6px var(--shadow-dark-subtle), inset -2px -2px 4px var(--shadow-light);
+  }
+  .detail-form label {
+    display: block;
+    color: var(--text-light);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 14px 0 5px;
+  }
+  .detail-form input[type="text"],
+  .detail-form input[type="number"],
+  .detail-form textarea {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-solid);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+  }
+  .detail-form textarea {
+    line-height: 1.7;
+    resize: vertical;
+    min-height: 160px;
+  }
+  .detail-form-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+  .detail-form-row label { margin-top: 14px; }
+  .detail-checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 16px;
+  }
+  .detail-check {
+    display: flex !important;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--text-dim);
+    text-transform: none;
+    letter-spacing: normal;
+    margin: 0 !important;
+    cursor: pointer;
+  }
+  .detail-hint {
+    margin-top: 14px;
+    font-size: 11px;
+    color: var(--text-light);
+    line-height: 1.6;
+  }
+  .detail-msg {
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--text-dim);
+    min-height: 16px;
+  }
+
   .config-section {
     margin-bottom: 28px;
     padding: 24px;
@@ -1166,6 +1256,8 @@ async function searchBuckets(query) {
   }
 }
 
+var detailBucket = null;   // 当前详情面板里的桶 {id, metadata, content, score}
+
 async function showDetail(id) {
   var panel = document.getElementById('detail-panel');
   var content = document.getElementById('detail-content');
@@ -1175,34 +1267,200 @@ async function showDetail(id) {
   try {
     var res = await fetch(BASE + '/api/bucket/' + id);
     var b = await res.json();
-    var meta = b.metadata || {};
-    content.innerHTML =
-      '<h2>' + esc(meta.name || id) + '</h2>' +
-      '<div class="detail-meta">' +
-        '<div class="field"><label>ID</label>' + id + '</div>' +
-        '<div class="field"><label>类型</label>' + (meta.type || 'dynamic') + '</div>' +
-        '<div class="field"><label>域</label>' + (meta.domain || []).join(', ') + '</div>' +
-        '<div class="field"><label>标签</label>' + (meta.tags || []).join(', ') + '</div>' +
-        '<div class="field"><label>事件效价</label>V' + (meta.valence || 0.5).toFixed(2) + '</div>' +
-        '<div class="field"><label>唤醒度</label>A' + (meta.arousal || 0.3).toFixed(2) + '</div>' +
-        '<div class="field"><label>模型视角</label>' + (meta.model_valence != null ? 'V' + meta.model_valence.toFixed(2) : '—') + '</div>' +
-        '<div class="field"><label>重要度</label>' + (meta.importance || 5) + '/10</div>' +
-        '<div class="field"><label>权重分</label>' + b.score.toFixed(4) + '</div>' +
-        '<div class="field"><label>激活次数</label>' + (meta.activation_count || 1) + '</div>' +
-        '<div class="field"><label>已解决</label>' + (meta.resolved ? '✓' : '—') + '</div>' +
-        '<div class="field"><label>已消化</label>' + (meta.digested ? '✓' : '—') + '</div>' +
-        '<div class="field"><label>钉选</label>' + (meta.pinned ? '✓' : '—') + '</div>' +
-        '<div class="field"><label>创建</label>' + (meta.created || '—') + '</div>' +
-        '<div class="field"><label>最后活跃</label>' + (meta.last_active || '—') + '</div>' +
-      '</div>' +
-      '<div class="detail-content">' + esc(b.content) + '</div>';
+    b.id = b.id || id;
+    detailBucket = b;
+    renderDetailView();
   } catch (e) {
     content.innerHTML = '<div class="loading">加载失败: ' + e.message + '</div>';
   }
 }
 
+function renderDetailView() {
+  var b = detailBucket;
+  if (!b) return;
+  var meta = b.metadata || {};
+  var id = b.id;
+  document.getElementById('detail-content').innerHTML =
+    '<h2>' + esc(meta.name || id) + '</h2>' +
+    '<div class="detail-meta">' +
+      '<div class="field"><label>ID</label>' + esc(id) + '</div>' +
+      '<div class="field"><label>类型</label>' + esc(meta.type || 'dynamic') + '</div>' +
+      '<div class="field"><label>域</label>' + esc((meta.domain || []).join(', ')) + '</div>' +
+      '<div class="field"><label>标签</label>' + esc((meta.tags || []).join(', ')) + '</div>' +
+      '<div class="field"><label>事件效价</label>V' + (meta.valence != null ? meta.valence : 0.5).toFixed(2) + '</div>' +
+      '<div class="field"><label>唤醒度</label>A' + (meta.arousal != null ? meta.arousal : 0.3).toFixed(2) + '</div>' +
+      '<div class="field"><label>模型视角</label>' + (meta.model_valence != null ? 'V' + meta.model_valence.toFixed(2) : '—') + '</div>' +
+      '<div class="field"><label>重要度</label>' + (meta.importance || 5) + '/10</div>' +
+      '<div class="field"><label>权重分</label>' + (b.score || 0).toFixed(4) + '</div>' +
+      '<div class="field"><label>激活次数</label>' + (meta.activation_count || 1) + '</div>' +
+      '<div class="field"><label>已解决</label>' + (meta.resolved ? '✓' : '—') + '</div>' +
+      '<div class="field"><label>已消化</label>' + (meta.digested ? '✓' : '—') + '</div>' +
+      '<div class="field"><label>钉选</label>' + (meta.pinned ? '✓' : '—') + '</div>' +
+      '<div class="field"><label>触发日期</label>' + esc(meta.trigger_date || '—') + '</div>' +
+      '<div class="field"><label>创建</label>' + esc(meta.created || '—') + '</div>' +
+      '<div class="field"><label>最后活跃</label>' + esc(meta.last_active || '—') + '</div>' +
+    '</div>' +
+    '<div class="detail-content">' + esc(b.content) + '</div>' +
+    '<div class="detail-actions">' +
+      '<button class="btn-secondary" onclick="renderDetailEdit()">✎ 编辑</button>' +
+      // feel 桶永不归档(规格),这里就不给按钮
+      (meta.type === 'feel' ? '' : '<button class="btn-secondary" onclick="archiveBucket()">🗄 归档</button>') +
+      '<button class="btn-danger" onclick="deleteBucket()">🗑 删除</button>' +
+    '</div>' +
+    '<div class="detail-msg" id="detail-msg"></div>';
+}
+
+function renderDetailEdit() {
+  var b = detailBucket;
+  if (!b) return;
+  var meta = b.metadata || {};
+  function chk(name, label, on) {
+    return '<label class="detail-check"><input type="checkbox" id="ed-' + name + '"' + (on ? ' checked' : '') + ' /> ' + label + '</label>';
+  }
+  document.getElementById('detail-content').innerHTML =
+    '<h2>编辑 · ' + esc(meta.name || b.id) + '</h2>' +
+    '<div class="detail-form">' +
+      '<label>桶名</label><input type="text" id="ed-name" value="' + escAttr(meta.name || '') + '" />' +
+      '<label>域（逗号分隔）</label><input type="text" id="ed-domain" value="' + escAttr((meta.domain || []).join(', ')) + '" />' +
+      '<label>标签（逗号分隔）</label><input type="text" id="ed-tags" value="' + escAttr((meta.tags || []).join(', ')) + '" />' +
+      '<div class="detail-form-row">' +
+        '<div><label>重要度 1~10</label><input type="number" id="ed-importance" min="1" max="10" value="' + (meta.importance || 5) + '" /></div>' +
+        '<div><label>效价 0~1</label><input type="number" id="ed-valence" min="0" max="1" step="0.05" value="' + (meta.valence != null ? meta.valence : 0.5) + '" /></div>' +
+        '<div><label>唤醒 0~1</label><input type="number" id="ed-arousal" min="0" max="1" step="0.05" value="' + (meta.arousal != null ? meta.arousal : 0.3) + '" /></div>' +
+      '</div>' +
+      '<label>触发日期（YYYY-MM-DD，留空=不触发）</label><input type="text" id="ed-trigger" placeholder="2026-01-01" value="' + escAttr(meta.trigger_date || '') + '" />' +
+      '<div class="detail-checks">' +
+        chk('resolved', '已解决', meta.resolved) +
+        chk('digested', '已消化', meta.digested) +
+        chk('pinned', '钉选', meta.pinned) +
+        chk('dormant', '休眠', meta.dormant) +
+        chk('trigger_handled', '触发已处理', meta.trigger_handled) +
+      '</div>' +
+      '<label>内容</label><textarea id="ed-content" rows="12">' + esc(b.content || '') + '</textarea>' +
+      '<p class="detail-hint">只有真改过的字段才会提交；动了内容才重建向量、才留写前快照。钉选桶的重要度锁定为 10。</p>' +
+    '</div>' +
+    '<div class="detail-actions">' +
+      '<button class="btn-primary" onclick="saveDetailEdit()">保存</button>' +
+      '<button class="btn-secondary" onclick="renderDetailView()">取消</button>' +
+    '</div>' +
+    '<div class="detail-msg" id="detail-msg"></div>';
+}
+
+function detailMsg(text, isError) {
+  var el = document.getElementById('detail-msg');
+  if (el) {
+    el.textContent = text;
+    el.style.color = isError ? 'var(--negative)' : 'var(--text-dim)';
+  }
+}
+
+async function saveDetailEdit() {
+  if (!detailBucket) return;
+  var meta = detailBucket.metadata || {};
+  var isFeel = meta.type === 'feel';
+  var val = function(id) { return document.getElementById(id).value.trim(); };
+  var chk = function(id) { return document.getElementById(id).checked; };
+
+  var name = val('ed-name');
+  var domain = val('ed-domain');
+  if (!name) { detailMsg('桶名不能为空', true); return; }
+  // feel 桶按规格就是空 domain,别逼用户填一个
+  if (!domain && !isFeel) { detailMsg('域不能为空', true); return; }
+
+  var trigger = val('ed-trigger');
+  if (trigger && !/^\d{4}-\d{2}-\d{2}$/.test(trigger)) {
+    detailMsg('触发日期格式应为 YYYY-MM-DD', true); return;
+  }
+
+  // 只提交真改过的字段:整包发会让「纯元数据改动不写快照」失效,
+  // 每存一次都白留一份历史,还会白重建一次向量。
+  var payload = {};
+  var put = function(key, now, before) {
+    if (JSON.stringify(now) !== JSON.stringify(before)) payload[key] = now;
+  };
+  var listify = function(s) {
+    return s.split(',').map(function(x) { return x.trim(); }).filter(Boolean);
+  };
+  put('name', name, meta.name || '');
+  put('domain', listify(domain), meta.domain || []);
+  put('tags', listify(val('ed-tags')), meta.tags || []);
+  put('importance', Number(val('ed-importance')), meta.importance != null ? meta.importance : 5);
+  put('valence', Number(val('ed-valence')), meta.valence != null ? meta.valence : 0.5);
+  put('arousal', Number(val('ed-arousal')), meta.arousal != null ? meta.arousal : 0.3);
+  put('trigger_date', trigger, meta.trigger_date || '');
+  put('resolved', chk('ed-resolved'), !!meta.resolved);
+  put('digested', chk('ed-digested'), !!meta.digested);
+  put('pinned', chk('ed-pinned'), !!meta.pinned);
+  put('dormant', chk('ed-dormant'), !!meta.dormant);
+  put('trigger_handled', chk('ed-trigger_handled'), !!meta.trigger_handled);
+  put('content', document.getElementById('ed-content').value, detailBucket.content || '');
+
+  if (!Object.keys(payload).length) { renderDetailView(); detailMsg('没有改动'); return; }
+
+  detailMsg('保存中…');
+  try {
+    var res = await authFetch(BASE + '/api/bucket/' + detailBucket.id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res) return;
+    var data = await res.json();
+    if (!res.ok) { detailMsg('保存失败: ' + (data.error || res.status), true); return; }
+    detailBucket = { id: detailBucket.id, metadata: data.metadata, content: data.content, score: data.score };
+    renderDetailView();
+    detailMsg('已保存');
+    loadBuckets();
+  } catch (e) {
+    detailMsg('保存失败: ' + e.message, true);
+  }
+}
+
+async function archiveBucket() {
+  if (!detailBucket) return;
+  var meta = detailBucket.metadata || {};
+  if (!confirm('归档「' + (meta.name || detailBucket.id) + '」？归档后不再参与浮现，文件仍保留在 archive/ 里。')) return;
+  await removeBucket('archive', false);
+}
+
+async function deleteBucket() {
+  if (!detailBucket) return;
+  var meta = detailBucket.metadata || {};
+  if (!confirm('删除「' + (meta.name || detailBucket.id) + '」？删除前会存一份历史快照，但桶文件会从库里移除。')) return;
+  await removeBucket('delete', false);
+}
+
+async function removeBucket(mode, force) {
+  var id = detailBucket.id;
+  detailMsg(mode === 'archive' ? '归档中…' : '删除中…');
+  try {
+    var url = BASE + '/api/bucket/' + id + '?mode=' + mode + (force ? '&force=1' : '');
+    var res = await authFetch(url, { method: 'DELETE' });
+    if (!res) return;
+    var data = await res.json();
+    if (res.status === 409) {
+      // feel 桶永不归档,这条不给重试的口子
+      if (data.error === 'feel_never_archives' || force) {
+        detailMsg(data.detail || data.error, true);
+        return;
+      }
+      if (confirm('这是钉选/固化桶。确认仍要' + (mode === 'archive' ? '归档' : '删除') + '吗？')) {
+        return removeBucket(mode, true);
+      }
+      detailMsg('已取消');
+      return;
+    }
+    if (!res.ok) { detailMsg('操作失败: ' + (data.error || res.status), true); return; }
+    closeDetail();
+    loadBuckets();
+  } catch (e) {
+    detailMsg('操作失败: ' + e.message, true);
+  }
+}
+
 function closeDetail() {
   document.getElementById('detail-panel').classList.remove('open');
+  detailBucket = null;
 }
 
 var networkData = null;
@@ -1337,6 +1595,11 @@ function esc(s) {
   var d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+// esc() 不转义引号，放进 value="…" 会被引号截断；属性值一律用这个。
+function escAttr(s) {
+  return esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function formatTimeAgo(iso) {

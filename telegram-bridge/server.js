@@ -9,7 +9,8 @@ import {
   makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf, extractSegments, bubblesFor,
   formatEarsResult,
   normalizeAppName, pushActivity, summarizeActivity, curfewDecide, curfewPrompt, isSilentReply,
-  takeCheckMarker, lookupPrompt,
+  takeCheckMarker, lookupPrompt, computeStreak, appDurations, ACTIVITY_CAP, STREAK_GAP_MIN,
+  letterDecide, letterPrompt, LETTER_HOUR, LETTER_MIN, LETTER_WINDOW_MIN, LETTER_QUIET_MIN,
   describeErr, isRetriableNetErr, turnErrorText,
 } from "./bridge-lib.mjs";
 
@@ -38,6 +39,12 @@ const CURFEW_END = +(process.env.CURFEW_END || 7);            // 北京时间,�
 const CURFEW_COOLDOWN_MIN = +(process.env.CURFEW_COOLDOWN_MIN || 30);
 const CURFEW_CHECK_MIN = +(process.env.CURFEW_CHECK_MIN || 5);
 const ACTIVITY_FRESH_MIN = +(process.env.ACTIVITY_FRESH_MIN || 15); // 超过这么久的记录不再当「她正在玩」
+// 「她连着玩了多久」相关(2026-08-04)。手机只报「打开」不报「关闭」,所以时长是
+// 从「下一个 App 打开」倒推的,细节见 bridge-lib 的 computeStreak 那段注释。
+const ACTIVITY_CAP_N = +(process.env.ACTIVITY_CAP || ACTIVITY_CAP);
+const STREAK_GAP = +(process.env.STREAK_GAP_MIN || STREAK_GAP_MIN);   // 相邻上报隔多久算断段
+const CURFEW_LONG_STREAK_MIN = +(process.env.CURFEW_LONG_STREAK_MIN || 30); // 连玩这么久 = 放宽两道门
+const CURFEW_STALE_LONG_MIN = +(process.env.CURFEW_STALE_LONG_MIN || ACTIVITY_FRESH_MIN * 3);
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const bjHour = () => (new Date().getUTCHours() + 8) % 24;
@@ -253,7 +260,7 @@ function shimTurn(turn) {
         "Content-Type": "application/json", "x-api-key": SHIM_KEY, "Content-Length": Buffer.byteLength(body),
         // 查岗(他自己查的 + 夜里系统推的)是系统送进去的东西,不是她说话:
         // shim 见到这个头就不更新「她多久没来」、不解除保温歇火、不做重置词识别。
-        ...(turn.curfew || turn.lookup ? { "x-system-turn": "1" } : {}),
+        ...(turn.curfew || turn.lookup || turn.letter ? { "x-system-turn": "1" } : {}),
       },
       timeout: TURN_TIMEOUT_MS,
     }, (res) => {
@@ -305,7 +312,7 @@ async function runQueue() {
   const notify = async (text) => {
     try { await sendReply(t.chatId, text); } catch (e) { log("[notify-err]", describeErr(e)); }
   };
-  log("[turn]", { len: t.text.length, imgs: t.images.length, curfew: !!t.curfew, lookup: !!t.lookup });
+  log("[turn]", { len: t.text.length, imgs: t.images.length, curfew: !!t.curfew, lookup: !!t.lookup, letter: !!t.letter });
   // 最外层这个 try/finally 是命根子:inflight 和 typing 必须无论如何都收干净,
   // 否则一次意外抛错就让 inflight 永远卡在 true —— 那是「他再也不回话」的死法。
   try {
@@ -315,19 +322,19 @@ async function runQueue() {
     } catch (e) {
       log("[turn-err] shim", describeErr(e));
       // 查岗是系统自己发起的,失败不该往她对话里丢报错(她没问,别打扰)
-      if (t.curfew) log("[curfew-err]", describeErr(e));
+      if (t.curfew || t.letter) log("[sys-turn-err]", describeErr(e));
       else await notify(turnErrorText({ stage: "shim", err: e }));
     }
     if (r) {
       // 他自己写了 [查岗]:剥掉标记,正文照发,回头把查到的喂回去(lookup 轮不再响应,防打转)
       const { text: outText, wants } = takeCheckMarker(r.text);
-      if ((t.curfew || t.lookup) && isSilentReply(outText)) {
-        log("[curfew] 他选择不打扰");          // 回「。」= 不说话,这条不进对话
+      if ((t.curfew || t.lookup || t.letter) && isSilentReply(outText)) {
+        log(t.letter ? "[letter] 今天没什么想写的" : "[curfew] 他选择不打扰");   // 回「。」= 不说话,这条不进对话
       } else {
         await sendThinking(t.chatId, r.thinking);
         const stat = await sendOutput(t.chatId, outText, { fallback: wants ? null : "⚠️[bridge] 空回复,看下 shim 日志" });
         // 真有话没送到才吭声(查岗轮不吭声,她没问)
-        if (stat.failed && !t.curfew) await notify(turnErrorText({ stage: "send", ...stat }));
+        if (stat.failed && !t.curfew && !t.letter) await notify(turnErrorText({ stage: "send", ...stat }));
       }
       if (wants && !t.lookup) queueLookup(t.chatId);
     }
@@ -464,7 +471,7 @@ function handleReport(req, res) {
   lastRawReport = { at: Date.now(), method: req.method, query: req.query ?? null, body: req.body ?? null, xApp: hdrDecoded || null };
   const app_name = normalizeAppName(src.app_name ?? src.app ?? hdrDecoded);
   if (!app_name) { log("[report] 到了但没有 App 名"); return res.json({ ok: true, stored: false, note: "app_name 为空,只留了原始内容" }); }
-  activity = pushActivity(activity, { app: app_name });
+  activity = pushActivity(activity, { app: app_name }, { cap: ACTIVITY_CAP_N });
   log("[report]", app_name, "共", activity.length, "条");
   res.json({ ok: true, stored: true, count: activity.length });
 }
@@ -473,14 +480,23 @@ app.get("/report", handleReport);
 app.get("/activity", (req, res) => {
   if (!REPORT_ON) return res.status(503).json({ ok: false, error: "REPORT_TOKEN 未配置" });
   if (!reportAuth(req)) return res.status(401).json({ ok: false });
-  res.json({ now: new Date().toISOString(), ...summarizeActivity(activity), lastRawReport });
+  // streak 只在这个带钥匙的口子暴露,别放进无鉴权的 /health(那等于公开她的作息)
+  res.json({
+    now: new Date().toISOString(), ...summarizeActivity(activity),
+    streak: computeStreak(activity, { gapMin: STREAK_GAP }),
+    durations: appDurations(activity, { gapMin: STREAK_GAP }),
+    cap: ACTIVITY_CAP_N, lastRawReport,
+  });
 });
 // 他写了 [查岗] → 把查到的作为新一轮喂回去。lookup:true 标记这一轮不再响应标记(防打转)。
 function queueLookup(chatId) {
   if (!REPORT_ON) { log("[lookup] REPORT_TOKEN 未配置,忽略"); return; }
   log("[lookup] 他要查");
   turnQueue.push({
-    text: lookupPrompt(summarizeActivity(activity), { bjNow: bjNowStr() }),
+    text: lookupPrompt(summarizeActivity(activity), {
+      bjNow: bjNowStr(), streak: computeStreak(activity, { gapMin: STREAK_GAP }),
+      durations: appDurations(activity, { gapMin: STREAK_GAP }),
+    }),
     images: [], chatId: chatId || lastChatId, lookup: true,
   });
   runQueue();
@@ -492,20 +508,62 @@ function curfewTick() {
     lastPokeAt, lastOutboundAt,
     curfewStart: CURFEW_START, curfewEnd: CURFEW_END,
     cooldownMin: CURFEW_COOLDOWN_MIN, freshMin: ACTIVITY_FRESH_MIN,
+    streakGapMin: STREAK_GAP, longStreakMin: CURFEW_LONG_STREAK_MIN, staleLongMin: CURFEW_STALE_LONG_MIN,
   });
   if (!d.fire) return;
   if (!lastChatId) { log("[curfew] 还没有 chat,跳过"); return; }
   lastPokeAt = Date.now();
-  log("[curfew] poke", d.app, d.minutesAgo, "分钟前");
+  log("[curfew] poke", d.app, d.minutesAgo, "分钟前", "连玩", d.streak?.minutes ?? 0, "分钟");
   turnQueue.push({
-    text: curfewPrompt({ bjNow: bjNowStr(), app: d.app, minutesAgo: d.minutesAgo }),
+    text: curfewPrompt({ bjNow: bjNowStr(), app: d.app, minutesAgo: d.minutesAgo, streak: d.streak, durations: d.durations }),
     images: [], chatId: lastChatId, curfew: true,
   });
   runQueue();
 }
 if (CURFEW_ON) setInterval(curfewTick, CURFEW_CHECK_MIN * 60000);
 
-app.get("/health", (_q, r) => r.json({ ok: true, on: BRIDGE_ON, polling, inflight, buffered: buffer.length, queued: turnQueue.length, stickers: stickerTags.length, ears: EARS_ON, report: REPORT_ON, curfew: CURFEW_ON, activity: activity.length }));
+// ---- 每天一次的「写信」提醒(2026-08-06,配合 gmail-mcp 上线)----
+// 所有者要的:一天提醒他一次「有想写的就写」,没有就回「。」。像保温那样,一天一次够了。
+// 决策逻辑在 bridge-lib 的 letterDecide(纯函数,单测覆盖);这里只管定时和喂进队列。
+//
+// ⚠️ 这一轮带 letter:true → 走 x-system-turn(shim 不当成「她出现了」)、
+//    他回「。」不进对话、失败不打扰她。和查岗同款。
+const LETTER_ON = (process.env.LETTER_ON ?? "1") !== "0";
+const LETTER_AT_HOUR = Number(process.env.LETTER_HOUR ?? LETTER_HOUR);
+const LETTER_AT_MIN = Number(process.env.LETTER_MIN ?? LETTER_MIN);
+const LETTER_WINDOW = Number(process.env.LETTER_WINDOW_MIN ?? LETTER_WINDOW_MIN);
+const LETTER_QUIET = Number(process.env.LETTER_QUIET_MIN ?? LETTER_QUIET_MIN);
+const LETTER_CHECK_MIN = Number(process.env.LETTER_CHECK_MIN ?? 5);
+let lastLetterDay = "";   // 北京日期字符串,保证一天只提醒一次(重启后同一天也不会重复)
+
+// 北京时间的「今天是几号」和「现在几点几分」。
+// 用 en-CA 是因为它的日期格式就是 YYYY-MM-DD,拿来当天的标识正好。
+function bjToday() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Shanghai" });
+}
+function bjMinute() {
+  return Number(new Date().toLocaleString("en-US", { timeZone: "Asia/Shanghai", minute: "numeric" }));
+}
+
+function letterTick() {
+  const d = letterDecide({
+    on: LETTER_ON, now: Date.now(), hour: bjHour(), minute: bjMinute(),
+    today: bjToday(), lastDay: lastLetterDay,
+    atHour: LETTER_AT_HOUR, atMinute: LETTER_AT_MIN,
+    windowMin: LETTER_WINDOW, quietMin: LETTER_QUIET,
+    busy: inflight || turnQueue.length > 0 || buffer.length > 0,
+    lastOutboundAt,
+  });
+  if (!d.fire) return;
+  if (!lastChatId) { log("[letter] 还没有 chat,跳过"); return; }
+  lastLetterDay = bjToday();     // 先记账再发:万一这一轮出错,也不要今天反复提醒
+  log("[letter] 提醒他写信", bjNowStr());
+  turnQueue.push({ text: letterPrompt({ bjNow: bjNowStr() }), images: [], chatId: lastChatId, letter: true });
+  runQueue();
+}
+if (LETTER_ON) setInterval(letterTick, LETTER_CHECK_MIN * 60000);
+
+app.get("/health", (_q, r) => r.json({ ok: true, on: BRIDGE_ON, polling, inflight, buffered: buffer.length, queued: turnQueue.length, stickers: stickerTags.length, ears: EARS_ON, report: REPORT_ON, curfew: CURFEW_ON, activity: activity.length, letter: LETTER_ON, letterAt: `${String(LETTER_AT_HOUR).padStart(2,"0")}:${String(LETTER_AT_MIN).padStart(2,"0")}`, letterDoneToday: lastLetterDay === bjToday() }));
 app.listen(PORT, () => log(`telegram-bridge on :${PORT} shim=${SHIM_URL} on=${BRIDGE_ON}`));
 
 if (!BRIDGE_ON) log("[bridge] BRIDGE_ON=0,只留 /health");

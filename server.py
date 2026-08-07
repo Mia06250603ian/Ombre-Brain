@@ -2115,6 +2115,159 @@ async def api_bucket_detail(request):
     })
 
 
+@mcp.custom_route("/api/bucket/{bucket_id}", methods=["PATCH", "POST"])
+async def api_bucket_update(request):
+    """
+    Edit a bucket from the dashboard.
+    仪表板改桶：只改传入的字段，其余保持不动。
+
+    Body (all optional): name, content, tags[], domain[], importance,
+    valence, arousal, resolved, pinned, digested, dormant, trigger_date,
+    trigger_handled. Same field set trace() exposes to the model side.
+    Content edits re-generate the embedding so search stays in sync.
+    """
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+
+    bucket_id = request.path_params["bucket_id"]
+    bucket = await bucket_mgr.get(bucket_id)
+    if not bucket:
+        return JSONResponse({"error": "not found"}, status_code=404)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+
+    # --- Whitelist: never let the web UI write arbitrary frontmatter ---
+    # --- 白名单：不让网页端写入任意 frontmatter 字段 ---
+    allowed = {
+        "name", "content", "tags", "domain", "importance",
+        "valence", "arousal", "resolved", "pinned", "digested",
+        "dormant", "trigger_date", "trigger_handled",
+    }
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if not updates:
+        return JSONResponse({"error": "no editable fields provided"}, status_code=400)
+
+    # --- Normalize list fields: accept "a, b" or ["a","b"] ---
+    for key in ("tags", "domain"):
+        if key in updates:
+            val = updates[key]
+            if isinstance(val, str):
+                val = [s.strip() for s in val.split(",")]
+            updates[key] = [str(s).strip() for s in (val or []) if str(s).strip()]
+
+    # feel buckets are created with an empty domain on purpose (B-10) —
+    # only ordinary buckets must keep one.
+    # feel 桶按规格就是空 domain，别在这儿硬塞一个回去。
+    is_feel = bucket.get("metadata", {}).get("type") == "feel"
+    if "domain" in updates and not updates["domain"] and not is_feel:
+        return JSONResponse({"error": "domain cannot be empty"}, status_code=400)
+
+    if "trigger_date" in updates and updates["trigger_date"]:
+        if not _valid_date(str(updates["trigger_date"])):
+            return JSONResponse({"error": "trigger_date must be YYYY-MM-DD"}, status_code=400)
+    if "name" in updates and not str(updates["name"]).strip():
+        return JSONResponse({"error": "name cannot be empty"}, status_code=400)
+
+    try:
+        if "importance" in updates:
+            updates["importance"] = int(updates["importance"])
+        for key in ("valence", "arousal"):
+            if key in updates:
+                updates[key] = float(updates[key])
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "importance/valence/arousal must be numeric"}, status_code=400)
+
+    try:
+        ok = await bucket_mgr.update(bucket_id, **updates)
+    except Exception as e:
+        logger.error(f"Dashboard bucket update failed / 改桶失败: {bucket_id}: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+    if not ok:
+        return JSONResponse({"error": "update failed"}, status_code=500)
+
+    # --- Content changed → refresh embedding so search follows the edit ---
+    if "content" in updates and embedding_engine and embedding_engine.enabled:
+        try:
+            await embedding_engine.generate_and_store(bucket_id, updates["content"])
+        except Exception as e:
+            logger.warning(f"Embedding refresh failed after edit / 改桶后重建向量失败: {bucket_id}: {e}")
+
+    updated = await bucket_mgr.get(bucket_id)
+    meta = (updated or {}).get("metadata", {})
+    return JSONResponse({
+        "ok": True,
+        "id": bucket_id,
+        "updated_fields": sorted(updates.keys()),
+        "metadata": meta,
+        "content": strip_wikilinks((updated or {}).get("content", "")),
+        "score": decay_engine.calculate_score(meta) if updated else 0,
+    })
+
+
+@mcp.custom_route("/api/bucket/{bucket_id}", methods=["DELETE"])
+async def api_bucket_delete(request):
+    """
+    Delete or archive a bucket from the dashboard.
+    仪表板删桶。?mode=archive 只归档（可恢复），默认 delete 真删。
+
+    Pinned/protected buckets refuse deletion unless ?force=1 —
+    钉选/保护桶要带 force=1 才删得掉，防手滑。
+    A history snapshot is taken by BucketManager.delete() before removal.
+    """
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+
+    bucket_id = request.path_params["bucket_id"]
+    mode = (request.query_params.get("mode") or "delete").lower()
+    force = request.query_params.get("force") in ("1", "true", "yes")
+
+    bucket = await bucket_mgr.get(bucket_id)
+    if not bucket:
+        return JSONResponse({"error": "not found"}, status_code=404)
+
+    meta = bucket.get("metadata", {})
+    if (meta.get("pinned") or meta.get("protected") or meta.get("type") == "permanent") and not force:
+        return JSONResponse(
+            {"error": "protected", "detail": "钉选/固化桶需 force=1 才能删除或归档"},
+            status_code=409,
+        )
+
+    if mode == "archive":
+        # Spec: feel buckets never archive — decay_engine skips them on purpose,
+        # so the dashboard must not be the one back door that files them away.
+        # 规格：feel 桶永不归档（衰减引擎明确跳过），网页端不能开这个后门。
+        if meta.get("type") == "feel":
+            return JSONResponse(
+                {"error": "feel_never_archives", "detail": "feel 桶按规格永不归档；要清掉请用删除"},
+                status_code=409,
+            )
+        ok = await bucket_mgr.archive(bucket_id)
+        if not ok:
+            return JSONResponse({"error": "archive failed"}, status_code=500)
+        return JSONResponse({"ok": True, "id": bucket_id, "mode": "archive"})
+
+    if mode != "delete":
+        return JSONResponse({"error": "mode must be delete or archive"}, status_code=400)
+
+    ok = await bucket_mgr.delete(bucket_id)
+    if not ok:
+        return JSONResponse({"error": "delete failed"}, status_code=500)
+
+    # --- Drop the orphaned embedding too / 顺手清掉孤儿向量 ---
+    if embedding_engine:
+        try:
+            embedding_engine.delete_embedding(bucket_id)
+        except Exception as e:
+            logger.warning(f"Failed to drop embedding / 删除向量失败: {bucket_id}: {e}")
+
+    return JSONResponse({"ok": True, "id": bucket_id, "mode": "delete"})
+
+
 @mcp.custom_route("/api/search", methods=["GET"])
 async def api_search(request):
     """Search buckets by query."""
