@@ -400,6 +400,12 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
   `test-bridge.mjs` 两个计数(标签 53→59、webm 18→**24**),**其余守护一条没动**;
   三份手册。**`server.js`/`bridge-lib.mjs` 一个字没改**——发送路径、`stickerMime`、
   file_id 缓存全部照旧(`stickerFileIds` 是内存缓存,部署重启自然清掉,不会继续发旧图)。
+  deployment `6a76c8fbdb4ec8cd006a7e83` 约 **1 分钟** RUNNING,PLANTYPE `nodejs`。
+  **上线验收**:`/health` 报 `stickers:59`,polling/ears/report/curfew/letter 五个开关全部照旧;
+  容器内 `server.js` `167e611d…`、`bridge-lib.mjs` `2fbe34c0…` **与 08-07 那次逐字相同**
+  (代码确实一个字没改),`registry.json` `24af078f…`、三个抽查的 webm md5 **容器 = 本地**;
+  容器内 webp 35 / webm 24 / mini 6。交接时两条 `409 Conflict`(新旧容器抢 getUpdates,
+  已知边界 1),**33 秒内自行消解**,期间她的一轮对话正常跑完(日志有 `[turn]`)。
   验收:test-bridge **262 项全绿**;**本地真启动过一次**(`BRIDGE_ON=0`,`/health` 回读
   `stickers:59`、**`polling:false`**——必须确认是 false,否则会跟线上抢 getUpdates,
   那就是已知边界 1 的 409);24 张逐张实测 **89 帧 / 2.97s / ≤98.3KB / 绿边 0**(那四张真绿的除外);
