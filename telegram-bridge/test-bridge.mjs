@@ -215,7 +215,7 @@ eq(splitBubbles("  \n "), [], "纯空白零泡");
 {
   const reg = JSON.parse(fs.readFileSync("stickers/registry.json", "utf8"));
   const tags = Object.keys(reg);
-  ok(tags.length === 53, `registry 53 个标签(实际 ${tags.length})`);
+  ok(tags.length === 59, `registry 59 个标签(实际 ${tags.length})`);
   const missing = tags.filter((t) => !fs.existsSync(`stickers/${reg[t]}`));
   eq(missing, [], "registry 指向的文件全存在");
   const dup = new Set(Object.values(reg));
@@ -224,7 +224,7 @@ eq(splitBubbles("  \n "), [], "纯空白零泡");
   const webp = Object.values(reg).filter((f) => f.endsWith(".webp"));
   const webm = Object.values(reg).filter((f) => f.endsWith(".webm"));
   ok(webp.length === 35, `静态贴纸仍是 35 张(实际 ${webp.length})`);
-  ok(webm.length === 18, `会动的螃蟹 18 张(实际 ${webm.length})`);
+  ok(webm.length === 24, `会动的螃蟹 24 张(实际 ${webm.length})`);
   eq(Object.values(reg).filter((f) => !/\.(webp|webm)$/.test(f)), [], "只允许 webp/webm 两种");
   // 螃蟹那套一律带前缀,和所有者亲起的那 35 个名字永不撞车
   eq(Object.entries(reg).filter(([t, f]) => f.endsWith(".webm") && !t.startsWith("螃蟹")).map(([t]) => t),
