@@ -51,5 +51,11 @@
   "螃蟹睡了": "clawd-sleeping.webm",
   "螃蟹扫地": "clawd-sweeping.webm",
   "螃蟹在想": "clawd-thinking.webm",
-  "螃蟹在打字": "clawd-typing.webm"
+  "螃蟹在打字": "clawd-typing.webm",
+  "螃蟹偷看": "clawd-mini-peek.webm",
+  "螃蟹冒出来": "clawd-mini-enter.webm",
+  "螃蟹横着走": "clawd-mini-crabwalk.webm",
+  "螃蟹警觉": "clawd-mini-alert.webm",
+  "螃蟹探头开心": "clawd-mini-happy.webm",
+  "螃蟹探头发呆": "clawd-mini-idle.webm"
 }
