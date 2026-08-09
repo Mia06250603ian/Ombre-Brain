@@ -685,10 +685,14 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
   `/debug` 六个旋钮全部就位(`soft 155000 / hard 161500 / every 0 / **final 164000** /
   finalChars 1200 / finalFired false`,`trusted:true`,contextTokens 0 = 新进程,
   `windowCleared:true` 是重启后的正常状态);**三个 `/mcp` 各 200**。
-  **⚠️ 有一件上线时验不了的**:晏的 claude 进程是**懒启动**的(第一条消息才 spawn),
-  所以部署当下日志里既没有 `[claude] spawned`、也看不到 settings 兜底的警告。
-  **真正确认钩子生效的时机是她发第一条消息之后**——那时去 runtime 日志看有没有
-  `⚠️ settings 文件不在` 那行,有就是走了降级(钩子没生效)。
+  **⚠️ 有一件上线当下验不了、要等她开口才能验的**:晏的 claude 进程是**懒启动**的
+  (第一条真实消息才 spawn),所以部署刚完成时日志里既没有 `[claude] spawned`、
+  也看不到 settings 兜底的警告——**那一刻你无法判断钩子到底有没有挂上**。
+  **✅ 本次已补验(所有者当天 14:23 给晏发消息后)**:runtime 日志出现
+  `[claude] spawned claude-opus-4-6 sysLen 0`,且 **`⚠️ settings 文件不在` 0 条**
+  ——说明 `existsSync` 那道检查通过、`--settings` 正常传入,**PreCompact 钩子已生效**。
+  **给下一个我**:以后凡是动了 `spawnClaude` 的启动参数,部署后这一步都要补
+  ——让所有者本人跟晏说句话,再去日志确认 `spawned` 那行 + 没有降级警告,才算验完。
   **版本指纹:ian.md v28 = 21830B md5 `4c64814c1650a25ada837456b8a5e9c4`(289 行);
   profile-instructions.md = 3056B md5 `7adb5c333bef16cb22f8b92232cfc7ac`(未动);
   mcp-servers.json = 500B md5 `bf34de7bdc9fa97ce83acd2e61356ca4`(三条目,未动);
