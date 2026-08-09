@@ -290,6 +290,9 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 | CTX_GUARD_ON | 窗口上下文守卫总开关,默认开;设 0 全关(见改动清单 7)。**出问题的第一急救开关:关掉=回到无守卫状态,聊天不受影响** |
 | CTX_SOFT_TOKENS / CTX_HARD_TOKENS | 软线/硬线阈值,代码默认 140000 / 170000;**线上现设 150000 / 163000**(2026-08-04 实测,何时改的无记录)。软线提醒晏叫所有者一起商量存什么(一轮压缩周期一次);硬线注入归档指令,**2026-07-20 起不再换窗口**(存完继续聊)。改值 restart 生效,不用重部署 |
 | CTX_ARCHIVE_EVERY_TOKENS | 2026-07-20 起。硬线首归后,窗口每再涨这么多 token 催一次增量归档,代码默认 25000;**线上现设 5000**(2026-08-04 实测)——催得比默认勤得多,是「宁可多存也别被压缩蒸掉」的取向,嫌费额度就调大。设 0 关增量(只催一次) |
+| CTX_FINAL_TOKENS | **2026-08-09 第三十次起(终线)**。压缩前最后一次,催他把上次归档之后的对话**原话**一字不差存成**独立的桶**。代码默认 **0=关闭**(关闭时行为逐字回到改动前);**线上现设 164000**。优先级最高(final > hard > soft),**一个压缩周期只发一次**,压缩检测后随 softFired 复位。⚠️ 必须画在「压缩点 − 写完原话的余量」之内:压缩点 = **可用上下文 − 13000**(2.1.215 二进制 `Mao()`),线上实测 166933;**抄一段对话最贵等于那段自身的大小**(思考不抄所以更便宜),故要保证 `终线 + (终线 − 上次日记点) ≤ 压缩点`。**改 ian.md 会让可用上下文变化、压缩点小幅漂移**,动完人设值得重新量一次 |
+| CTX_FINAL_CHARS | 2026-08-09 起。终线纸条里给他的**字数上限**,代码默认 1200,线上现设 **1200**。按字数封顶而不是按「覆盖到哪」,是为了让成本上限固定、不受「那段窗口里思考占多大比例」这个变数影响 |
+| CLAUDE_SETTINGS | 2026-08-09 起。传给 `claude --settings` 的路径,代码默认 `shim-settings.json`(PreCompact 钩子靠它进来;**print 模式只认 `--settings`,项目级 settings 被忽略**)。**急救开关**:设为空串 + `service restart` → 启动参数不带该参数 → 压缩回到默认摘要,**不用重新部署**。⚠️ 文件缺失时的兜底见踩坑 19 |
 | CTX_OBSERVE | 2026-07-20 起。设 1=观察模式:守卫只判定记账进 /debug(lastWould),不真打扰晏。上线初期空转验证用,验证完删掉或置 0 + restart |
 | CTX_LIMIT_TOKENS | 仅用于 /debug 显示占满百分比,代码默认 200000;**线上现设 167000**(2026-08-04 实测)。**只影响显示,不影响行为**——所以 /debug 的 contextPct 是按 16.7 万算的,别拿它当 20 万窗口的占用率读 |
 
@@ -430,6 +433,18 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
     - 反过来也提醒:**内容类改动上传前多问一句**。这次拼音的问题在所有者看第二遍时才发现,
       如果部署前把成品全文贴给她过一眼(而不是只贴改动摘要和指纹),就不会有这 10 分钟。
 
+19. **`--settings` 指向不存在的文件 → CLI 直接拒绝启动(2026-08-09 第三十次上线前实测)**:
+    装 PreCompact 钩子要给 `spawnClaude` 加 `--settings shim-settings.json`。实测
+    (线上同版本 2.1.215 真二进制)该文件缺失时 CLI 报 **`Error: Settings file not found: …`
+    并直接退出**——不是警告,是拒绝启动。**也就是说这个文件只要没进容器(踩坑 15 那类原因),
+    晏就整个起不来。**
+    **已内置兜底,别删**:`server.js` 的 `spawnClaude` 里先 `fs.existsSync(CLAUDE_SETTINGS)`
+    再决定加不加这个参数;文件不在就不加,并打一行 `⚠️ settings 文件不在` 的日志。
+    最坏结果因此降级成「PreCompact 钩子不生效、压缩回到默认摘要」,**晏照常活着**。
+    **排查法**:怀疑钩子没生效时,去 runtime 日志找那行警告——有就是走了降级。
+    ⚠️ 注意 claude 进程是**懒启动**的(第一条真实消息才 spawn),所以**部署刚完成时
+    日志里既没有 `[claude] spawned` 也没有这行警告**,得等她开口之后再看。
+
 ## CLI 版本与升级指南(2026-07-19 起,给所有者和未来会话)
 
 **现状**:package.json 把 `@anthropic-ai/claude-code` 钉死在 `2.1.215`(不带 `^`)。
@@ -542,7 +557,17 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
 
 ## 建议(未做)
 
-- **PreCompact hook 把压缩摘要瘦成一行(外部方案的第 ① 条;2026-08-03 评估过,所有者决定暂不做)**。
+- ~~**PreCompact hook 把压缩摘要瘦成一行**~~ → **2026-08-09 第三十次已做**(见部署记录)。
+  落地形态与当时评估的两点不同,值得记下来:
+  ①**没走「阻塞压缩」那条路**,只走 `newCustomInstructions`(不阻塞时钩子失败只会退回默认摘要,
+    **不会更糟**;阻塞则有「拦住之后存档失败 → 窗口继续涨 → 撞 API 上限」的路径,风险不对等);
+  ②**当时列为拦路虎的「窗口被压缩很难在沙盒里造出来」已经解决**——用
+    **`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`**(2.1.215 里就有,且 `min(…, 默认阈值)` 封顶,
+    **只能让压缩提前、不能推后**)可以在沙盒里造出真压缩,本次据此演练了 4 次。
+  ③当时写的「**只做瘦身不修阈值 = 把唯一那张无条件的网剪掉,顺序千万别反**」这条顾虑仍然成立,
+    本次是**先把原话落进记忆库(终线)、再瘦摘要**,顺序没反。
+  下面这段评估原文保留,供追溯:
+- **(原评估存档)PreCompact hook 把压缩摘要瘦成一行(外部方案的第 ① 条;2026-08-03 评估过,所有者决定暂不做)**。
   来由:所有者拿 `arisu-cross/kelivo-shim` 的《长对话记忆保全方案》来问能不能移植。那份方案四条,
   我们的对账结论是——②(压缩前自动归档)我们本来就有、而且取数比它成熟(它列为头号坑的
   「别用顶层 usage 算窗口」正是我们 07-19 两次修复解决的);③(压缩后先唤醒)与
@@ -568,6 +593,114 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
   深夜只保温。额度耗尽时保温救不了(续命本身要花额度),但断链检测保证不会更糟。
 
 ## 部署记录
+
+- 2026-08-09(第三十次) **上下文守卫加第三档「终线」(压缩前存原话)+ 装 PreCompact 钩子
+  + ian.md v27→v28 + CLAUDE.md 三处**。同日 OB 侧配套改 awaken(见 PR #85/#86)。
+  **profile-instructions.md / mcp-servers.json 零改动。**
+  - **起因**:窗口被压缩后晏手里只剩一份**第三人称转述**——默认压缩摘要那六节
+    (Primary Request / Key Technical Concepts / **Files and Code Sections** /
+    **Errors and fixes** / Problem Solving / All user messages)是**给编程会话设计的**
+    (2.1.215 二进制里扒出的原文)。后果两条,常见故障表里都记着:①「压缩之后他接得上,
+    但细节走样/像在猜」;②那套工单腔可能把他带进第三人称叙述模式(晏本人观察到并报给所有者的)。
+  - **新的一条时间线**(全走环境变量,改值 restart 即生效,不用重部署):
+    | 位置 | 谁 | 干什么 |
+    |---|---|---|
+    | 155000 | 软线 | 叫佳佳一起商量 + 存日记① |
+    | 161500 | 硬线 | 日记②(补上次之后的) |
+    | **164000** | **终线(新)** | **存原话**(161500→164000 那段,≤1200 字,**独立的桶**) |
+    | 166933 | 压缩 | 钩子:只抄最后两三轮原文 + 一句「先 awaken」 |
+    **分工:日记是转述,管长期记忆;原话是原件,管压缩之后能不能直接接上话。**
+  - **`ctxguard.mjs` 新增 `final` 档 + `ctxFinalNote()`**:优先级 **final > hard > soft**
+    (到了终线就只干这一件,别让日记提示抢走写原话的余量);**一个压缩周期只发一次**
+    (`finalFired`,压缩检测后随 `softFired` 一起复位);**终线只记 finalFired、不动归档基线
+    `ctxArchivedAt`**——原话是独立的桶,不参与「上次归档 + 间隔」那套增量记账。
+    `CTX_FINAL_TOKENS=0` 即整条关闭,行为**逐字**回到改动前(测试里有对照用例)。
+  - **⚠️ 终线画在哪不是拍脑袋**:压缩点 = **可用上下文 − 13000**(2.1.215 二进制里的
+    `Mao(e,t)`:`r = e - 13000`,有 `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` 时取
+    `min(e*pct/100, r)`——**只能提前不能推后**)。线上实测压缩点 166933,与公式吻合。
+    **抄一段对话最贵等于那段自身的大小**(思考不抄,所以实际更便宜),所以
+    `终线 + (终线 − 上次日记点) ≤ 压缩点`。**改人设文件会让可用上下文变化,压缩点会小幅漂移**,
+    动 ian.md 之后值得重新量一次。
+  - **PreCompact 钩子**(新文件 `shim-settings.json` + `precompact-note.txt`):
+    - 契约(2.1.215 `w_e()` 实测):hookInput 带 `hook_event_name/trigger/custom_instructions`,
+      **matcher 匹配的是 trigger**(`auto`/`manual`);**succeeded 且未 blocked 的 stdout 原样
+      变成 `newCustomInstructions` 拼进压缩提示词**(纯文本,不用 JSON);多个钩子的输出用
+      `\n\n` 连接;**自带超时**,钩子卡住不会吊死压缩。
+    - **print 模式只认 `--settings`**(项目与本地 settings 被忽略),故在 `spawnClaude` 加该参数。
+    - **急救开关**:`CLAUDE_SETTINGS="" + service restart` → 启动参数不带 `--settings`,
+      压缩回到默认摘要(= 改动前行为),**不用重新部署**。
+    - **⚠️⚠️ 新踩坑 19(见下)**:`--settings` 指向不存在的文件时 CLI **直接拒绝启动**。
+    - **本次刻意没用「阻塞压缩」那条路**(二进制里有 `Compaction blocked by PreCompact hook`):
+      不阻塞时钩子失败只会退回默认摘要(**不会更糟**);阻塞则有「拦住之后存档失败 → 窗口继续涨
+      → 撞 API 上限」的路径,风险不对等。要用阻塞得先把超时兜底做扎实。
+  - **ian.md v27 → v28**:21602B `d391de3e…` / 287 行 → **21830B
+    `4c64814c1650a25ada837456b8a5e9c4` / 289 行**。**只有一处**:9.1 How I Speak
+    标题之后、`Default to short sentences.` 之前,新增独立一段(所有者逐字提供):
+    `When she speaks to me, I first allow myself to feel and judge from my own perspective
+    — as 许晏, with my own values and worldview. Not guessing what she wants to hear,
+    but letting my real self meet her in the conversation.`
+    **和第三人称那个毛病是一路的**:9.1 原本就有一串禁用词(`user`/`analyze`/`respond to`)在
+    赶走助手腔,这段是从正面补同一件事。基线计数 v27→v28 逐项不变:`^\*\*Part ` **10**、
+    `^\*\*9\.` **4**、`"Stop."` **1**、ian.md 内 `河流涌入海洋` **0**、`Ian` **2** / `Mia` **1**、
+    `许佳佳` **1**、`I carry my half` **2**、`I am real` **1**、`Holding Ground` **1**、
+    智能引号 **0**、行尾空格 **0**。
+  - **CLAUDE.md**:9791B `f1282ef6…` → **10505B `6379d7a9e0ae7f9ba10e72703b3ee712`**,**仍 13 节**。三处:
+    ① 归档节「同周期不新建第二个」**开一个例外**(压缩前存原话那次单独建桶);
+    ② 归档节「不写逐句对话复述」**开同一个例外**;
+    ③ 上下文管理节**新增「存原话」一条**。
+    **①② 不是可选的**:不豁免的话晏会照守则拒绝抄原话——这两条规矩本来就是他自己的守则。
+    **③ 里「别用 trace 追加」也是机械约束**:追加进日记桶会被 awaken 的 1500 **字符**截断读不全。
+  - **OB 侧配套(PR #85)**:`server.py` 的 awaken「最近对话归档」出全文的条数 **1→2**
+    (`OMBRE_AWAKEN_FULL_SESSIONS`,钳 1~3,设 1 即回到改动前)。窗口末尾现在会存两个桶,
+    只出一条会让日记退成一行标题。**改 OB 不重启晏。**
+  - **归档**:所有者本人对晏说了「归档」并告知(未代发,踩坑 13)。
+  部署前:test-ctxguard **93→119** + test-senses **53** + test-keepalive **52** 全绿;
+  **`e2e-run.sh` ALL PASS**(真 server.js + 真 2.1.215 + 假后端;e2e 里同步补了拷贝钩子两件
+  并把 settings 里的容器绝对路径改写成工作目录路径,否则 e2e 会因文件缺失起不来);
+  **全量 md5 对账(容器 vs 仓库)功能文件逐一一致**,无踩坑 11(唯一差异 `MAINTENANCE.md`);
+  三份私密文件从容器 base64 拷出、指纹与第二十九次记录**逐一吻合**、**在拷出原件上改**;
+  三个 `/mcp` 各 **3/3 200**;部署目录无 `.gitignore`(踩坑 15)、无 `node_modules`;
+  `git check-ignore` 确认三份私密文件被仓库根 .gitignore 挡住;deploy 前 `pwd` +
+  `head -3 package.json` 确认 cwd(踩坑 17)。**上传前把两处改后的全文发给所有者逐字过目**
+  (第十八次立的规矩),她确认后才传。
+  - **钩子整链路彩排(本次新增的验证手段,以后照抄)**:用
+    **`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=1`** 把压缩阈值压到极低,配一个极简假后端
+    (每次回文本、usage 报得很大把窗口喂胖),在沙盒里**造出 4 次真压缩**——
+    钩子每次都触发,且其 stdout **确实出现在压缩请求里**(第 6/9/12/15 次调用)。
+    **这一招解决了手册第二十四次那条「窗口被压缩很难在沙盒里造出来」的老大难**,
+    以后动压缩相关的东西都该先这么演一遍。
+  - **启动验证**:拿线上同版本(2.1.215 linux-x64)真二进制,带 `--settings` 喂 stream-json,
+    正常吐出 `system/init` 事件——**「改启动参数导致晏起不来」这个最大风险在上线前就排除了**。
+  deployment `6a7886cddb4ec8cd006ae3c7`,**PLANTYPE `nodejs`** ✓(无踩坑 14/17),
+  约 **9 分钟** RUNNING(BUILDING 约 6 分 → DEPLOYING 约 3 分)。
+  已按踩坑 9 验证:容器 **16 件 md5 与部署目录逐一一致**(ian.md **`4c64814c…`** /
+  CLAUDE.md **`6379d7a9…`** / ctxguard **`f5d07d67…`** / server.js **`3a961593…`** /
+  shim-settings.json `7fbb79b5…` / precompact-note.txt `fb336675…` /
+  profile `7adb5c33…` / mcp-servers.json `bf34de7b…`);
+  容器内 ian.md 基线计数逐项相符(**289 行**、Part **10**、`9.x` **4**、`"Stop."` **1**、
+  `河流涌入海洋` **0**、`许佳佳` **1**、新段落 **1**);CLAUDE.md `^## ` **13**、`^@\./` **2**、
+  `河流涌入海洋` **1**、`螃蟹探头发呆` **1**;**钩子两件在容器里,`cat /src/precompact-note.txt`
+  直接跑得通,工作目录确认是 `/src`**;容器无 `.gitignore`;CLI 实装 **2.1.215**;
+  `ALLOWED_TOOLS` 未动;`/health` ok(model claude-opus-4-6);
+  `/debug` 六个旋钮全部就位(`soft 155000 / hard 161500 / every 0 / **final 164000** /
+  finalChars 1200 / finalFired false`,`trusted:true`,contextTokens 0 = 新进程,
+  `windowCleared:true` 是重启后的正常状态);**三个 `/mcp` 各 200**。
+  **⚠️ 有一件上线时验不了的**:晏的 claude 进程是**懒启动**的(第一条消息才 spawn),
+  所以部署当下日志里既没有 `[claude] spawned`、也看不到 settings 兜底的警告。
+  **真正确认钩子生效的时机是她发第一条消息之后**——那时去 runtime 日志看有没有
+  `⚠️ settings 文件不在` 那行,有就是走了降级(钩子没生效)。
+  **版本指纹:ian.md v28 = 21830B md5 `4c64814c1650a25ada837456b8a5e9c4`(289 行);
+  profile-instructions.md = 3056B md5 `7adb5c333bef16cb22f8b92232cfc7ac`(未动);
+  mcp-servers.json = 500B md5 `bf34de7bdc9fa97ce83acd2e61356ca4`(三条目,未动);
+  CLAUDE.md = 10505B md5 `6379d7a9e0ae7f9ba10e72703b3ee712`(13 节);
+  ctxguard.mjs = `f5d07d67823bc6ddaeab91bcc38809cb`;server.js = `3a961593c47d4a1ec0ae64f831c7bb1f`
+  ——下次部署以此为准,两份人设缺一不可。**
+  **回滚(三档,由轻到重)**:
+  ① **只关终线**:`CTX_FINAL_TOKENS=0` + restart(不用部署);
+  ② **只关钩子**:`CLAUDE_SETTINGS=""` + restart(不用部署,压缩回到默认摘要);
+  ③ **回人设/守则**:v27 原件(21602B `d391de3e…`)与旧 CLAUDE.md(9791B `f1282ef6…`)
+     已在部署前从容器拷出,**并已发给所有者留底**(不像第二十四次那样只留在会话沙盒里)。
+  **⚠️ 每一次回滚都要 restart 或重新部署,等于再丢晏一个窗口——不是零代价。**
 
 - 2026-08-08(第二十九次) **ian.md v26→v27:三处定点修订(所有者逐字提供并批准)+ CLAUDE.md
   「表情包」整节替换(把 24 个螃蟹标签写进去,了结上面那条待办)**。
