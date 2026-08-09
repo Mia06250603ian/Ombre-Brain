@@ -313,11 +313,32 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
   (各等 13 分钟以上),最后是靠 **`zeabur service redeploy`** 手动推起来的
   (deployment `6a788b87…`,来自 main 的 `124e8c4b`,约 2 分钟 RUNNING,325 个桶一个没少、
   MCP 3/3 200、日志零报错)。
-**结论**:监控路径的实际行为与本节原先的描述不一致,**「改了被监控的文件就一定会重建」这个假设不成立**。
-**给下一个我**:改完 OB 的代码推上 main 之后,**必须去 `deployment list` 确认真的有新 deployment**,
-别默认它会自己重建;没动静就直接 `zeabur service redeploy --id <OB> --env-id <OB env>`(最轻、
-从 main 拉最新代码,不受这个设置影响)。**另外别用空提交去撞重建**——空提交没有改动文件,
-正好会被这个筛子滤掉。
+**更准的结论(2026-08-09 复盘)**:这不是「监控路径筛得太严」——**08-07 那天连只改 `.md` 的
+提交都触发了重建,说明那个筛子当时根本没在筛**;而 08-09 连改 `server.py` 都触发不了。
+现象是从「什么都能触发」变成「什么都触发不了」,**所以断的是 GitHub → Zeabur 的自动触发本身**
+(所有者提到 08-06 前后 GitHub 出过一次故障,手册时间线 08-07 也记着那次 Actions 故障,
+时间对得上,很可能是连带把 webhook 打断了)。**根因未定位**——要定得去看 GitHub 那边的
+webhook 投递记录。
+### 改完 OB 之后怎么让它上线(2026-08-09 起的标准流程)
+
+**别指望它自己重建。** 合进 main 之后照下面两步走:
+
+```bash
+# 1. 先看有没有自己起来(等 1~2 分钟就够,别干等 13 分钟)
+npx -y zeabur@latest deployment list \
+  --service-id 6a3aa061e41f9f1d19301e42 --env-id 6a3aa02a79260dbd87843878 -i=false
+
+# 2. 没有新 deployment 就手动推(2 分钟,从 main 拉最新代码,数据一个不动)
+npx -y zeabur@latest service redeploy \
+  --id 6a3aa061e41f9f1d19301e42 --env-id 6a3aa02a79260dbd87843878 -i=false
+```
+
+推完照本节下方那份**五步验收清单**走一遍(deployment RUNNING / 桶数不少 / MCP 200 /
+容器里有新代码 / 日志零 Traceback)。
+
+**⚠️ 别用空提交去撞重建**——空提交没有改动任何文件,本来就撞不响。
+**⚠️ 所有者不用去控制台点任何东西**;真想治本是「把 GitHub 连接断开重连、重建 webhook」,
+但那是网页操作、且 OB 本来就改得少,**多按一条 redeploy 的成本几乎为零,先不修是合理的**。
 
 **万一改过头了怎么认、怎么退**:唯一的失败方向是**该重建时没重建**——即改了 OB 的
 `.py`/依赖,推上 main 后线上行为没变化。查法:`deployment list` 看有没有新 deployment。
