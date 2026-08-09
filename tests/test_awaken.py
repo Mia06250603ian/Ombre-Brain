@@ -132,6 +132,21 @@ class TestAwakenSections:
         assert "(全文)" in boot and "昨晚的对话概述" in boot
 
     @pytest.mark.asyncio
+    async def test_two_latest_archives_both_full(self, srv):
+        """2026-08-09:窗口末尾会存两个桶——日记(转述)+ 原话(逐字)。
+        两条都必须出全文,只出一条的话日记会退成标题,他得再跑一趟 dream 才看得到。"""
+        await srv.archive_session(summary="第一个桶:今天的日记正文")
+        await srv.archive_session(summary="第二个桶:原话一字不差的正文")
+        await srv.archive_session(summary="更早那个桶:只该有标题")
+        boot = await srv._awaken_impl()
+        # 最近两条都带全文
+        assert boot.count("(全文)") == 2
+        assert "第二个桶:原话一字不差的正文" in boot
+        assert "第一个桶:今天的日记正文" in boot
+        # 第三条只留标题,正文不该出现
+        assert "更早那个桶:只该有标题" not in boot
+
+    @pytest.mark.asyncio
     async def test_surfacing_section_lists_dynamic_buckets(self, srv):
         bid = await _mk(srv, "最近发生的一件热乎事")
         boot = await srv._awaken_impl()

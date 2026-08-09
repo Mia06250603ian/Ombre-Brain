@@ -1948,6 +1948,9 @@ async def archive_session(
 # 开机动作从"记得跑三四个工具"变成"跑一个",漏不了,也省了重复开销。
 # =============================================================
 OMBRE_ECHO_MIN_DAYS = int(os.environ.get("OMBRE_ECHO_MIN_DAYS", "14") or "14")
+# awaken 的「最近对话归档」区出全文的条数(2026-08-09)。默认 2 = 日记桶 + 原话桶各一条全文。
+# 设 1 即回到本次改动前的行为(只有最新一条出全文)。钳在 1~3,防误设把开机撑爆。
+AWAKEN_FULL_SESSIONS = max(1, min(3, int(os.environ.get("OMBRE_AWAKEN_FULL_SESSIONS", "2") or "2")))
 
 
 def _bj_today() -> str:
@@ -2027,16 +2030,20 @@ async def _awaken_impl(letters: int = 1) -> str:
     if not todos_out.startswith("没有待办"):
         parts.append(todos_out)
 
-    # --- 🗂 最近对话归档:最新一条给全文(窗口衔接的关键),更早的给标题 ---
+    # --- 🗂 最近对话归档:最近 AWAKEN_FULL_SESSIONS 条给全文(窗口衔接的关键),更早的给标题 ---
     sessions = [b for b in live if "对话归档" in (b["metadata"].get("domain") or [])]
     if sessions:
         sessions.sort(key=lambda b: str(b["metadata"].get("created", "")), reverse=True)
         lines = ["🗂 最近对话归档:"]
-        latest = sessions[0]
-        d0 = str(latest["metadata"].get("created", ""))[:10]
-        full = strip_wikilinks(latest.get("content", "")).strip()[:1500]
-        lines.append(f"  [{d0}] [bucket_id:{latest['id']}] {latest['metadata'].get('name', latest['id'])}(全文):\n{full}")
-        for b in sessions[1:3]:
+        # 2026-08-09:出全文的从 1 条改为 AWAKEN_FULL_SESSIONS 条(默认 2)。
+        # 起因:窗口末尾现在会存两个桶——日记(转述,管长期记忆)+ 原话(逐字,管压缩后接话),
+        # 原话建得晚所以排第一。只出一条全文的话,日记会退成一行标题,他得再跑一趟 dream 才看得到。
+        # ⚠️ 别再往上加:awaken 是每个新窗口的第一件事,这里每多一条就多吃约 2400 token 的窗口预算。
+        for latest in sessions[:AWAKEN_FULL_SESSIONS]:
+            d0 = str(latest["metadata"].get("created", ""))[:10]
+            full = strip_wikilinks(latest.get("content", "")).strip()[:1500]
+            lines.append(f"  [{d0}] [bucket_id:{latest['id']}] {latest['metadata'].get('name', latest['id'])}(全文):\n{full}")
+        for b in sessions[AWAKEN_FULL_SESSIONS:AWAKEN_FULL_SESSIONS + 2]:
             d = str(b["metadata"].get("created", ""))[:10]
             lines.append(f"  [{d}] [bucket_id:{b['id']}] {b['metadata'].get('name', b['id'])}")
         parts.append("\n".join(lines))
