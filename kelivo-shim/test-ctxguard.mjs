@@ -1,6 +1,6 @@
 // test-ctxguard.mjs — 上下文守卫决策单测,部署前跑一遍:node test-ctxguard.mjs
 // 全绿输出 "ALL PASS";不碰网络、不碰 claude 进程。
-import { ctxTokensOf, ctxWindowTokensOf, ctxReading, ctxDecide, ctxCompacted, ctxSoftNote, ctxHardNote, ctxPct, ctxSoftShouldReset } from "./ctxguard.mjs";
+import { ctxTokensOf, ctxWindowTokensOf, ctxReading, ctxDecide, ctxCompacted, ctxSoftNote, ctxHardNote, ctxFinalNote, ctxPct, ctxSoftShouldReset } from "./ctxguard.mjs";
 
 let n = 0, bad = 0;
 function ok(cond, name) {
@@ -164,6 +164,57 @@ ok(ctxHardNote().includes("append=True"), "硬文案给出追加的调法");
 ok(ctxHardNote().includes("别新建第二个"), "硬文案明说别新建第二个桶(同周期合并进一个桶)");
 ok(ctxHardNote().includes("bucket_id 在上次 archive_session 的返回里"), "硬文案交代 bucket_id 从哪来");
 ok(ctxHardNote().includes("breath"), "硬文案给出找不到桶时的兜底查法");
+
+// ============ 终线 final(2026-08-09):压缩前最后一次,存原话 ============
+// 线上取值:soft 155000 / hard 161500 / every 0 / final 164000(压缩点实测 166933)
+const L = { softTokens: 155000, hardTokens: 161500, archiveEveryTokens: 0, finalTokens: 164000 };
+const live = (t, o = {}) => ctxDecide({ contextTokens: t, ...L, ...o }).level;
+
+eq(live(150000), "none", "终线:15 万还没到软线");
+eq(live(155000), "soft", "终线:软线照旧先响");
+eq(live(161500, { softFired: true }), "hard", "终线:硬线照旧催日记");
+eq(live(163999, { softFired: true, lastArchiveTokens: 161500 }), "none", "终线:没到终线不响(every=0 已关增量)");
+eq(live(164000, { softFired: true, lastArchiveTokens: 161500 }), "final", "终线:到线催存原话");
+eq(live(166000, { softFired: true, lastArchiveTokens: 161500 }), "final", "终线:超过也照响");
+eq(live(166000, { softFired: true, lastArchiveTokens: 161500, finalFired: true }), "none", "终线:一个压缩周期只响一次");
+
+// 优先级:final > hard > soft(到了终线就只干这一件,别让日记提示抢余量)
+eq(live(164000), "final", "终线优先于软线(软线没响过也先走终线)");
+eq(ctxDecide({ contextTokens: 164000, softTokens: 155000, hardTokens: 161500,
+               archiveEveryTokens: 5000, lastArchiveTokens: 158000, finalTokens: 164000 }).level, "final",
+   "终线优先于增量催档(即使增量催点也已到)");
+// 同一组参数、只把终线关掉 → 落回增量催档,证明上一条确实是终线抢到的优先级
+eq(ctxDecide({ contextTokens: 164000, softTokens: 155000, hardTokens: 161500,
+               archiveEveryTokens: 5000, lastArchiveTokens: 158000, finalTokens: 0 }).level, "hard",
+   "对照:终线关掉时同一组参数落回增量催档");
+
+// 关闭开关:finalTokens=0 → 行为与本次改动前完全一致
+eq(ctxDecide({ contextTokens: 164000, softTokens: 155000, hardTokens: 161500, softFired: true,
+               lastArchiveTokens: 161500, archiveEveryTokens: 0, finalTokens: 0 }).level, "none",
+   "终线关闭(0)时不触发,回到改动前行为");
+// 旧调用方(完全不传 finalTokens/finalFired)行为逐字不变:没归过档 + 超硬线 = hard,永不 final
+eq(ctxDecide({ contextTokens: 200000, softTokens: 155000, hardTokens: 161500, softFired: true }).level, "hard",
+   "不传 finalTokens 时旧调用方行为不变(仍是 hard)");
+ok(["none", "soft", "hard"].includes(
+     ctxDecide({ contextTokens: 200000, softTokens: 155000, hardTokens: 161500 }).level),
+   "不传 finalTokens 时永远不会冒出 final");
+
+// trusted 门闩对终线同样生效(误报比漏报糟)
+eq(live(164000, { trusted: false }), "none", "终线:读数不可信一律不触发");
+eq(live(0), "none", "终线:读数 0 不触发");
+
+// ============ ctxFinalNote 文案的机械约束 ============
+ok(ctxFinalNote().includes("archive_session"), "终线文案给出建桶的调法");
+ok(ctxFinalNote().includes("单独新建一个桶"), "终线文案明说独立新桶(追加进日记桶会被 awaken 截断)");
+ok(ctxFinalNote().includes("原话一字不差"), "终线文案要求逐字,不是转述");
+ok(!ctxFinalNote().includes("append=True"), "终线文案不能给追加调法(那会让原话进日记桶被截断)");
+ok(ctxFinalNote().includes("不抄什么"), "终线文案交代不抄思考");
+ok(ctxFinalNote().includes("思考"), "终线文案点名别抄内心独白(抄了 token 翻倍)");
+ok(ctxFinalNote().includes("不适用"), "终线文案明说本次豁免「不写逐句对话复述」那条守则");
+ok(ctxFinalNote().includes("窗口还是这个窗口"), "终线文案言明不换窗、不收尾");
+ok(ctxFinalNote(1200).includes("1200"), "终线文案带出字数上限(默认 1200)");
+ok(ctxFinalNote(800).includes("800"), "终线文案字数上限可配");
+ok(!ctxFinalNote().includes("新窗口"), "终线文案不提换窗口");
 
 // ============ ctxPct ============
 eq(ctxPct(140000, 200000), 70, "140k/200k = 70%");

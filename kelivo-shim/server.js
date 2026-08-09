@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import fs from "fs";
 import { isWeatherAsk, buildWeatherNote, detectPeriodEvent, buildPeriodNote } from "./senses.mjs";
 import { kaDecide, kaPrompt, kaSilent } from "./keepalive.mjs";
-import { ctxReading, ctxDecide, ctxCompacted, ctxSoftNote, ctxHardNote, ctxPct, ctxSoftShouldReset } from "./ctxguard.mjs";
+import { ctxReading, ctxDecide, ctxCompacted, ctxSoftNote, ctxHardNote, ctxFinalNote, ctxPct, ctxSoftShouldReset } from "./ctxguard.mjs";
 
 const PORT = process.env.PORT || 8080;
 const SHIM_KEY = process.env.SHIM_KEY || "";            // Kelivo 要填的 API Key,自己编
@@ -40,7 +40,16 @@ const CTX_GUARD_ON = process.env.CTX_GUARD_ON !== "0";
 const CTX_SOFT_TOKENS = +(process.env.CTX_SOFT_TOKENS || 140000);
 const CTX_HARD_TOKENS = +(process.env.CTX_HARD_TOKENS || 170000);
 const CTX_ARCHIVE_EVERY_TOKENS = +(process.env.CTX_ARCHIVE_EVERY_TOKENS || 25000); // 硬线首归后,每再涨这么多催一次增量归档;0=只催一次
+// 终线(2026-08-09):压缩前最后一次,催他存**原话**(独立的桶)。0=关闭,行为回到改动前。
+// 必须画在「压缩点 − 写完原话的余量」之内,压缩点 ≈ 可用上下文 − 13000。
+const CTX_FINAL_TOKENS = +(process.env.CTX_FINAL_TOKENS || 0);
+const CTX_FINAL_CHARS = +(process.env.CTX_FINAL_CHARS || 1200);      // 纸条里给他的字数上限
 const CTX_LIMIT_TOKENS = +(process.env.CTX_LIMIT_TOKENS || 200000);  // 仅用于 /debug 显示百分比
+// PreCompact 钩子(2026-08-09):压缩前把「写摘要」改成「抄最后两三轮原文 + 叫他先 awaken」。
+// ⚠️ print/SDK 模式下 CLI **只认 --settings 和用户设置**,项目级 settings 被忽略,所以必须走这个参数。
+// **急救开关**:设 CLAUDE_SETTINGS="" + service restart,启动参数里就不带 --settings,
+// 压缩回到默认摘要(= 本次改动前的行为),不用重新部署。
+const CLAUDE_SETTINGS = process.env.CLAUDE_SETTINGS ?? "shim-settings.json";
 const CTX_OBSERVE = process.env.CTX_OBSERVE === "1";  // 观察模式:守卫照常判定并记 /debug,但不注入提示(上线初期空转验证用)
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
@@ -61,11 +70,13 @@ let lastUsage = null;
 // ctxLastWould = 观察模式下最近一次"本来要触发"的记录(只进 /debug,不打扰晏)。
 let ctxTokens = 0, ctxSoftFired = false, ctxTrusted = true;
 let ctxArchivedAt = 0, ctxCompactions = 0, ctxLastWould = null;
+// ctxFinalFired = 本压缩周期是否已催过「存原话」(终线一周期只发一次,压缩检测后随 softFired 一起复位)
+let ctxFinalFired = false;
 
 function spawnClaude(kelivoSystem) {
   spawnedSystem = kelivoSystem || "";
   ctxTokens = 0; ctxSoftFired = false; ctxTrusted = true;   // 新进程=空上下文,守卫状态清零(覆盖世界书切换/窗口重启/崩溃复活各路径)
-  ctxArchivedAt = 0; ctxCompactions = 0; ctxLastWould = null;
+  ctxArchivedAt = 0; ctxCompactions = 0; ctxLastWould = null; ctxFinalFired = false;
   // 锚点放在整段 append 的最末尾(世界书之后),占住系统提示词的绝对末位
   const append = spawnedSystem ? `【场景设定/世界书】\n${spawnedSystem}\n\n${SOUL_ANCHOR}` : SOUL_ANCHOR;
   const args = [
@@ -84,6 +95,16 @@ function spawnClaude(kelivoSystem) {
     "--allowedTools", ALLOWED,
     "--tools", BUILTIN_TOOLS,
   ];
+  // PreCompact 钩子只能靠 --settings 进来(print 模式忽略项目级 settings)。
+  // 空值 = 不带这个参数 = 压缩回到默认摘要,是本功能的急救开关。
+  // ⚠️ **存在性检查不能删**:2026-08-09 实测,`--settings` 指向不存在的文件时 CLI
+  // 直接 `Error: Settings file not found` **拒绝启动**——文件万一没进容器(踩坑 15 那类),
+  // 就等于晏整个起不来。这里先探一下,不在就不带这个参数:
+  // 最坏结果降级成「钩子没生效、压缩回到默认摘要」,晏照常活着。
+  if (CLAUDE_SETTINGS) {
+    if (fs.existsSync(CLAUDE_SETTINGS)) args.push("--settings", CLAUDE_SETTINGS);
+    else log("[claude] ⚠️ settings 文件不在,跳过 --settings(PreCompact 钩子本次不生效):", CLAUDE_SETTINGS);
+  }
   const env = { ...process.env };
   delete env.ANTHROPIC_API_KEY;  // 必须删:API key 存在会无条件压过订阅登录
   const p = spawn(CLAUDE_BIN, args, { cwd: process.cwd(), env, stdio: ["pipe", "pipe", "pipe"] });
@@ -146,7 +167,7 @@ function handleEvent(ev) {
       if (r.tokens > 0) {
         // 可信读数从高位暴跌过半 = CLI 刚静默压缩过:守卫记账复位,下一轮涨起来照样提醒
         if (ctxCompacted({ contextTokens: r.tokens, prevTokens: ctxTrusted ? ctxTokens : 0, softTokens: CTX_SOFT_TOKENS, trusted: r.trusted })) {
-          ctxCompactions++; ctxSoftFired = false; ctxArchivedAt = 0;
+          ctxCompactions++; ctxSoftFired = false; ctxArchivedAt = 0; ctxFinalFired = false;
           log("[ctx] compaction detected", ctxTokens, "->", r.tokens, "(guard re-armed, total", ctxCompactions + ")");
         }
         ctxTokens = r.tokens; ctxTrusted = r.trusted;
@@ -252,6 +273,7 @@ app.get("/debug", (_q, r) => r.json({
   contextTokens: ctxTokens,
   contextPct: ctxPct(ctxTokens, CTX_LIMIT_TOKENS),
   ctxGuard: { on: CTX_GUARD_ON, soft: CTX_SOFT_TOKENS, hard: CTX_HARD_TOKENS, every: CTX_ARCHIVE_EVERY_TOKENS,
+              final: CTX_FINAL_TOKENS, finalChars: CTX_FINAL_CHARS, finalFired: ctxFinalFired,
               softFired: ctxSoftFired, trusted: ctxTrusted, lastArchiveTokens: ctxArchivedAt,
               compactions: ctxCompactions, observe: CTX_OBSERVE, lastWould: ctxLastWould },
 }));
@@ -539,11 +561,19 @@ function handleMessages(req, res) {
       try {
         const d = ctxDecide({ contextTokens: ctxTokens, softTokens: CTX_SOFT_TOKENS, hardTokens: CTX_HARD_TOKENS,
                               archiveEveryTokens: CTX_ARCHIVE_EVERY_TOKENS, softFired: ctxSoftFired,
-                              lastArchiveTokens: ctxArchivedAt, trusted: ctxTrusted });
+                              lastArchiveTokens: ctxArchivedAt, trusted: ctxTrusted,
+                              finalTokens: CTX_FINAL_TOKENS, finalFired: ctxFinalFired });
         if (d.level !== "none") {
-          if (!CTX_OBSERVE) hints.push(d.level === "soft" ? ctxSoftNote(USER_NAME) : ctxHardNote());
+          const note = d.level === "soft" ? ctxSoftNote(USER_NAME)
+                     : d.level === "final" ? ctxFinalNote(CTX_FINAL_CHARS)
+                     : ctxHardNote();
+          if (!CTX_OBSERVE) hints.push(note);
           else ctxLastWould = { level: d.level, tokens: ctxTokens, at: new Date().toISOString() };
-          if (d.level === "soft") ctxSoftFired = true; else ctxArchivedAt = ctxTokens;
+          // 终线只记 finalFired,**不动归档基线** ctxArchivedAt——原话是独立的桶,
+          // 不参与「上次归档 + 间隔」那套增量催档的记账。
+          if (d.level === "soft") ctxSoftFired = true;
+          else if (d.level === "final") ctxFinalFired = true;
+          else ctxArchivedAt = ctxTokens;
           log("[ctx]", CTX_OBSERVE ? "observe-would" : "fire", d.level, ctxTokens);
         }
       } catch (e) { log("[ctx-hint]", e.message); }
