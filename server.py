@@ -1949,6 +1949,8 @@ async def archive_session(
 # =============================================================
 OMBRE_ECHO_MIN_DAYS = int(os.environ.get("OMBRE_ECHO_MIN_DAYS", "14") or "14")
 # awaken 的「最近对话归档」区出全文的条数(2026-08-09)。默认 2 = 日记桶 + 原话桶各一条全文。
+# 这两个桶是 kelivo-shim 的上下文守卫在窗口末尾催出来的:硬线催日记(转述,管长期记忆)、
+# 终线催原话(逐字,管压缩后接话,CTX_FINAL_TOKENS)。改这里之前先看 shim 手册那一节。
 # 设 1 即回到本次改动前的行为(只有最新一条出全文)。钳在 1~3,防误设把开机撑爆。
 AWAKEN_FULL_SESSIONS = max(1, min(3, int(os.environ.get("OMBRE_AWAKEN_FULL_SESSIONS", "2") or "2")))
 
