@@ -134,6 +134,16 @@ eq(decInc(169999, 60000), "none", "手动早归档:硬线之前不打扰");
 eq(decInc(185000, 160000), "hard", "手动晚归档(160K):催点是 max(170K, 185K)=185K");
 eq(decInc(170000, 160000), "none", "手动晚归档:170K 不足 185K → none(不紧跟着再催)");
 eq(decInc(999999, 170000, 0), "none", "every=0 = 关增量:归过一次不再催");
+// ---- 2026-08-10 回归:every=0 不该把硬线本身那一次也关掉 ----
+// 线上真实场景:soft 155000 / hard 161500 / every 0,软线存完日记①(last=155396)之后,
+// 旧写法让 161500 永久静音(日志实测一个窗口 28 条消息、fire hard 零条)。
+// ⚠️ 用线上阈值,别套 decInc 的 HARD=170000。
+eq(decInc(170000, 155396, 0), "hard", "every=0 + 上次归档在硬线之前 → 硬线仍催日记②(08-10 实测 bug)");
+eq(decInc(169999, 155396, 0), "none", "every=0:没到硬线不催");
+eq(decInc(180000, 155396, 0), "hard", "every=0:超过硬线也照催(还没在硬线之后归过)");
+eq(decInc(180000, 170000, 0), "none", "every=0:已在硬线处归过档 → 不再催,增量确实是关的");
+eq(decInc(999999, 175000, 0), "none", "every=0:硬线之后归过档就彻底安静(不退化成每轮都催)");
+eq(decInc(170000, 160000), "none", "every>0 的老行为不受影响:手动晚归档仍按 max(硬线,上次+间隔)");
 eq(decInc(150000, 145000, EVERY, false), "soft", "归档基线不挡软线:softFired 复位后软区间照常提醒");
 eq(dec(170000), "hard", "老调用方不传 last/every:首催行为与旧版一致");
 
@@ -164,6 +174,11 @@ ok(ctxHardNote().includes("append=True"), "硬文案给出追加的调法");
 ok(ctxHardNote().includes("别新建第二个"), "硬文案明说别新建第二个桶(同周期合并进一个桶)");
 ok(ctxHardNote().includes("bucket_id 在上次 archive_session 的返回里"), "硬文案交代 bucket_id 从哪来");
 ok(ctxHardNote().includes("breath"), "硬文案给出找不到桶时的兜底查法");
+// 终线文案:2026-08-10 新增的时间顺序约束(他把靠前的一段挪到了桶末尾,所有者读出时间线乱)
+ok(ctxFinalNote().includes("按时间顺序抄"), "终线文案:明确要求按时间顺序");
+ok(ctxFinalNote().includes("不要把靠前的话挪到后面去"), "终线文案:点名禁止挪动次序(08-10 实际发生的错法)");
+ok(ctxFinalNote().includes("只砍最早的那几句"), "终线文案:超长只许从最早处砍");
+ok(ctxFinalNote().includes("保持原来的先后顺序"), "终线文案:砍完仍保持原次序");
 
 // ============ 终线 final(2026-08-09):压缩前最后一次,存原话 ============
 // 线上取值:soft 155000 / hard 161500 / every 0 / final 164000(压缩点实测 166933)
@@ -174,6 +189,9 @@ eq(live(150000), "none", "终线:15 万还没到软线");
 eq(live(155000), "soft", "终线:软线照旧先响");
 eq(live(161500, { softFired: true }), "hard", "终线:硬线照旧催日记");
 eq(live(163999, { softFired: true, lastArchiveTokens: 161500 }), "none", "终线:没到终线不响(every=0 已关增量)");
+// 2026-08-10:软线存完日记①(155396)之后,硬线该在 161500 补一次日记②,再到终线
+eq(live(161500, { softFired: true, lastArchiveTokens: 155396 }), "hard", "线上时间线:软线之后硬线补日记②");
+eq(live(163999, { softFired: true, lastArchiveTokens: 155396 }), "hard", "线上时间线:日记②没存成的话,到终线之前一直催");
 eq(live(164000, { softFired: true, lastArchiveTokens: 161500 }), "final", "终线:到线催存原话");
 eq(live(166000, { softFired: true, lastArchiveTokens: 161500 }), "final", "终线:超过也照响");
 eq(live(166000, { softFired: true, lastArchiveTokens: 161500, finalFired: true }), "none", "终线:一个压缩周期只响一次");
