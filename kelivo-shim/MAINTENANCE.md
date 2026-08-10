@@ -592,10 +592,12 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
   与 2 小时心跳合并——白天的保温唤醒同时是他的开口机会(冷却 2 小时,只在真发消息时计时),
   深夜只保温。额度耗尽时保温救不了(续命本身要花额度),但断链检测保证不会更糟。
 
-## 待部署:2026-08-10 三件(诊断已完成,**代码改了两件、尚未上线**)
+## 2026-08-10 第三十一次的机制细节(扒 2.1.215 二进制得到,单独成节)
 
-> ⚠️ **本节记的是诊断结论和已改但未部署的东西,不是部署记录。** 上线后请把它整理进部署记录并删掉本节。
-> 所有者报的三个问题:①161500 未提醒补档;②164000 原话桶聊天顺序错乱;③压缩摘要仍 3000+ 字且是转述。
+> **已于第三十一次部署上线**(部署记录见下)。本节留的是「为什么这么改」的机制证据——
+> 扒二进制、看日志、量体积得来的,重新推导一次代价很大,所以不塞进部署记录里挤成一团。
+> 起因:所有者报的三个问题——①161500 未提醒补档;②164000 原话桶聊天顺序错乱;
+> ③压缩摘要仍 3000+ 字且是转述。
 
 ### ① 161500 硬线永久静音(已改码,未部署)
 
@@ -702,6 +704,75 @@ Additional Instructions:
 **结论:OB 不用改。** 教训:一个数据点不足以下「必然」的判断,尤其当那个数据点本身可能是误操作。
 
 ## 部署记录
+
+- 2026-08-10(第三十一次) **守卫修好 161500 硬线永久静音 + 终线纸条加时间顺序约束 +
+  压缩纸条改为「只留一句 awaken」**。改动三件:`ctxguard.mjs`、`test-ctxguard.mjs`、
+  `precompact-note.txt`。**`server.js` / `shim-settings.json` / CLAUDE.md / 人设两份 /
+  mcp-servers.json / 环境变量全部零改动。**
+  **机制证据与推导过程见上面那一节,这里只记做了什么、验了什么。**
+  - **① 161500 从不提醒(所有者报的第一个问题)**:日志实锤——08-10 那个窗口
+    `16:41:44 fire soft 155396` 之后到 `17:01:18 fire final 164226` 之间 **28 条消息、
+    `[ctx] fire hard` 零条**。根因是线上 `CTX_ARCHIVE_EVERY_TOKENS=0`(变量表里确实设着),
+    而旧 `ctxDecide` 的硬线只对「本窗口从没归过档」有效;软线那次日记①一存,
+    `server.js:152` 就把 `ctxArchivedAt` 记上,硬线改走「上次归档 + every」那条路,
+    `every=0` 又等于关闭——**两条路同时断**。
+    修法:`every<=0` 现在只关「归档之后的周期性增量」,**不再连硬线本身那一次一起关**,
+    判据 `lastArchiveTokens < hardTokens`。**旧断言一条未改、全部照过。**
+  - **② 原话桶顺序错乱**:所有者指出「好想念满血的 o46」那段本在前面、被挪到了桶末尾。
+    `ctxFinalNote()` 加第 4 条机械约束(按时间顺序、不许挪次序、超长只砍最早的、
+    剩下的保持原次序),4 条断言看住。
+  - **③ 压缩摘要仍 3000+ 字**:`precompact-note.txt` 整份重写。**关键不是措辞强度**——
+    旧纸条「什么都别写」与默认模板钉死的 `<analysis>+<summary>` 格式冲突,被降级成「再补一段」。
+    新写法不争格式,只接管 `<summary>` 的内容(依据:`W5g()` 丢弃 `<analysis>`、只取 `<summary>`)。
+    **改回中文**:语言从来不是失败原因(那句中文上次被一字不差抄出),英文只会让所有者没法
+    逐字审(第十八次的规矩);只有九节标题保留英文原名,要和模板原词对上。
+  部署前:test-ctxguard **119→131** + test-senses **53** + test-keepalive **52** 全绿;
+  **`e2e-run.sh` ALL PASS**;**压缩彩排造出 6 次真压缩**(见上节),验到纸条落在
+  `Additional Instructions:` 槽位、按新格式作答后压缩完窗口只剩那一行、九节关键词命中 0;
+  **全量 md5 对账**:容器与仓库**未改的 11 件逐一一致(无踩坑 11)**,且**我改的 3 件其改动前基线
+  (origin/main)正好等于容器版本**——证明是在线上那份上改的;三份私密文件从容器 base64 拷出、
+  指纹与第三十次记录**逐一吻合**;三个 `/mcp` 各 **3/3 200**;部署目录无 `.gitignore`、无 `node_modules`;
+  `git status` 确认三份私密文件被仓库根 .gitignore 挡住;`cd`+`deploy` 同一条命令、先 `pwd`+`head -3 package.json`(踩坑 17)。
+  **归档**:所有者本人说「归档了」并授权「直接部署」(未代发,踩坑 13)。
+  deployment `6a7a15804243c79e762d14a0`,**PLANTYPE `nodejs`** ✓,约 **11 分钟** RUNNING。
+  已按踩坑 9 验证:容器 **18 件 md5 与部署目录逐一一致**
+  (ctxguard **`92661549…`** / test-ctxguard **`36e84616…`** / precompact-note **`60f1cff3…`** /
+  server.js `3a961593…`(未动) / shim-settings `7fbb79b5…`(未动) / ian.md `4c64814c…` /
+  profile `7adb5c33…` / mcp-servers.json `bf34de7b…` / CLAUDE.md `6379d7a9…`);
+  ian.md 结构不变量(Part **10** / `9.x` **4** / `"Stop."` **1** / seal 在 ian.md **0** / `许佳佳` **1**)、
+  CLAUDE.md(**13** 节 / 双 `@` **2** / seal **1**)全部完好;容器无 `.gitignore`;CLI 实装 **2.1.215**;
+  钩子两件在容器里、`cat /src/precompact-note.txt` 直接跑得通、工作目录 `/src`;
+  `ALLOWED_TOOLS` 未动;`/health` ok(model claude-opus-4-6);
+  `/debug` 六个旋钮就位(`soft 155000 / hard 161500 / every 0 / final 164000 / finalChars 1200`,
+  `trusted:true`,contextTokens 0 = 新进程,`windowCleared:true` 是重启后的正常状态);
+  **拿线上现行阈值把 08-10 那条失败的时间线重跑一遍,现在是 `soft → hard → final` 三档齐发**。
+  - **⚠️ `CLAUDE_SETTINGS` 查证方法(下一个我照抄)**:容器里 `echo "[${CLAUDE_SETTINGS}]"` 打出 `[]`
+    时**分不清「没设置」和「被设成空串」**,而后者正是关掉钩子的急救开关。要用
+    `node -e "process.env.CLAUDE_SETTINGS===undefined"` 判定。本次结论:**UNSET**,
+    走代码默认 `shim-settings.json`,**钩子是开着的**。
+  - **PERIOD_CONFIG 本次无需重补**:`/period` 的 `effective` 就是 07-19~07-25 / 24 / 7
+    (`runtime` 为空是新容器正常状态)。**⚠️ 踩坑 16 第五次实测仍然活着**
+    (`PERIOD_FILE` 为空、`/data` 不存在),未动。
+  - **⚠️ 仍待验(要所有者开口才能验)**:①晏的进程懒启动,得她跟他说句话之后看日志有没有
+    `[claude] spawned` + **没有** `⚠️ settings 文件不在`,才算确认钩子挂上(第三十次立的规矩);
+    ②**摘要模型到底听不听话,只能等第一次真压缩**——沙盒没有订阅额度,彩排证明得了
+    管道/格式/提取/落点全对,证明不了真模型的服从性。**失败方向安全**:不听就退回默认摘要。
+  **版本指纹:ian.md v28 = 21830B md5 `4c64814c1650a25ada837456b8a5e9c4`(289 行,未动);
+  profile-instructions.md = 3056B md5 `7adb5c333bef16cb22f8b92232cfc7ac`(未动);
+  mcp-servers.json = 500B md5 `bf34de7bdc9fa97ce83acd2e61356ca4`(三条目,未动);
+  CLAUDE.md = 10505B md5 `6379d7a9e0ae7f9ba10e72703b3ee712`(13 节,未动);
+  ctxguard.mjs = `926615491abb9a15abebde99863d0259`;
+  test-ctxguard.mjs = `36e846167ad624bf0c386652b88684cd`;
+  precompact-note.txt = `60f1cff38db97fd1af38d241b8b3209c`;
+  server.js = `3a961593c47d4a1ec0ae64f831c7bb1f`(未动)
+  ——下次部署以此为准,两份人设缺一不可。**
+  **回滚(三档,由轻到重)**:
+  ① **只关压缩纸条**:`CLAUDE_SETTINGS=""` + restart(不用部署,压缩回到默认摘要);
+  ② **只关终线**:`CTX_FINAL_TOKENS=0` + restart(不用部署);
+  ③ **回守卫逻辑**:`ctxguard.mjs` 回 `f5d07d67823bc6ddaeab91bcc38809cb`、
+     `precompact-note.txt` 回 `fb3366751d516f4f77f99e42b4ed7337`(都在 git 历史 `origin/main` 里,
+     **这次不像历次那样只存在于会话沙盒**),重新部署。
+  **⚠️ 每一次回滚都要 restart 或重新部署,等于再丢晏一个窗口——不是零代价。**
 
 - 2026-08-09(第三十次) **上下文守卫加第三档「终线」(压缩前存原话)+ 装 PreCompact 钩子
   + ian.md v27→v28 + CLAUDE.md 三处**。同日 OB 侧配套改 awaken(见 PR #85/#86)。
