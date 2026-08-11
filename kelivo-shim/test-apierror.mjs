@@ -78,7 +78,7 @@ eq(R({ subtype: "error_during_execution", fullText: "话说到一半" }).failed,
 const o = R({ subtype: "success", fullText: "", apiError: REAL_503 });
 eq(o.failed, true, "空正文 + 上游报错 = 失败(事故当天这里判成了成功)");
 ok(o.note.includes("503 auth_unavailable"), "报错要变成看得懂的一句话");
-eq(o.toFullText, true, "真人回合:那句话要写进 fullText(非流式请求也拿得到)");
+eq(o.speak, true, "真人回合:那句话要送到她眼前(非流式请求也拿得到)");
 // 重试成功过的轮:先报错后有正文,不算失败
 const o2 = R({ subtype: "success", fullText: "我在", apiError: REAL_503 });
 eq(o2.failed, false, "报错之后重试出了正文 → 不算失败");
@@ -86,10 +86,10 @@ eq(o2.note, "", "有正文就不补报错");
 // 保温轮:记账但不出声
 const ka = R({ subtype: "success", fullText: "", apiError: REAL_503, isKA: true });
 eq(ka.failed, true, "保温轮撞上报错也算失败(断链检测靠它醒)");
-eq(ka.toFullText, false, "⚠️ 保温轮不把报错写进 fullText,否则抢救节奏会每 15 分钟刷屏");
+eq(ka.speak, false, "⚠️ 保温轮不出声,否则抢救节奏会每 15 分钟刷屏");
 ok(ka.note.length > 0, "保温轮的文案照样算出来(日志里看得见)");
 const ka2 = R({ subtype: "error_during_execution", isKA: true });
-eq(ka2.toFullText, false, "错误 subtype 的保温轮同样不出声(改动前的行为)");
+eq(ka2.speak, false, "错误 subtype 的保温轮同样不出声(改动前的行为)");
 eq(ka2.failed, true, "错误 subtype 的保温轮算失败(改动前的行为)");
 
 // 取舍固化:抖动过一下、最后确实没正文 → 仍然报(改动前那种轮子本来就是「空回复」,不是回退);
@@ -97,6 +97,14 @@ eq(ka2.failed, true, "错误 subtype 的保温轮算失败(改动前的行为)")
 const flap = pickApiError({ type: "system", subtype: "api_retry", error_status: 429, error: "rate_limit", attempt: 1, max_retries: 10 });
 eq(resultOutcome({ subtype: "success", fullText: "", apiError: flap }).failed, true, "抖动 + 没正文 → 仍按失败处理(有意的取舍)");
 ok(flap.includes("retry 1/10"), "重试次数留在原文里,用来分辨真断(10/10)还是抖动(1/10)");
+
+// 系统回合(bridge 带 x-system-turn:1 的查岗/深夜提醒/写信提醒):记账,但不拿报错打扰她
+const sys = resultOutcome({ subtype: "success", fullText: "", apiError: REAL_503, isSystem: true });
+eq(sys.failed, true, "系统回合撞上报错也算失败(断链检测靠它醒)");
+eq(sys.speak, false, "⚠️ 系统回合不出声:宵禁 1-7 点 + 冷却 30 分钟,出声=断的那一夜反复吵她");
+ok(sys.note.length > 0, "系统回合的文案照样算出来(日志里看得见)");
+eq(resultOutcome({ subtype: "error_during_execution", isSystem: true }).speak, false, "错误 subtype 的系统回合同样不出声");
+eq(resultOutcome({ subtype: "success", fullText: "", apiError: REAL_503, isKA: true, isSystem: true }).speak, false, "两个标记同时带也不出声");
 
 console.log(bad ? `${bad}/${n} FAIL` : `${n} 项全绿 ALL PASS`);
 process.exit(bad ? 1 : 0);

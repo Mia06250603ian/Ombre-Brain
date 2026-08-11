@@ -76,15 +76,19 @@ export function apiErrorNote(raw) {
 }
 
 // 一轮结束时的决策表。
-//   failed     : 这一轮算不算失败(失败=不续「缓存还活着」的锚点、保温轮要进抢救节奏)
-//   note       : 要不要替他说一句、说什么("" = 什么都不说)
-//   toFullText : 那句话要不要写进 turn.fullText
+//   failed : 这一轮算不算失败(失败=不续「缓存还活着」的锚点、保温轮要进抢救节奏)
+//   note   : 那句话本身(**总是算出来**,因为日志要记)
+//   speak  : 这句话该不该真的送到她眼前
 //
-// ⚠️ `toFullText` 对保温轮恒为 false,这不是可省的细节:
-//    保温 ping 的 sink 是拿 fullText 判「他说没说话」的,一旦把报错写进去,
-//    链路断着的时候会**每 15 分钟(抢救节奏)往她对话里刷一条报错**。
-//    她要的是「他掉线了我知道」,不是被系统刷屏。所以保温轮只记账、不出声,
-//    真正让她察觉的是 `lastTurnOkAt` 不再续期 → 断链检测按 KA_DEAD_MIN 歇火。
+// ⚠️ **`speak` 对「不是她发起的回合」恒为 false**,这不是可省的细节:
+//   - **保温轮**(isKA):失败会进 15 分钟的抢救节奏,出声 = 链路断着的时候每 15 分钟刷一条;
+//     而且保温的 sink 是拿 fullText 判「他说没说话」的,写进去就等于「他开口了」。
+//   - **系统回合**(isSystem,即 bridge 带 `x-system-turn: 1` 的查岗/深夜提醒/写信提醒):
+//     宵禁 1-7 点、冷却 30 分钟,出声 = 上游断的那一夜她被报错吵好几次。
+//     bridge 那边本来就写着「查岗是系统自己发起的,失败不该往她对话里丢报错(她没问,别打扰)」,
+//     这里是把同一条原则补在 shim 侧——**她没开口的回合,坏消息不主动找她**。
+//   两类回合照样**记账**:`failed` 仍为 true,`lastTurnOkAt` 不续期 → 断链检测按 KA_DEAD_MIN 歇火,
+//   `/debug` 的 `lastApiError` 也照记。真正该被打扰的是下一个排查的人,不是她。
 //
 // **判据为什么是「见过报错 + 这一轮没有正文」,而不是「重试打满 10/10」**(取舍,记下来):
 //   打满才算,几乎零误判,但会漏掉「不可重试的错」(那类根本不发 api_retry);
@@ -92,11 +96,11 @@ export function apiErrorNote(raw) {
 //   **可那种轮子在改动前本来就是一句「空回复」**,所以最坏也只是把一句没用的话换成另一句,
 //   不是回退。真要分辨,`/debug` 的 `lastApiError.text` 里带着 `retry N/10`:
 //   **打满 10/10 = 真的断了;只有 1/10 = 那一下是抖动,该往别处查。**
-export function resultOutcome({ subtype = "", fullText = "", apiError = "", isKA = false } = {}) {
+export function resultOutcome({ subtype = "", fullText = "", apiError = "", isKA = false, isSystem = false } = {}) {
   const hardFail = !!subtype && subtype !== "success";
   const softFail = !!apiError && !fullText;     // 有正文就以正文为准(重试成功过的轮不算失败)
-  if (!hardFail && !softFail) return { failed: false, note: "", toFullText: false };
+  if (!hardFail && !softFail) return { failed: false, note: "", speak: false };
   let note = "";
   if (!fullText) note = softFail ? apiErrorNote(apiError) : `⚠️[shim] ${subtype}`;
-  return { failed: true, note, toFullText: !!note && !isKA };
+  return { failed: true, note, speak: !!note && !isKA && !isSystem };
 }

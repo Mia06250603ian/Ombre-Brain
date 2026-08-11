@@ -1,8 +1,9 @@
 #!/bin/bash
 # e2e-apierror-run.sh — 上游报错整链路测试:真 server.js + 真 claude 二进制 + 一直 401 的假后端。
 # 零额度、不碰线上。2026-08-11 新增,验的是那场「空回复」事故的那一格:
-#   上游断了 → CLI 把报错做成 assistant 消息(不走流事件)+ result 仍报 success
-#   → shim 必须认出来、必须替他说一句人话、必须**不**把这一轮当成功(否则断链检测永不醒)。
+#   上游断了 → CLI 发 system/api_retry(报错不走流事件)+ 常驻模式下 result 仍报 success
+#   → shim 必须认出来、对她发起的回合说一句人话、对系统/保温回合只记账不出声、
+#     并且**不**把这一轮当成功(否则断链检测永不醒)。
 #
 #   bash e2e-apierror-run.sh
 #
@@ -60,6 +61,13 @@ echo "[e2e] 第二轮(流式,模拟 telegram-bridge)..."
 curl -sS --max-time 600 -N -X POST http://127.0.0.1:8502/v1/messages -H 'Content-Type: application/json' \
   -d '{"model":"claude-opus-4-6","stream":true,"messages":[{"role":"user","content":"你还在吗"}]}' > sse-resp.txt
 curl -sS http://127.0.0.1:8502/debug > debug-2.json
+
+# 第三轮:系统回合(bridge 的查岗/写信提醒走这条,带 x-system-turn: 1)。
+# 上游断着的时候这一轮必须**一个字都不发**——否则宵禁那几个钟头她会被报错反复吵。
+echo "[e2e] 第三轮(系统回合 x-system-turn:1,必须静默)..."
+curl -sS --max-time 600 -X POST http://127.0.0.1:8502/v1/messages -H 'Content-Type: application/json' \
+  -H 'x-system-turn: 1' \
+  -d '{"model":"claude-opus-4-6","stream":false,"messages":[{"role":"user","content":"【系统·查岗】"}]}' > sys-resp.json
 sleep 1
 
 node - <<'EOF'
@@ -93,9 +101,15 @@ ok(d1.lastApiError && /retry \d+\/\d+/.test(d1.lastApiError.text), `lastApiError
 ok(d1.lastApiError && d1.lastApiError.text.includes("authentication_failed"), "lastApiError.text 留了上游给的错误类型");
 ok(d2.lastApiError.at >= d1.lastApiError.at, "第二轮刷新了 lastApiError");
 
+// ---- 系统回合:记账但不出声 ----
+const sysj = JSON.parse(rd("sys-resp.json"));
+const systext = (sysj.content || []).map((c) => c.text || "").join("");
+ok(systext === "", `系统回合必须静默(got ${JSON.stringify(systext).slice(0, 80)})`);
+
 // ---- 日志:必须进 [result-error],不能被当成功回合 ----
 const slog = rd("shim.log");
-ok((slog.match(/\[result-error\]/g) || []).length >= 2, "两轮都进了 [result-error]");
+ok((slog.match(/\[result-error\]/g) || []).length >= 3, "三轮都进了 [result-error](系统回合也记账)");
+ok(/静默(非她发起的回合)/.test(slog) || /静默/.test(slog), "日志里留下了「静默」那一行(证明是不出声,不是没发现)");
 ok(/\[result-error\].*上游/.test(slog), "日志里带上上游报错的短标识");
 ok((slog.match(/\[claude\] spawned/g) || []).length === 1, "进程只 spawn 一次(报错不该把晏重启掉)");
 ok(!/\[window\] restart/.test(slog), "不换窗口");

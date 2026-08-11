@@ -189,7 +189,7 @@ function handleEvent(ev) {
     // 这一轮算不算失败、要不要替他说一句,全在 apierror.mjs 的决策表里(单测覆盖)。
     // 2026-08-11 起「subtype=success,但这一轮见过上游报错且没吐出正文」也算失败——
     // 事故当天正是这一格判成了成功:缓存锚点照常续期、断链检测永不醒、她只看到空回复。
-    const out = resultOutcome({ subtype: ev.subtype, fullText: turn.fullText, apiError: turn.apiError, isKA: turn.isKA });
+    const out = resultOutcome({ subtype: ev.subtype, fullText: turn.fullText, apiError: turn.apiError, isKA: turn.isKA, isSystem: turn.isSystem });
     if (out.failed) {
       if (turn.apiError) {
         lastApiError = { at: new Date().toISOString(), kind: apiErrorKind(turn.apiError), text: turn.apiError.slice(0, 300) };
@@ -197,12 +197,10 @@ function handleEvent(ev) {
       } else {
         log("[result-error]", ev.subtype);
       }
-      if (out.note) {
-        turn.sse?.text(out.note);
-        // 保温轮不写 fullText:写了它就会被当成「他开口了」推进她的对话,
-        // 而抢救节奏是 15 分钟一次 —— 等于链路断着的时候刷屏(见 apierror.mjs)。
-        if (out.toFullText) turn.fullText = out.note;
-      }
+      // 只有「她开口的那种回合」才把坏消息送到她眼前;保温轮与系统回合(查岗/写信提醒)
+      // 一律只记账不出声——否则上游断的那一夜她会被反复吵(见 apierror.mjs 的 speak 一节)。
+      if (out.speak) { turn.sse?.text(out.note); turn.fullText = out.note; }
+      else if (out.note) log("[result-error] 静默(非她发起的回合):", out.note.slice(0, 60));
       if (turn.isKA) kaFailedAt = Date.now();      // 保温 ping 失败(额度耗尽/上游断)→ 抢救节奏
     } else {
       lastTurnOkAt = Date.now(); kaFailedAt = 0;   // 任何成功回合都续上缓存链
@@ -226,7 +224,7 @@ function pump() {
   busy = true;
   if (proc && item.system !== spawnedSystem) { try { proc.kill(); } catch {} proc = null; } // 世界书变了重启生效
   ensureProc(item.system);
-  turn = { sse: item.sse, fullText: "", newWindow: !!item.newWindow, isKA: !!item.isKA, lastCallUsage: null, apiError: "" };
+  turn = { sse: item.sse, fullText: "", newWindow: !!item.newWindow, isKA: !!item.isKA, isSystem: !!item.isSystem, lastCallUsage: null, apiError: "" };
   const content = item.images?.length ? [{ type: "text", text: item.text }, ...item.images] : item.text;
   const p = proc;
   const wait = Math.max(0, procReadyAt - Date.now());
@@ -613,7 +611,9 @@ function handleMessages(req, res) {
   }
   log("[req]", { len: text.length, imgs: images.length, sysLen: system.length, stream, reset: reset || "-" });
   const sse = stream ? makeSSE(res) : makeCollector(res);
-  enqueue({ text, images, system, sse, newWindow });
+  // isSystem:bridge 带 x-system-turn:1 的回合(查岗/深夜提醒/写信提醒)。
+  // 除了原有的三条「不当她出现」之外,2026-08-11 起还多一条:上游断了也不拿报错去打扰她。
+  enqueue({ text, images, system, sse, newWindow, isSystem: systemTurn });
 }
 app.post("/v1/messages", handleMessages);
 app.post("/messages", handleMessages);
