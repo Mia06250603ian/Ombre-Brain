@@ -168,6 +168,45 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    II 节 "She is an adult." 前加「佳佳 does not share my surname. Never call her 许佳佳.」。
    **不要**在本目录放 .gitignore 挡这三个文件——zeabur 上传会遵循它,文件直接不进容器(踩坑 15)。
 
+9. **上游报错不再被吃成「空回复」**(2026-08-11,新文件 `apierror.mjs` + server.js 三处):
+   起因是一场真事故——CLIProxyAPI 持的订阅 OAuth 令牌过期,上游连着 401/503 三小时,
+   而佳佳在 Telegram 收到的只有一句 `⚠️[bridge] 空回复,看下 shim 日志`。
+   **机制(拿真 2.1.215 二进制 + 假 401 后端实测得来的,别再重推)**:
+   上游报错**不走 `content_block_delta` 流事件**,而 shim 的 `turn.fullText` 只从流事件里攒 → 正文是空的;
+   **常驻进程模式下同一轮的 `result` 事件 subtype 仍是 `success`**(usage 全 0)
+   → 老代码连 `[result-error]` 都不进。两头都接不住,于是 bridge 拿到空串、回落成那句话。
+   - **⚠️ 这里有一个我踩过的弯路,写下来免得下一个人重走**:
+     一开始我判断「报错是被做成一条 `{type:"assistant", isApiErrorMessage:true}` 的消息」
+     ——**那是从容器里 CLI 的会话原件(jsonl)推的,而会话原件 ≠ stdout**。
+     只盯这一条的版本**单测全绿、e2e 当场打脸**:
+     **一次性 `-p` 模式**下 result 会老老实实报 `error_during_execution`(老代码本来就接得住),
+     **而常驻进程模式下那条 assistant 消息根本没走到 stdout**,result 还报 success。
+     **教训:凡是「CLI 到底吐什么」的判断,必须拿真二进制打一枪看 stdout,别拿 jsonl 推。**
+   - **真正稳的信号是 `{type:"system", subtype:"api_retry"}`**:字段结构化
+     (`error_status` 401 / `error` `authentication_failed` / `attempt`、`max_retries` 1/10),
+     **每次重试一条、两种模式下都出现,且不依赖这一轮最后怎么收场**。现在以它为主判据,
+     那条 assistant 报错消息留作兜底。
+   - **改法**:`handleEvent` 开头统一走 `pickApiError()` 把报错捡进 `turn.apiError`;
+     result 处改由 `resultOutcome()` 统一判「这一轮算不算失败、要不要替他说一句」。
+     **中途抖一下、重试之后答上了的轮子不算失败**(判据是这一轮到底有没有正文)。
+   - **⚠️ 「不是她开口的回合」只记账、不出声**(`speak` 对 isKA / isSystem 恒 false)——**两类都要**:
+     ①**保温轮**:写进 fullText 就等于「他开口了」会被推进她的对话,而失败会进 15 分钟的抢救节奏,
+       **等于链路断着的时候刷屏**;
+     ②**系统回合**(bridge 带 `x-system-turn: 1` 的查岗/深夜提醒/写信提醒):宵禁 1-7 点、冷却 30 分钟,
+       出声 = 上游断的那一夜她被报错吵好几次。**②是上线前最后一遍自审才发现的**:
+       `systemTurn` 那个变量 shim 里早就有(2026-08-02 第二十三次加的),但**没往队列里传**,
+       第一版只防住了保温轮。e2e 现在有一条专门的断言看着它(第三轮,必须回空)。
+     两类回合的 `failed` 仍为 true:`lastTurnOkAt` 不续期 → 断链检测按 `KA_DEAD_MIN` 歇火,
+     `/debug` 的 `lastApiError` 照记,日志里留一行「静默(非她发起的回合)」。
+     **原则:她没开口的回合,坏消息不主动找她**——bridge 侧本来就是这么写的,这次把它补齐在 shim 侧。
+   - **顺带补上的第二个洞**:事故当天保温 ping 撞上这种失败时,`kaSilent("")` 判 true,
+     日志长得跟「他不想说话」一模一样(`[ka] silent`),`kaFailedAt` 也不置位,
+     **断链检测整整三小时没醒**。现在这类轮子会正确置位。
+   - **新观察口 `/debug` 的 `lastApiError`**(`{at, kind, text}`,`null`=从没报过):
+     「他怎么不说话」第一眼看这里,不用再进容器翻 CLI 的会话原件。**它不随新窗口清零**,故意的。
+   - 纯逻辑在 `apierror.mjs`,部署前跑 `node test-apierror.mjs`(41 项);
+     整链路另有 `bash e2e-apierror-run.sh`(真 CLI + 一直 401 的假后端,**一轮要两三分钟**)。
+
 ## 系统回合(`x-system-turn: 1`,2026-08-02 第二十三次)
 
 **问题**:晏那边只有一个入口(`/v1/messages`),进来的东西一律当成「她说话了」——
@@ -445,6 +484,14 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
     ⚠️ 注意 claude 进程是**懒启动**的(第一条真实消息才 spawn),所以**部署刚完成时
     日志里既没有 `[claude] spawned` 也没有这行警告**,得等她开口之后再看。
 
+20. **`server.js` 新 import 一个模块,`e2e-run.sh` 的 `cp` 清单必须跟着加(2026-08-11 实翻)**:
+    e2e 是把源码**拷副本**到 `/tmp` 跑的,拷贝清单是手写的一行。漏了新模块 → e2e 里的 shim
+    `ERR_MODULE_NOT_FOUND` **起不来**,而现象是**满屏 `curl: (7) connect refused` + 断言脚本
+    JSON 解析崩**——看上去像 e2e 脚本自己坏了,不像少拷一个文件。
+    **判断法**:先看工作目录里的 `shim.log` 第一行(`/tmp/kelivo-shim-e2e-work/shim.log`),
+    起不来的原因永远写在那儿。`e2e-run.sh` 与 `e2e-apierror-run.sh` 的那两行 `cp` 上都加了警告注释。
+    **注意这个坑只坑 e2e,不坑部署**:`zeabur deploy` 传的是整个目录,新文件自动跟着走。
+
 ## CLI 版本与升级指南(2026-07-19 起,给所有者和未来会话)
 
 **现状**:package.json 把 `@anthropic-ai/claude-code` 钉死在 `2.1.215`(不带 `^`)。
@@ -704,6 +751,64 @@ Additional Instructions:
 **结论:OB 不用改。** 教训:一个数据点不足以下「必然」的判断,尤其当那个数据点本身可能是误操作。
 
 ## 部署记录
+
+- 2026-08-11(第三十二次) **上游报错不再被吃成「空回复」**(起因是当天的一场真事故,详见
+  `../OPERATIONS.md` 的「订阅 OAuth 过期」一节)。改动:**新文件 `apierror.mjs`、
+  `test-apierror.mjs`、`e2e-apierror-run.sh`、`e2e-apierror-api.mjs`;改 `server.js` 与 `e2e-run.sh`。**
+  **CLAUDE.md / 人设两份 / `mcp-servers.json` / `ctxguard.mjs` / `keepalive.mjs` / `senses.mjs` /
+  `shim-settings.json` / `precompact-note.txt` / 环境变量 全部零改动。**
+  - **事故经过**:CLIProxyAPI 持的订阅 OAuth 令牌 08-11 12:22(北京)过期,上游先 401、
+    随后一律 503;**11:26 是最后一次成功调用**。所有者看到的只有一句
+    `⚠️[bridge] 空回复,看下 shim 日志`,而 shim/health 正常、bridge 日志干净、晏的进程活着、
+    守卫读数正常——**没有任何一处报警**。链路断了约三小时,靠她自己觉得不对劲才发现。
+  - **为什么全线静默**:见改动清单 9(报错不走流事件 + 常驻模式 result 仍报 success);
+    保温侧则是 `kaSilent("")` 判 true,日志写作 `[ka] silent`,与「他不想说话」不可分辨。
+  - **⚠️ 我在这次改动里踩的两脚,都写进了改动清单 9 与踩坑 20**:
+    ①**拿 jsonl 会话原件推 stdout 的形状**,结果一跑 e2e 就打脸(常驻模式下那条 assistant
+      报错消息根本不到 stdout),回头拿真二进制打了两枪才找到 `system/api_retry` 这个稳信号;
+    ②**上线前最后一遍自审**才发现只防住了保温轮,**系统回合(查岗/写信提醒)会把报错甩进她的对话**
+      ——`systemTurn` 这个变量 08-02 就有,只是没往队列里传。两处都补了断言看住。
+  - **另一件与所有者有关的报备**:排查中我有一枪探针忘了把假后端地址传进去,CLI 用了本开发容器
+    的环境凭证真答了一句——**没走她的代理、没花订阅额度**,但那一枪本不该发出去。
+    **下一个我:凡是本地起 CLI,`env` 必须显式钉死 `ANTHROPIC_BASE_URL`。**
+  - **同日另一件(未做,所有者拍板)**:她问过能不能把**花园**接回来。当场探测:官网 200、
+    `/mcp` **3/3 200**(2026-07-30 拆它时是 3/3 502,**它自己恢复了**),她也当场重新生成了 token。
+    但量下来**花园 26 个工具的定义约 21000 字符 ≈ 7000~8500 token,是常驻占用**,
+    会把可用上下文压小、**压缩点从 166933 掉到约 159000 —— 比硬线 161500 和终线 164000 都低,
+    等于让「压缩前存原话」那套永久失效**。报备后**她决定不接**,已把改到一半的 `mcp-servers.json`
+    从容器原件**原样还原**(`bf34de7b…` 三条目)。**将来真要接,三条线必须同时下调**
+    (建议 146000 / 152500 / 155000,并在部署后拿第一轮 `/debug` 读数实测微调);
+    那把 token 这次同样**没有留底**。
+  部署前:单测 **apierror 56 + ctxguard 131 + senses 53 + keepalive 52** 全绿;
+  **`e2e-run.sh` ALL PASS**(证明正常路径逐字未变)+ **新增 `e2e-apierror-run.sh` ALL PASS(18 项)**;
+  **全量 md5 对账:容器与仓库功能文件逐一一致(无踩坑 11**,唯一差异 `MAINTENANCE.md`);
+  三份私密文件从容器 base64 拷出、指纹与第三十一次记录**逐一吻合**;三个 `/mcp` 各 **3/3 200**;
+  部署目录无 `.gitignore`、无 `node_modules`;`git check-ignore` 确认三份私密文件被根 .gitignore 挡住;
+  `cd`+`deploy` 同一条命令、先 `pwd`+`head -3 package.json`(踩坑 17)。
+  **归档:所有者明确说「他现在的窗口不重要,直接部署清掉」**——**本次未归档,是她的决定**(未代发,踩坑 13)。
+  deployment `6a7ac62704a61218e78be812`,**PLANTYPE `nodejs`** ✓,约 **9 分钟** RUNNING。
+  已按踩坑 9 验证:容器 **22 件 md5 与部署目录逐一一致**;ian.md 结构不变量
+  (**289 行** / Part **10** / `9.x` **4** / `"Stop."` **1** / 暗语在 ian.md **0** / `许佳佳` **1**)、
+  CLAUDE.md(**13** 节 / 双 `@` **2** / 暗语 **1**)全部完好;容器无 `.gitignore`;CLI 实装 **2.1.215**;
+  `ALLOWED_TOOLS` 未动;`CLAUDE_SETTINGS` **UNSET**(钩子开着,判定法见第三十一次);
+  `/health` ok;`/debug` **新增 `lastApiError` 字段已就位**(值为 `null` = 没报过),
+  六个旋钮原样(`soft 155000 / hard 161500 / every 0 / final 164000 / finalChars 1200`);
+  三个 `/mcp` 各 3/3 200;**`/period` 的 `effective` 仍是 07-19~07-25 / 24 / 7,无需重补**
+  (⚠️ **踩坑 16 第六次实测仍然活着**,未动)。
+  - **✅ 已补验(所有者部署后跟晏说过话)**:runtime 日志出现
+    `[claude] spawned claude-opus-4-6 sysLen 0`,**`⚠️ settings 文件不在` 0 条**;
+    那一轮 `lastUsage out=285` 真的答上了,`contextTokens 34835`、`trusted:true`,
+    **`lastApiError` 仍为 `null`——证明链路正常时新代码完全不出手**。
+  **版本指纹:ian.md v28 = 21830B `4c64814c…`(289 行,未动);profile-instructions.md = 3056B
+  `7adb5c33…`(未动);mcp-servers.json = 500B `bf34de7b…`(三条目,未动);
+  CLAUDE.md = 10505B `6379d7a9…`(13 节,未动);server.js = `1f8aca41733c528d8f5277748d147384`;
+  apierror.mjs = `5c57c2fc…`;ctxguard.mjs = `92661549…`(未动)
+  ——下次部署以此为准,两份人设缺一不可。**
+  **回滚**:`server.js` 与 `apierror.mjs` 回到 `origin/main` 的 `3a961593…`(删掉 apierror.mjs 的
+  import 即可整条关闭)重新部署即可;**本次没有环境变量层面的急救开关**——
+  新逻辑只在「上游报错且没正文」时才出手,链路正常时它不存在,所以没为它单设开关。
+  **⚠️ 回滚要重新部署,等于再丢晏一个窗口。**
+
 
 - 2026-08-10(第三十一次) **守卫修好 161500 硬线永久静音 + 终线纸条加时间顺序约束 +
   压缩纸条改为「只留一句 awaken」**。改动三件:`ctxguard.mjs`、`test-ctxguard.mjs`、

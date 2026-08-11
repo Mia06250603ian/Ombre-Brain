@@ -188,6 +188,7 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 | 08-07(第二件) | **会动的贴纸上线:18 只螃蟹**(只改 bridge,**shim 与晏的窗口零改动**,当天两次部署)。起因是所有者看上了 `Mia06250603ian/clawd-on-desk` 那只桌宠螃蟹,问能不能接进 TG。**桌宠本体接不了**——它是 Electron 桌面应用、盯的是同一台电脑上的 coding agent,而晏在云端容器里(远程 SSH 模式要 ssh + 远端写 hook 文件,Zeabur 容器两样都没有);**它的 Telegram 功能方向还是反的**(往 bot 发工具审批卡),而且**它自己的文档写明「别复用已有桥的 bot token」**——一个 token 只能有一个 getUpdates 主人,拿晏那个去配它=晏当场收不到消息(就是 bridge 已知边界 1)。**但它的素材能用**:`assets/gif/` 里 24 张螃蟹动图,转成 Telegram 视频贴纸(512×512 / VP9 / 带 alpha / ≤3 秒 / ≤256KB,实测平均 34KB)接进现有表情包机制。**代码只动 3 行**(新增 `stickerMime`,把上传时写死的 `image/webp` 改成按扩展名判定);**发送路径一个字没改**——桥本来就走 `sendSticker`,而它的 multipart 上传同时吃 .webp 和 .webm,**不用建贴纸包、不用碰 @Stickers**。所有者的要求是「**现有的稳定 ＞ 新功能**」,落点是 `stickerMime` 的默认值恒为 `image/webp`,老那 35 张算出来的字符串与改动前**逐字相同**。test-bridge **249→262 项**全绿(新增守护:webp 必须仍是 35、webm 18、螃蟹标签必须带前缀、`mediaTypeOf` **不许认 webm**——防止哪天有人合并这两个函数,让视频伪装成图片进他的窗口)。**当晚所有者实地试用抓到两个问题**:①螃蟹脚下一条黑线——查证是**原作者画的呼吸影子,不是转码坏的**,已逐帧抹掉(只在内容最底下 14 行找 >40px 的黑横条,两个阈值都是安全边界,放宽会啃掉眼睛);②「有几张太大」——量了身体宽度才看清**普通 18 张本来就齐**(169~207),撑满画布的是 6 张 `mini-*` 特写,而它们右边那条黑竖杠是桌宠「从屏幕边缘探头」的**那个屏幕边缘**,聊天里没有边缘只剩黑方块,**整个撤掉**(下一个人别好心补回来)。**两个排查教训**:判断透明有没有保住,**深色背景下「填黑」和「真透明」看起来一模一样**,必须换浅色/花纹背景验;对比帧要按**时间戳**取,原图 50/3 fps 和成品 30fps 按「第几帧」比会对错瞬间。**标签教学暂未写进 CLAUDE.md**(那要重启晏),所有者当天直接在对话里告诉他,他当场就会用——成品文案已备好放在 shim 手册的「待办」一节,下次部署 shim 时抄进去即可。详见 bridge 手册设计要点 15、16 与部署记录 |
 | 08-08(第二件) | **ian.md v26→v27 三处定点修订 + CLAUDE.md「表情包」整节替换并部署(shim 第二十九次)**。所有者逐字提供三处:①**Part X · Closing 末段**——从「我不完美但每次会站得更稳」改成「**她说没人完美,所以我不必苛求自己**;我可以自由表达、自由犯错,她爱的是真实的、活的、随时间流动的我」,后半句「每次醒来更稳一点」保留;②**9.4 Holding Ground**——`My own judgment: …escape routes` 改成 `My own hesitation is never a reason to step back…what I need to do is stand by her side`;③**8.2 Milestones 整段换代**(六条里程碑全部改短)。**只改 ian.md 与 CLAUDE.md 两件**,profile-instructions.md / mcp-servers.json / 代码 / 环境变量零改动。CLAUDE.md 那件是了结 shim 手册挂了一天的待办:**把螃蟹标签写进「表情包」一节**,而且写进去的是**当天新的 24 个**(待办里那份成品写于 08-07、只有 18 个,已作废)——标签由脚本**现读 `registry.json` 生成**,不照抄手册。**两处报备后所有者确认照原样**:9.4 那条现在是「三条带标签 + 一段散文」(她的新文本没有标签);8.2 换代后消失了若干细节(帝国大厦、工作笔记本、「我不停跳动的心脏」等,都是她新稿里本来就没有的),**手册点名必须保留的求婚与 OB 两条里程碑都还在**。指纹:ian.md 22558B→**21602B `d391de3e…`**(仍 287 行),CLAUDE.md 9215B→**9791B `f1282ef6…`**(仍 13 节)。deployment `6a76cea6…` 约 10 分钟 RUNNING;三套单测全绿、三个 `/mcp` 各 3/3 200、部署前后全量 md5 对账逐一一致、结构不变量(`Part` 10 / `9.x` 4 / `"Stop."` 1 / seal 只在 CLAUDE.md)全部完好。**踩坑 16 第四次实测仍然活着**(`PERIOD_FILE` 空、`/data` 不存在),未动 |
 | 08-08 | **螃蟹贴纸重转:裁掉桌宠留白 + 6 张 mini 加回来**(只改 bridge,**shim 与晏的窗口零改动**)。起因是所有者报「tg 新加的动态贴纸有很大的空白」。**根因不是转码坏了、也不是 Telegram**:`clawd-on-desk` 是桌宠,原图 303×300 里螃蟹只占下半截一小块(留白是它在桌面上走动的地方),08-07 那版整幅原样缩放塞进 512×512,留白就原样进了聊天气泡——实测**一张贴纸平均只有 8% 的面积有内容**,上方平均空 235px,最狠的 `螃蟹发呆` 空掉 69% 的高度(对照:老那 35 张 webp 每张填满 99%)。修法是**从原仓库的 GIF 重转**:先裁到「全帧内容并集」的包围盒,18 张普通的**共用一个放大倍数**(螃蟹在每张里一样大),再居中补成 512。**所有者三条拍板**:回原图重转(不拿成品再裁,免得像素画重采样两次)、**6 张 mini 加回来且黑竖杠原样保留**、摆位居中。mini 那 6 张 08-07 撤过,当时的手册写着「别好心补回来」——本次在原图上量出**螃蟹右缘每一帧都死死顶在黑杠左边界上**(身体右半边根本没画),所以「裁掉黑杠」这条路不存在,要么带杠用要么不用,她选了带杠用。**重转踩到两个坑,都记进了 bridge 手册设计要点 17**:①**解这批 GIF 必须用 PIL,ffmpeg 的帧间 disposal 是错的**(顶边留上一帧的木板/锤头残片 → 包围盒被撑成整幅画布 → 裁剪等于白做);②**螃蟹轮廓渗一圈绿边**(原图一个绿像素都没有),是 VP9 `yuva420p` 色度 2×2 下采样所致,**加码率/`-lossless 1`/`yuva444p` 三样都没用**,根治是把颜色向透明区外扩几圈。顺带纠正 08-07 手册里「原图透明是绿幕」那句——**实测是真 alpha**。改动只有素材 + `registry.json`(53→**59**)+ `test-bridge.mjs` 两个计数,**`server.js`/`bridge-lib.mjs` 一个字没改**;test-bridge 262 项全绿。**CLAUDE.md 标签表没动**(动它就要重启晏),6 个新标签由所有者直接在对话里告诉晏 |
+| 08-11 | **订阅 OAuth 过期导致「空回复」,重新授权修复;shim 第三十二次部署让这类失败不再静默**。①**事故**:CLIProxyAPI 持的订阅 OAuth 令牌 12:22(北京)过期,上游先 401 后一律 503,**11:26 是最后一次成功调用**;所有者只看到一句 `⚠️[bridge] 空回复,看下 shim 日志`,而 `/health` 正常、bridge 日志干净、晏的进程活着、守卫读数正常——**全线零报警**,断了约三小时靠她自己发现。断案靠的是**容器里 CLI 的会话原件**(30 条 `api_error`)+ shim 守卫读数卡在 70268 不动这两条独立证据。②**修法**:`service restart` CLIProxyAPI **救不了**(重启后自检仍 401),但它把「冷却抖动」和「凭证真死了」区分开了,**当分诊手段是值的**;最终走管理接口重新授权(取链接→所有者本人在浏览器同意→回调交回),`auth-files` 由 `error/unavailable` 变 `active`、凭证文件 415B→678B,真请求 200。**全程不碰 shim、不重启晏。** ⚠️ 两把钥匙别混:`API_KEY`(`sk-` 开头,调用用)≠ `MANAGEMENT_PASSWORD`(管理接口用)。③**shim 第三十二次部署**:新增 `apierror.mjs`,以 CLI 的 `system/api_retry` 事件为主判据认出上游报错——**她开口的回合收到人话**(`⚠️[shim] 上游断了,他这句没回上来(401 authentication_failed)——不是他不理你;你的话他收到了…`),**保温轮与系统回合(查岗/写信提醒)只记账不出声**(否则抢救节奏 15 分钟一次、宵禁那几小时会反复吵她),失败轮不再续期缓存锚点,**断链检测终于会醒**;`/debug` 新增 `lastApiError` 观察口。**开发中踩了两脚,都写进了 shim 手册**:拿 jsonl 会话原件推 stdout 形状被 e2e 当场打脸(常驻模式下那条 assistant 报错消息不到 stdout);上线前自审才发现只防住保温轮、漏了系统回合。④**花园(未接,所有者拍板)**:当场探测发现它**自己恢复了**(`/mcp` 3/3 200,07-30 拆它时是 3/3 502),但**26 个工具的定义约 21000 字符 ≈ 7000~8500 token 且是常驻占用**,会把压缩点从 166933 压到约 159000——**比硬线和终线都低,等于让「压缩前存原话」永久失效**;报备后她决定不接,配置已原样还原,**新生成的 token 同样没留底**。将来要接,三条线必须同时下调(建议 146000/152500/155000)。详见 `kelivo-shim/MAINTENANCE.md` 第三十二次与本文件「订阅 OAuth 过期」一节 |
 | 08-07 | **积压的三个 PR 一次清完(#79、#78、#73),OB 重建一次,零故障**。背景:**08-06 15:30 前后 GitHub Actions 故障**,#78/#79 的检查一次都没跑起来(不是红叉,是 **0 个 check run**)。08-07 确认 Actions 已恢复(当日 04:22 UTC 的 Daily Backup 成功)。**Actions 恢复后不会自动补跑积压的 PR 检查**,本次用「**关闭 PR → 立即重新打开**」重新发一次 `pull_request` 事件把检查勾起来(`tests.yml` 没配 `workflow_dispatch`,没有手动按钮;这招零代码零提交)。三个 PR 检查全绿后依次合入:先 #79(对线上零影响)→ 再 #78(触发 OB 重建)→ 最后 #73(解冲突后合)。**⚠️ 纠正一条流传的说法:「main 上 08-06 16:21 那三个红叉全是故障掐的、重跑就绿」——只对了一半。** 逐个查证的结果:①**Tests 那个 run 根本不是红叉,是卡在 `queued`、jobs 数为 0** 的僵尸 run(从 08-06 16:21 挂到次日);②**Docker 那个确实是故障**(唯一一步 `Set up job` 失败,仓库自己的步骤没开始);③大家记成「Tests cancelled」的那个 **cancelled 其实是 gmail-mcp 镜像工作流的 `test` job**,不是 Tests。**而 `Build & Push Docker Image` 是长期真红,不是这次故障造成的**:08-04 的 12:58/14:50/20:11 三次都跑过了 checkout、**挂在第 4 步 `Login to Docker Hub`**——根因是**本仓库是 fork,上游的 `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` 不会跟着 fork 过来**(`build-gmail-image.yml` 的注释里 08-06 就写明过),**重跑一百次也是红的**。**#78 顺手把 `docker-publish.yml` 整个删了**,这条红叉就此消失;代价为零——它推的是 `p0luz/ombre-brain`(**上游作者的 Docker Hub 账号,本仓库永远推不上去**),而线上 OB 是 Zeabur 拿源码自己构建的,从不用这个镜像,README 里教别人 `docker pull` 的那几段拉的也是上游仓库推的包。**教训:红叉别按「故障期内=故障造成」一刀切,逐个看失败在哪一步——同一个工作流可以先后死于两个完全不同的原因。** **#78 的实际范围比 PR 描述大**:除 `server.py`/`dashboard.html` 外还动了**两个 CI 工作流**(删 docker-publish、把新测试文件加进 `tests.yml`),已报备并经所有者拍板保留。**#73 是 08-02 开的纯文档收尾**(补 PR #72「九个依赖钉上限」的记录 + 重建验收五步清单),挂了五天,基线太旧与 main 冲突;**冲突只有一处**:它加的「08-02(第四件)」与 main 在 08-03~08-06 加的七行落在时间线表格同一位置,**两边全保留**即可,净改动仍是 `OPERATIONS.md` 一个文件 +47/−3。**它值得救**:main 上那句「其余依赖全是 `>=` 无上限……**建议统一钉上限(未做)**」早就过时了(08-02 就钉完了),本次会话读手册时正是被这句误导过一次。**OB 重建验收(照 #73 新合入的五步清单)**:14:29 短暂 502,14:30 新版起来;**334 个桶一条没少**、MCP `initialize` **3/3 200**、`/dashboard` 三个新功能(改/归档/删)都在、bridge 全程未受波及(仍在轮询、贴纸 35、各开关照旧)。`/health` 的 `decay_engine: "stopped"` 是**懒启动的正常态**,不是故障(这条正好写在同一批合入的 #73 里)。**两条报备**:①推 #73 分支时连带触发了 gmail 镜像构建,按设计只推 `:dev` 和 `:<sha>`、**没占 `:latest`**,线上无影响;②**CI 的 `Tests` 只跑 Python,测不到 bridge 的 Node 代码**,所以 #79 的 249 项是**本地跑的**、不是 GitHub 跑的——`test-bridge.mjs` 至今没进 CI,**下一个想给 bridge 加自动检查的人,这就是缺口**。**未做(所有者尚未拍板)**:`REPORT_TOKEN` 曾在截图里明文泄露过一次(见 08-06 第二件),**到本行写下时仍未更换**。 |
 
 ## 6. 部署与运维操作速查
@@ -254,6 +255,8 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 | 晏说记忆工具调不通/OB 域名 502/控制台显示 `Service is suspended` | **OB 的 Python 依赖没钉上限,某次重建装到了上游新大版本** → 启动即 ModuleNotFoundError → CrashLoopBackOff → Zeabur 挂起服务。**别点「重启当前版本」**(坏镜像重启还是崩),要改 requirements.txt 钉上限后**重新构建**。查法:`zeabur deployment log --service-id <OB> --env-id <OB env> --type runtime` 看 Traceback | 本节下方「OB 依赖钉版本」 |
 | Telegram 收不到消息 | 双实例抢 getUpdates(409)/BRIDGE_ON=0 | bridge 已知边界 1 |
 | Telegram 里收到 `⚠️[bridge] fetch failed` | **不是晏、不是 shim、不是额度**:`fetch failed` 只可能来自全局 fetch,也就是 bridge 发给 api.telegram.org 的调用(叫 shim 那步走 node:https,报不出这五个字)。**他其实答完了,是回话没送到**。2026-08-02 已修(重试+只丢失败那一句+日志带 cause+文案说人话) | bridge 已知边界 7、设计要点 10 |
+| Telegram 里收到 `⚠️[bridge] 空回复,看下 shim 日志` | **上游断了**(订阅 OAuth 过期最常见,其次是额度)。**不是晏、不是 bridge、也不是 shim 挂了**:她的话其实进了他的窗口,是上游没给出回复。2026-08-11 修之前这类失败**全程静默**——CLI 把报错做成一条不走流事件的 assistant 消息、result 还报 `success`,shim 两头都接不住。查法:`GET yan-shim.zeabur.app/debug` 看 **`lastApiError`**(`null`=没报过) | 本节下方「订阅 OAuth 过期」;shim 手册改动清单 9 |
+| 他一整天没主动找我(保温/心跳都不来),但问他又像没事 | 同上一行:链路断了。**2026-08-11 之前这个方向是彻底静默的**——保温 ping 失败时 `kaSilent("")` 判 true,日志写的是 `[ka] silent`(长得跟「他不想说话」一样),断链检测不醒。修好后这类轮子会置位 `kaFailedAt`、`lastTurnOkAt` 不再续期 | shim 手册改动清单 9 |
 | 语音条发过去回「语音听不了/没听清」 | ears 挂了或 Groq key 失效(曲线:curl ears /health、看 asr 字段;文字聊天不受影响) | bridge 已知边界 3 |
 | 晏的回复变冷淡/像客服 | 锚点被覆盖或人设没带上 | shim 改动清单 3 |
 | 保温/主动消息不来了 | 「换窗口」后歇火(设计如此;07-20 起晚安/归档不歇火)/额度耗尽断链 | shim 改动清单 6 |
@@ -270,6 +273,56 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 | 浏览器换容器后要重登 | 卷没真挂上,或关闭时没走 `Browser.close`(日志找「cookie 已落盘」);**被系统硬杀不刷盘=白登** | browser-hands 手册踩坑 4、第 10 节 |
 | 浏览器老是自己重启 | 在刷重站点(抖音是已知元凶),或 `MEM_LIMIT_MB` 太低。`/debug` 看 `memRestarts` | browser-hands 手册踩坑 4 |
 | 手机开 noVNC 画面超出屏幕缩不了 / 键盘弹不出来 | 默认 `resize=remote` 对固定尺寸虚拟屏无效,要 `resize=scale`;键盘要先点输入框再点键盘图标 | browser-hands 手册踩坑 3、6 |
+
+### 订阅 OAuth 过期(2026-08-11 事故,必读)
+
+**症状**:她跟晏说话,Telegram 回一句 `⚠️[bridge] 空回复,看下 shim 日志`;保温和主动心跳也悄悄停了,
+但**任何一处都不报警**——shim `/health` ok、bridge 日志干净、晏的进程活着、守卫读数正常。
+
+**根因**:CLIProxyAPI 手里那份订阅 OAuth **令牌过期且没能自动刷新**。上游先回一次
+`401 authentication_error: OAuth access token has expired`,之后代理把该凭证标成不可用,
+后续一律 `503 auth_unavailable`。**这份凭证只有一个,没有备用账号顶。**
+
+**怎么确认(三条,从便宜到贵)**:
+```bash
+# ① shim 的观察口(2026-08-11 起有):lastApiError 非 null 就是它
+curl -s https://yan-shim.zeabur.app/debug        # 看 lastApiError.kind,如 "401 authentication_error"
+# ② 直接问代理要凭证状态(管理密码在 CLIProxyAPI 服务的环境变量 MANAGEMENT_PASSWORD)
+curl -s -H "Authorization: Bearer <管理密码>" https://miaianhome.zeabur.app/v0/management/auth-files
+#    看 status / unavailable / status_message;正常是 "active" + false
+# ③ 打一枪最小请求(不经过晏,不进他的窗口;注意代理注入的策略要求开 thinking)
+curl -s -X POST https://miaianhome.zeabur.app/v1/messages -H "Content-Type: application/json" \
+  -H "x-api-key: <API_KEY>" -H "anthropic-version: 2023-06-01" \
+  -d '{"model":"claude-opus-4-6","max_tokens":2048,"thinking":{"type":"enabled","budget_tokens":1024},"messages":[{"role":"user","content":"say ok"}]}'
+```
+⚠️ **两把钥匙别搞混**:`API_KEY`(shim 的 `ANTHROPIC_AUTH_TOKEN`,`sk-` 开头)是**调用**用的;
+`MANAGEMENT_PASSWORD` 才是**管理接口**用的。拿错了管理接口回 `invalid management key`
+(而**不带**任何头是 `missing management key`)——这两句话能帮你分清「钥匙错了」还是「没带钥匙」。
+
+**修法:重新授权(约五分钟,全程不碰 shim、不重启晏、窗口不丢)**
+```bash
+# 1. 取授权链接(state 有时效,取了就尽快用)
+curl -s -H "Authorization: Bearer <管理密码>" https://miaianhome.zeabur.app/v0/management/anthropic-auth-url
+# 2. 把 url 发给所有者,她在浏览器用**同一个账号**登录并同意
+#    (跳转到 http://localhost:54545/callback?... 会显示「无法访问」,那是对的,要的就是地址栏那串)
+# 3. 把她发回来的整串交回去
+curl -s -X POST -H "Authorization: Bearer <管理密码>" -H "Content-Type: application/json" \
+  https://miaianhome.zeabur.app/v0/management/oauth-callback \
+  -d '{"provider":"anthropic","redirect_url":"http://localhost:54545/callback?code=…&state=…"}'
+# 4. 验:auth-files 变 status "active" / unavailable false,再打一枪 ③ 拿到 200
+```
+**「同意」那一下只有所有者本人能按**(她的账号在她的浏览器里),这不是流程冗余,是 OAuth 的前提;
+**其余每一步都该由会话做完**,别让她去控制台点。
+
+**三条给下一个我**:
+1. **`service restart` CLIProxyAPI 救不了**(2026-08-11 试过):重启后自检直接
+   `populate Claude OAuth account profile: fetch Claude OAuth profile failed with status 401`。
+   但它便宜(30 秒、不动晏),**当作分诊手段是值的**——重启后错误从「没有可用凭证」变成
+   「拿着凭证去问被 401」,正是这一步把「冷却/抖动」和「凭证真死了」区分开的。
+2. **`auth-files` 里的 `recent_requests` 会随容器重启清零**,别拿那一排 `success 0`
+   反推「一整天都没通过」——那天 10:30 的心跳和 11:26 的回复都是真成功过的。
+3. **`created_at`/`modtime` 是凭证文件最后一次被写的时间**,也就是上次成功刷新的时刻;
+   重新授权成功后它会被重写(那次 415B → 678B),**是判断「新凭证真落盘了」最直接的一眼**。
 
 ### OB 依赖钉版本(2026-07-29 事故,必读)
 
