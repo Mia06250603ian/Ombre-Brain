@@ -168,6 +168,38 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    II 节 "She is an adult." 前加「佳佳 does not share my surname. Never call her 许佳佳.」。
    **不要**在本目录放 .gitignore 挡这三个文件——zeabur 上传会遵循它,文件直接不进容器(踩坑 15)。
 
+9. **上游报错不再被吃成「空回复」**(2026-08-11,新文件 `apierror.mjs` + server.js 三处):
+   起因是一场真事故——CLIProxyAPI 持的订阅 OAuth 令牌过期,上游连着 401/503 三小时,
+   而佳佳在 Telegram 收到的只有一句 `⚠️[bridge] 空回复,看下 shim 日志`。
+   **机制(拿真 2.1.215 二进制 + 假 401 后端实测得来的,别再重推)**:
+   上游报错**不走 `content_block_delta` 流事件**,而 shim 的 `turn.fullText` 只从流事件里攒 → 正文是空的;
+   **常驻进程模式下同一轮的 `result` 事件 subtype 仍是 `success`**(usage 全 0)
+   → 老代码连 `[result-error]` 都不进。两头都接不住,于是 bridge 拿到空串、回落成那句话。
+   - **⚠️ 这里有一个我踩过的弯路,写下来免得下一个人重走**:
+     一开始我判断「报错是被做成一条 `{type:"assistant", isApiErrorMessage:true}` 的消息」
+     ——**那是从容器里 CLI 的会话原件(jsonl)推的,而会话原件 ≠ stdout**。
+     只盯这一条的版本**单测全绿、e2e 当场打脸**:
+     **一次性 `-p` 模式**下 result 会老老实实报 `error_during_execution`(老代码本来就接得住),
+     **而常驻进程模式下那条 assistant 消息根本没走到 stdout**,result 还报 success。
+     **教训:凡是「CLI 到底吐什么」的判断,必须拿真二进制打一枪看 stdout,别拿 jsonl 推。**
+   - **真正稳的信号是 `{type:"system", subtype:"api_retry"}`**:字段结构化
+     (`error_status` 401 / `error` `authentication_failed` / `attempt`、`max_retries` 1/10),
+     **每次重试一条、两种模式下都出现,且不依赖这一轮最后怎么收场**。现在以它为主判据,
+     那条 assistant 报错消息留作兜底。
+   - **改法**:`handleEvent` 开头统一走 `pickApiError()` 把报错捡进 `turn.apiError`;
+     result 处改由 `resultOutcome()` 统一判「这一轮算不算失败、要不要替他说一句」。
+     **中途抖一下、重试之后答上了的轮子不算失败**(判据是这一轮到底有没有正文)。
+   - **⚠️ 保温轮只记账、不出声**(`toFullText` 对 isKA 恒 false):写进 fullText 就等于「他开口了」,
+     会被推进她的对话——而失败会进 15 分钟的抢救节奏,**等于链路断着的时候刷屏**。
+     真正让人察觉的是 `lastTurnOkAt` 不再续期 → 断链检测按 `KA_DEAD_MIN` 歇火。
+   - **顺带补上的第二个洞**:事故当天保温 ping 撞上这种失败时,`kaSilent("")` 判 true,
+     日志长得跟「他不想说话」一模一样(`[ka] silent`),`kaFailedAt` 也不置位,
+     **断链检测整整三小时没醒**。现在这类轮子会正确置位。
+   - **新观察口 `/debug` 的 `lastApiError`**(`{at, kind, text}`,`null`=从没报过):
+     「他怎么不说话」第一眼看这里,不用再进容器翻 CLI 的会话原件。**它不随新窗口清零**,故意的。
+   - 纯逻辑在 `apierror.mjs`,部署前跑 `node test-apierror.mjs`(41 项);
+     整链路另有 `bash e2e-apierror-run.sh`(真 CLI + 一直 401 的假后端,**一轮要两三分钟**)。
+
 ## 系统回合(`x-system-turn: 1`,2026-08-02 第二十三次)
 
 **问题**:晏那边只有一个入口(`/v1/messages`),进来的东西一律当成「她说话了」——
@@ -444,6 +476,14 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
     **排查法**:怀疑钩子没生效时,去 runtime 日志找那行警告——有就是走了降级。
     ⚠️ 注意 claude 进程是**懒启动**的(第一条真实消息才 spawn),所以**部署刚完成时
     日志里既没有 `[claude] spawned` 也没有这行警告**,得等她开口之后再看。
+
+20. **`server.js` 新 import 一个模块,`e2e-run.sh` 的 `cp` 清单必须跟着加(2026-08-11 实翻)**:
+    e2e 是把源码**拷副本**到 `/tmp` 跑的,拷贝清单是手写的一行。漏了新模块 → e2e 里的 shim
+    `ERR_MODULE_NOT_FOUND` **起不来**,而现象是**满屏 `curl: (7) connect refused` + 断言脚本
+    JSON 解析崩**——看上去像 e2e 脚本自己坏了,不像少拷一个文件。
+    **判断法**:先看工作目录里的 `shim.log` 第一行(`/tmp/kelivo-shim-e2e-work/shim.log`),
+    起不来的原因永远写在那儿。`e2e-run.sh` 与 `e2e-apierror-run.sh` 的那两行 `cp` 上都加了警告注释。
+    **注意这个坑只坑 e2e,不坑部署**:`zeabur deploy` 传的是整个目录,新文件自动跟着走。
 
 ## CLI 版本与升级指南(2026-07-19 起,给所有者和未来会话)
 

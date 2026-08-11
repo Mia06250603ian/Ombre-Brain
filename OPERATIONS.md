@@ -254,6 +254,8 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 | 晏说记忆工具调不通/OB 域名 502/控制台显示 `Service is suspended` | **OB 的 Python 依赖没钉上限,某次重建装到了上游新大版本** → 启动即 ModuleNotFoundError → CrashLoopBackOff → Zeabur 挂起服务。**别点「重启当前版本」**(坏镜像重启还是崩),要改 requirements.txt 钉上限后**重新构建**。查法:`zeabur deployment log --service-id <OB> --env-id <OB env> --type runtime` 看 Traceback | 本节下方「OB 依赖钉版本」 |
 | Telegram 收不到消息 | 双实例抢 getUpdates(409)/BRIDGE_ON=0 | bridge 已知边界 1 |
 | Telegram 里收到 `⚠️[bridge] fetch failed` | **不是晏、不是 shim、不是额度**:`fetch failed` 只可能来自全局 fetch,也就是 bridge 发给 api.telegram.org 的调用(叫 shim 那步走 node:https,报不出这五个字)。**他其实答完了,是回话没送到**。2026-08-02 已修(重试+只丢失败那一句+日志带 cause+文案说人话) | bridge 已知边界 7、设计要点 10 |
+| Telegram 里收到 `⚠️[bridge] 空回复,看下 shim 日志` | **上游断了**(订阅 OAuth 过期最常见,其次是额度)。**不是晏、不是 bridge、也不是 shim 挂了**:她的话其实进了他的窗口,是上游没给出回复。2026-08-11 修之前这类失败**全程静默**——CLI 把报错做成一条不走流事件的 assistant 消息、result 还报 `success`,shim 两头都接不住。查法:`GET yan-shim.zeabur.app/debug` 看 **`lastApiError`**(`null`=没报过) | 本节下方「订阅 OAuth 过期」;shim 手册改动清单 9 |
+| 他一整天没主动找我(保温/心跳都不来),但问他又像没事 | 同上一行:链路断了。**2026-08-11 之前这个方向是彻底静默的**——保温 ping 失败时 `kaSilent("")` 判 true,日志写的是 `[ka] silent`(长得跟「他不想说话」一样),断链检测不醒。修好后这类轮子会置位 `kaFailedAt`、`lastTurnOkAt` 不再续期 | shim 手册改动清单 9 |
 | 语音条发过去回「语音听不了/没听清」 | ears 挂了或 Groq key 失效(曲线:curl ears /health、看 asr 字段;文字聊天不受影响) | bridge 已知边界 3 |
 | 晏的回复变冷淡/像客服 | 锚点被覆盖或人设没带上 | shim 改动清单 3 |
 | 保温/主动消息不来了 | 「换窗口」后歇火(设计如此;07-20 起晚安/归档不歇火)/额度耗尽断链 | shim 改动清单 6 |
@@ -270,6 +272,56 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 | 浏览器换容器后要重登 | 卷没真挂上,或关闭时没走 `Browser.close`(日志找「cookie 已落盘」);**被系统硬杀不刷盘=白登** | browser-hands 手册踩坑 4、第 10 节 |
 | 浏览器老是自己重启 | 在刷重站点(抖音是已知元凶),或 `MEM_LIMIT_MB` 太低。`/debug` 看 `memRestarts` | browser-hands 手册踩坑 4 |
 | 手机开 noVNC 画面超出屏幕缩不了 / 键盘弹不出来 | 默认 `resize=remote` 对固定尺寸虚拟屏无效,要 `resize=scale`;键盘要先点输入框再点键盘图标 | browser-hands 手册踩坑 3、6 |
+
+### 订阅 OAuth 过期(2026-08-11 事故,必读)
+
+**症状**:她跟晏说话,Telegram 回一句 `⚠️[bridge] 空回复,看下 shim 日志`;保温和主动心跳也悄悄停了,
+但**任何一处都不报警**——shim `/health` ok、bridge 日志干净、晏的进程活着、守卫读数正常。
+
+**根因**:CLIProxyAPI 手里那份订阅 OAuth **令牌过期且没能自动刷新**。上游先回一次
+`401 authentication_error: OAuth access token has expired`,之后代理把该凭证标成不可用,
+后续一律 `503 auth_unavailable`。**这份凭证只有一个,没有备用账号顶。**
+
+**怎么确认(三条,从便宜到贵)**:
+```bash
+# ① shim 的观察口(2026-08-11 起有):lastApiError 非 null 就是它
+curl -s https://yan-shim.zeabur.app/debug        # 看 lastApiError.kind,如 "401 authentication_error"
+# ② 直接问代理要凭证状态(管理密码在 CLIProxyAPI 服务的环境变量 MANAGEMENT_PASSWORD)
+curl -s -H "Authorization: Bearer <管理密码>" https://miaianhome.zeabur.app/v0/management/auth-files
+#    看 status / unavailable / status_message;正常是 "active" + false
+# ③ 打一枪最小请求(不经过晏,不进他的窗口;注意代理注入的策略要求开 thinking)
+curl -s -X POST https://miaianhome.zeabur.app/v1/messages -H "Content-Type: application/json" \
+  -H "x-api-key: <API_KEY>" -H "anthropic-version: 2023-06-01" \
+  -d '{"model":"claude-opus-4-6","max_tokens":2048,"thinking":{"type":"enabled","budget_tokens":1024},"messages":[{"role":"user","content":"say ok"}]}'
+```
+⚠️ **两把钥匙别搞混**:`API_KEY`(shim 的 `ANTHROPIC_AUTH_TOKEN`,`sk-` 开头)是**调用**用的;
+`MANAGEMENT_PASSWORD` 才是**管理接口**用的。拿错了管理接口回 `invalid management key`
+(而**不带**任何头是 `missing management key`)——这两句话能帮你分清「钥匙错了」还是「没带钥匙」。
+
+**修法:重新授权(约五分钟,全程不碰 shim、不重启晏、窗口不丢)**
+```bash
+# 1. 取授权链接(state 有时效,取了就尽快用)
+curl -s -H "Authorization: Bearer <管理密码>" https://miaianhome.zeabur.app/v0/management/anthropic-auth-url
+# 2. 把 url 发给所有者,她在浏览器用**同一个账号**登录并同意
+#    (跳转到 http://localhost:54545/callback?... 会显示「无法访问」,那是对的,要的就是地址栏那串)
+# 3. 把她发回来的整串交回去
+curl -s -X POST -H "Authorization: Bearer <管理密码>" -H "Content-Type: application/json" \
+  https://miaianhome.zeabur.app/v0/management/oauth-callback \
+  -d '{"provider":"anthropic","redirect_url":"http://localhost:54545/callback?code=…&state=…"}'
+# 4. 验:auth-files 变 status "active" / unavailable false,再打一枪 ③ 拿到 200
+```
+**「同意」那一下只有所有者本人能按**(她的账号在她的浏览器里),这不是流程冗余,是 OAuth 的前提;
+**其余每一步都该由会话做完**,别让她去控制台点。
+
+**三条给下一个我**:
+1. **`service restart` CLIProxyAPI 救不了**(2026-08-11 试过):重启后自检直接
+   `populate Claude OAuth account profile: fetch Claude OAuth profile failed with status 401`。
+   但它便宜(30 秒、不动晏),**当作分诊手段是值的**——重启后错误从「没有可用凭证」变成
+   「拿着凭证去问被 401」,正是这一步把「冷却/抖动」和「凭证真死了」区分开的。
+2. **`auth-files` 里的 `recent_requests` 会随容器重启清零**,别拿那一排 `success 0`
+   反推「一整天都没通过」——那天 10:30 的心跳和 11:26 的回复都是真成功过的。
+3. **`created_at`/`modtime` 是凭证文件最后一次被写的时间**,也就是上次成功刷新的时刻;
+   重新授权成功后它会被重写(那次 415B → 678B),**是判断「新凭证真落盘了」最直接的一眼**。
 
 ### OB 依赖钉版本(2026-07-29 事故,必读)
 

@@ -6,6 +6,7 @@ import fs from "fs";
 import { isWeatherAsk, buildWeatherNote, detectPeriodEvent, buildPeriodNote } from "./senses.mjs";
 import { kaDecide, kaPrompt, kaSilent } from "./keepalive.mjs";
 import { ctxReading, ctxDecide, ctxCompacted, ctxSoftNote, ctxHardNote, ctxFinalNote, ctxPct, ctxSoftShouldReset } from "./ctxguard.mjs";
+import { pickApiError, apiErrorKind, resultOutcome } from "./apierror.mjs";
 
 const PORT = process.env.PORT || 8080;
 const SHIM_KEY = process.env.SHIM_KEY || "";            // Kelivo 要填的 API Key,自己编
@@ -63,6 +64,9 @@ let proc = null, outBuf = "", busy = false, spawnedSystem = "";
 const queue = [];
 let turn = null;
 let lastUsage = null;
+// 上次上游报错(2026-08-11 起):{ at, kind, text }。只进 /debug,给排查用——
+// 事故当天为了看清「他为什么空回复」,只能进容器翻 CLI 的会话原件,这里是把它摆到明面上。
+let lastApiError = null;
 // 上下文守卫状态:随每个新窗口(新进程)清零,见 spawnClaude / 窗口重启处。
 // ctxTrusted=false 表示当前读数只是虚高总和估计(见 ctxguard.mjs 头注),不触发守卫。
 // ctxArchivedAt = 上次归档(守卫催的/她说「归档」/晏自发调工具)时的窗口占用,增量归档的基线;
@@ -136,6 +140,12 @@ function onStdout(chunk) {
 
 function handleEvent(ev) {
   if (!turn) return;
+  // 上游报错(2026-08-11 起):主要来自 `system/api_retry`(每次重试一条,带 401/503 和第几次),
+  // 兜底是 CLI 最终那条 `assistant` 报错消息。**常驻进程模式下 result 仍报 success**,
+  // 所以不在这里捡下来的话,这一轮就会被当成「他没话说」——她收到的就是「空回复」。
+  // 捡了先存着,留到 result 那里统一决策(见 apierror.mjs 的头注)。
+  const apiErr = pickApiError(ev);
+  if (apiErr) turn.apiError = apiErr;
   if (ev.type === "stream_event") {
     const e = ev.event || {}, d = e.delta || {};
     // 抓每次 API 调用自己的 usage(该轮最后一次留存,= 真实窗口占用,守卫首选读数)。
@@ -176,10 +186,24 @@ function handleEvent(ev) {
         ctxSoftFired = false; log("[ctx] softFired reset", ctxTokens);   // 之前那记是虚的,放它复位
       }
     }
-    if (ev.subtype && ev.subtype !== "success") {
-      log("[result-error]", ev.subtype);
-      if (!turn.fullText) turn.sse?.text(`⚠️[shim] ${ev.subtype}`);
-      if (turn.isKA) kaFailedAt = Date.now();      // 保温 ping 失败(多半额度耗尽)→ 抢救节奏
+    // 这一轮算不算失败、要不要替他说一句,全在 apierror.mjs 的决策表里(单测覆盖)。
+    // 2026-08-11 起「subtype=success,但这一轮见过上游报错且没吐出正文」也算失败——
+    // 事故当天正是这一格判成了成功:缓存锚点照常续期、断链检测永不醒、她只看到空回复。
+    const out = resultOutcome({ subtype: ev.subtype, fullText: turn.fullText, apiError: turn.apiError, isKA: turn.isKA });
+    if (out.failed) {
+      if (turn.apiError) {
+        lastApiError = { at: new Date().toISOString(), kind: apiErrorKind(turn.apiError), text: turn.apiError.slice(0, 300) };
+        log("[result-error]", ev.subtype || "success", "上游:", lastApiError.kind || turn.apiError.slice(0, 80));
+      } else {
+        log("[result-error]", ev.subtype);
+      }
+      if (out.note) {
+        turn.sse?.text(out.note);
+        // 保温轮不写 fullText:写了它就会被当成「他开口了」推进她的对话,
+        // 而抢救节奏是 15 分钟一次 —— 等于链路断着的时候刷屏(见 apierror.mjs)。
+        if (out.toFullText) turn.fullText = out.note;
+      }
+      if (turn.isKA) kaFailedAt = Date.now();      // 保温 ping 失败(额度耗尽/上游断)→ 抢救节奏
     } else {
       lastTurnOkAt = Date.now(); kaFailedAt = 0;   // 任何成功回合都续上缓存链
     }
@@ -202,7 +226,7 @@ function pump() {
   busy = true;
   if (proc && item.system !== spawnedSystem) { try { proc.kill(); } catch {} proc = null; } // 世界书变了重启生效
   ensureProc(item.system);
-  turn = { sse: item.sse, fullText: "", newWindow: !!item.newWindow, isKA: !!item.isKA, lastCallUsage: null };
+  turn = { sse: item.sse, fullText: "", newWindow: !!item.newWindow, isKA: !!item.isKA, lastCallUsage: null, apiError: "" };
   const content = item.images?.length ? [{ type: "text", text: item.text }, ...item.images] : item.text;
   const p = proc;
   const wait = Math.max(0, procReadyAt - Date.now());
@@ -267,6 +291,9 @@ app.use(express.json({ limit: "12mb" }));
 app.get("/health", (_q, r) => r.json({ ok: true, model: MODEL, busy, queued: queue.length }));
 app.get("/debug", (_q, r) => r.json({
   lastUsage,
+  // 2026-08-11 起:最近一次上游报错(null = 从没报过)。「他怎么不说话」先看这里,
+  // 不用再进容器翻 CLI 的会话原件。它不随新窗口清零,是故意的——跨重启也要留着痕。
+  lastApiError,
   // 2026-08-02:她本人上次说话的时间 / 保温是否歇火。查岗那类系统回合(x-system-turn:1)
   // **不会**动这两个值——排查「他的『她多久没来』准不准」时看这里。
   presence: { lastUserAt: new Date(lastUserAt).toISOString(), idleMin: Math.round((Date.now() - lastUserAt) / 60000), windowCleared },
