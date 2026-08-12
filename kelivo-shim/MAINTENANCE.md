@@ -69,6 +69,20 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    ② 歇火条件从"晚安/归档后"改成**只有「换窗口」指令后**才歇火(所有者要求保温常驻:
    窗口既然归档后还活着,缓存就值得一直温着;晚安照旧道别+归档,但保温整夜在岗)。
    keepalive.mjs 本身零改动,变的只是 server.js 里 windowCleared 的置位时机。
+   **⚠️ 2026-08-12 补(整套机制的隐含前提,别当理所当然)**:本机制的全部经济性都押在
+   **「上游那份缓存真的活 1 小时」**这一条上——`KA_IDLE_MIN=55` 掐的是 1 小时 TTL,
+   `KA_DEAD_MIN=60` 的「过了就别 ping,再 ping 全价比不 ping 还亏」也是按 1 小时算的。
+   **这个前提塌了的时候,代码这边一点异常都看不出来**:ping 照发、`kaSilent` 照判、
+   日志照写 `[ka] ping/silent`、`lastTurnOkAt` 照续期、`/health` 照 ok、`lastApiError` 照 null
+   ——**只是每一枪都在全价重写整条前缀**(实测 11.3 万 token × 1.25 倍写价 × 一天二十多次)。
+   2026-08-12 真的发生了一次:CLIProxyAPI 被 08-11 抢修时重启、漂到 v7.2.128,
+   那版把 prompt-cache 断点的所有权抢走、注入自己那套 5 分钟的,把晏发的 `ttl:"1h"` 抹平。
+   **所以:凡是怀疑「保温是不是白跑了」,第一眼不是看 keepalive.mjs,是看
+   `/debug` 的 `lastUsage.cache_creation` 那两个桶**(1h 有数=好的,5m 有数=被抹了)。
+   详见 `../OPERATIONS.md`「CLIProxyAPI 版本漂移(2026-08-12 事故,必读)」。
+   **顺带记一条别再重算的账**:TTL 真掉到 5 分钟时,**把 `KA_IDLE_MIN` 调小去追是错的**
+   ——4 分钟一枪 = 一天 360 枪 × 0.1 倍读 ≈ 比现在二十多枪全价还贵。5 分钟 TTL 下
+   缓存保温在任何节拍都不划算,唯一的解是把 TTL 修回 1 小时。
 
 7. **窗口上下文两段式守卫**(2026-07-18,新文件 `ctxguard.mjs`):常驻进程上下文快满时
    Claude Code 会自动压缩历史(静默、丢细节、不写记忆库)。本守卫赶在压缩前介入。
@@ -309,7 +323,7 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
 | ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN | 指向 CLIProxyAPI 的域名和它的 API_KEY |
 | SHIM_KEY | Kelivo 端填的 key |
 | BRAIN_MODEL / THINK_EFFORT | claude-opus-4-6 / medium(2026-07-15 由 low 调至 medium,治「零思考回嘴/跳思考」;嫌费额度可调回 low + restart) |
-| FORWARD_THINKING / ENABLE_PROMPT_CACHING_1H | 1 / 1 |
+| FORWARD_THINKING / ENABLE_PROMPT_CACHING_1H | 1 / 1。⚠️ **`ENABLE_PROMPT_CACHING_1H=1` 设了不等于生效**——它只管 CLI 那头发什么(实测 2.1.215 的 `g1e()` 认这个变量,自定义 `ANTHROPIC_BASE_URL` 在 CLI 眼里仍是 `firstParty`,beta 头照发),**中间的 CLIProxyAPI 可能把 ttl 抹掉**(2026-08-12 就发生过,整整一天半)。**要验就看 `/debug` 的 `lastUsage.cache_creation`:`ephemeral_1h_input_tokens` 有数才算真生效**,是 0 而 5m 有数 = 被抹了,去看 `../OPERATIONS.md` 的「CLIProxyAPI 版本漂移」一节 |
 | USER_NAME / AI_NAME | 佳佳 / 晏 |
 | SOUL_ANCHOR | 可选。整体覆盖内置的会话定性锚点措辞(现为五段);不设则用 server.js 里的默认文本(称呼自动代入 USER_NAME) |
 | TIME_HINT | 默认开;设 0 关闭每条消息前的【系统·时间】注入 |
