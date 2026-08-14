@@ -882,6 +882,15 @@ async def _breath_impl(
 
     # --- With args: search mode (keyword + vector dual channel) ---
     # --- 有参数：检索模式（关键词 + 向量双通道）---
+    # --- 按 ID 直读：query 恰好是某个桶的 12 位 ID 时，直接返回未压缩原文 ---
+    # --- Direct bucket-id read: bypass search/compression so edits act on the original bullets ---
+    _qid = query.strip().lower()
+    if len(_qid) == 12 and all(c in "0123456789abcdef" for c in _qid):
+        _direct = await bucket_mgr.get(_qid)
+        if _direct:
+            _raw = _direct.get("content") or ""
+            _nm = (_direct.get("metadata") or {}).get("name", "")
+            return _with_seal(f"[bucket_id:{_qid}] [{_nm}]（原文直读，未压缩）\n\n{_raw}")
     domain_filter = [d.strip() for d in domain.split(",") if d.strip()] or None
     q_valence = valence if 0 <= valence <= 1 else None
     q_arousal = arousal if 0 <= arousal <= 1 else None
@@ -2550,8 +2559,23 @@ async def api_config_update(request):
             if "merge_threshold" in body:
                 save_config["merge_threshold"] = int(body["merge_threshold"])
 
-            with open(config_path, "w", encoding="utf-8") as f:
-                yaml.dump(save_config, f, default_flow_style=False, allow_unicode=True)
+            # 原子写：先写临时文件 + fsync，再 os.replace 原子替换；
+            # 写一半失败也绝不会污染正在用的 config.yaml（替换是原子操作）。
+            tmp_path = config_path + ".tmp"
+            try:
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    yaml.dump(save_config, f, default_flow_style=False, allow_unicode=True)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, config_path)
+            except Exception:
+                # 失败时清掉半成品临时文件，原文件保持不动
+                try:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+                except OSError:
+                    pass
+                raise
             updated.append("persisted_to_yaml")
         except Exception as e:
             return JSONResponse({"error": f"persist failed: {e}", "updated": updated}, status_code=500)
