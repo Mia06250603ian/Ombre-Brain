@@ -1777,75 +1777,147 @@ async def _dream_impl(detail_ids: str = "") -> str:
 # 工具 7：todos — 汇总未解决桶的待办事项
 # =============================================================
 @mcp.tool()
-async def todos() -> str:
-    """汇总所有未resolved桶的todos字段，按桶分组返回桶名、bucket_id、重要度和待办列表。todos为metadata列表字段，每项可为字符串或含text/done键的字典。按重要度降序排列，末尾附统计。"""
-    return await _todos_impl()
+async def todos(add: str = "", done: str = "", undone: str = "",
+                remove: str = "", clear_done: bool = False) -> str:
+    """你自己的待办便利贴（独立存储在卷上，与记忆桶无关，不参与检索/浮现/衰减/归档）。
+    无参数=查看全部；add="要做的事"=记一条新待办；done=<编号>=打勾标记已完成（保留不删，仍看得到）；
+    undone=<编号>=改回未完成；remove=<编号>=划掉删除该条；clear_done=True=清掉所有已完成的。
+    编号是列表里每条前面 # 后那串短码。这块便利贴是你自己的，想记什么随手记。"""
+    return await _todos_impl(add=add, done=done, undone=undone, remove=remove, clear_done=clear_done)
 
 
-async def _todos_impl() -> str:
+def _todos_path() -> str:
+    """便利贴存储路径：持久卷上的 todos.json（与 letters.jsonl 同处，随卷持久）。"""
+    return os.path.join(config.get("buckets_dir", "."), "todos.json")
+
+
+def _load_todos_list() -> list:
+    path = _todos_path()
+    if not os.path.exists(path):
+        return []
     try:
-        all_buckets = await bucket_mgr.list_all(include_archive=False)
-    except Exception as e:
-        return f"记忆系统暂时无法访问: {e}"
+        with open(path, "r", encoding="utf-8") as f:
+            data = _json_lib.load(f)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
 
-    def _todo_item_str(item) -> str:
-        """Render a single todo item regardless of whether it's a str or dict."""
-        if isinstance(item, dict):
-            text = item.get("text") or item.get("title") or str(item)
-            done = item.get("done", False) or item.get("completed", False)
-            return f"[x] {text}" if done else f"[ ] {text}"
-        return f"[ ] {item}"
 
-    # Collect unresolved buckets that have a non-empty todos list
-    with_todos = []
-    for b in all_buckets:
-        meta = b.get("metadata", {})
-        if meta.get("resolved", False):
-            continue
-        todos_val = meta.get("todos")
-        if not todos_val:
-            continue
-        if isinstance(todos_val, list) and len(todos_val) > 0:
-            with_todos.append(b)
-        elif isinstance(todos_val, str) and todos_val.strip():
-            # Single-string fallback: wrap in list so rendering is uniform
-            b["metadata"]["todos"] = [todos_val.strip()]
-            with_todos.append(b)
+def _save_todos_list(items: list) -> None:
+    """原子写：临时文件 + fsync + os.replace，写一半失败不污染便利贴，失败如实抛出。"""
+    path = _todos_path()
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            _json_lib.dump(items, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
-    if not with_todos:
+
+def _new_todo_id(existing: list) -> str:
+    have = {it.get("id") for it in existing}
+    while True:
+        nid = os.urandom(2).hex()   # 4 位十六进制短码，稳定不随增删漂移
+        if nid not in have:
+            return nid
+
+
+def _norm_todo_id(raw: str) -> str:
+    return (raw or "").strip().lstrip("#").lower()
+
+
+def _render_todos(items: list, only_open: bool = False) -> str:
+    open_items = [it for it in items if not it.get("done")]
+    done_items = [it for it in items if it.get("done")]
+    if only_open:
+        # awaken 开机只提醒「还没做的」，不摆已完成的（保持开机清爽）
+        if not open_items:
+            return "没有待办事项。"
+        lines = ["=== 待办事项 ==="]
+        for it in open_items:
+            lines.append(f"  [ ] #{it.get('id')}  {it.get('text', '')}")
+        lines.append(f"\n共 {len(open_items)} 条待做。")
+        return "\n".join(lines)
+    if not items:
         return "没有待办事项。"
+    lines = ["=== 待办便利贴 ==="]
+    if open_items:
+        lines.append("\n【待做】")
+        for it in open_items:
+            lines.append(f"  [ ] #{it.get('id')}  {it.get('text', '')}")
+    if done_items:
+        lines.append("\n【已完成】")
+        for it in done_items:
+            lines.append(f"  [x] #{it.get('id')}  {it.get('text', '')}")
+    tail = f"\n共 {len(open_items)} 条待做"
+    if done_items:
+        tail += f"、{len(done_items)} 条已完成"
+    lines.append(tail + "。")
+    return "\n".join(lines)
 
-    # Sort by importance desc, then decay weight desc
-    with_todos.sort(
-        key=lambda b: (
-            -int(b["metadata"].get("importance", 0)),
-            -decay_engine.calculate_score(b["metadata"]),
-        )
-    )
 
-    parts = []
-    total_items = 0
-    for b in with_todos:
-        meta = b["metadata"]
-        name = meta.get("name", b["id"])
-        importance = meta.get("importance", "?")
-        bid = b["id"]
-        todo_list = meta["todos"]
-        total_items += len(todo_list)
+async def _todos_impl(add: str = "", done: str = "", undone: str = "",
+                      remove: str = "", clear_done: bool = False,
+                      only_open: bool = False) -> str:
+    try:
+        items = _load_todos_list()
+    except Exception as e:
+        return f"便利贴读取失败: {e}"
 
-        if meta.get("pinned") or meta.get("protected"):
-            icon = "📌"
-        elif meta.get("type") == "permanent":
-            icon = "📦"
-        else:
-            icon = "💭"
+    msg = ""
+    try:
+        if add and add.strip():
+            nid = _new_todo_id(items)
+            items.append({
+                "id": nid,
+                "text": add.strip(),
+                "done": False,
+                "created": (datetime.utcnow() + timedelta(hours=8)).isoformat(timespec="seconds"),
+            })
+            _save_todos_list(items)
+            msg = f"已记下 #{nid}：{add.strip()}"
+        elif done:
+            tid = _norm_todo_id(done)
+            hit = next((it for it in items if it.get("id") == tid), None)
+            if not hit:
+                return f"没找到编号 #{tid} 的待办。"
+            hit["done"] = True
+            _save_todos_list(items)
+            msg = f"已勾掉 #{tid}：{hit.get('text', '')}"
+        elif undone:
+            tid = _norm_todo_id(undone)
+            hit = next((it for it in items if it.get("id") == tid), None)
+            if not hit:
+                return f"没找到编号 #{tid} 的待办。"
+            hit["done"] = False
+            _save_todos_list(items)
+            msg = f"已改回未完成 #{tid}：{hit.get('text', '')}"
+        elif remove:
+            tid = _norm_todo_id(remove)
+            hit = next((it for it in items if it.get("id") == tid), None)
+            if not hit:
+                return f"没找到编号 #{tid} 的待办。"
+            items = [it for it in items if it.get("id") != tid]
+            _save_todos_list(items)
+            msg = f"已划掉 #{tid}：{hit.get('text', '')}"
+        elif clear_done:
+            before = len(items)
+            items = [it for it in items if not it.get("done")]
+            _save_todos_list(items)
+            msg = f"已清掉 {before - len(items)} 条已完成。"
+    except Exception as e:
+        return f"便利贴写入失败: {e}"
 
-        header_line = f"{icon} [{name}]  bucket_id:{bid}  重要度:{importance}"
-        item_lines = "\n".join(f"  {_todo_item_str(item)}" for item in todo_list)
-        parts.append(header_line + "\n" + item_lines)
-
-    summary = f"\n共 {len(with_todos)} 个桶，{total_items} 条待办。"
-    return "=== 待办事项 ===\n\n" + "\n\n".join(parts) + summary
+    body = _render_todos(items, only_open=only_open)
+    return (msg + "\n\n" + body) if msg else body
 
 
 # =============================================================
@@ -2036,8 +2108,8 @@ async def _awaken_impl(letters: int = 1) -> str:
             lines.append(f"  [{t}] {m.get('text', '')}")
         parts.append("\n".join(lines))
 
-    # --- 📋 待办 ---
-    todos_out = await _todos_impl()
+    # --- 📋 待办（便利贴里还没做的，开机提醒一下；已完成的不摆出来）---
+    todos_out = await _todos_impl(only_open=True)
     if not todos_out.startswith("没有待办"):
         parts.append(todos_out)
 
