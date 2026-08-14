@@ -711,6 +711,16 @@
 
 <div class="content" id="list-view">
   <div class="filters" id="filters"></div>
+  <div class="sort-bar" style="padding:4px 0 8px;display:flex;align-items:center;gap:8px;">
+    <label for="sort-select" style="font-size:12px;color:var(--text-dim);">排序</label>
+    <select id="sort-select" style="background:var(--bg,#1a1a1a);color:var(--text,#eee);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">
+      <option value="default">综合分（默认）</option>
+      <option value="active_desc">最近活跃 ↓</option>
+      <option value="active_asc">最早活跃 ↑</option>
+      <option value="created_desc">最新创建 ↓</option>
+      <option value="created_asc">最早创建 ↑</option>
+    </select>
+  </div>
   <div class="bucket-list" id="bucket-list">
     <div class="loading">加载中…</div>
   </div>
@@ -1126,6 +1136,7 @@ async function authFetch(url, options) {
 const BASE = location.origin;
 let allBuckets = [];
 let currentFilter = 'all';
+let currentSort = 'default';   // 桶列表排序方式：default(综合分) / active_desc / active_asc / created_desc / created_asc
 
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
@@ -1151,7 +1162,7 @@ document.getElementById('search-input').addEventListener('input', (e) => {
   const q = e.target.value.trim();
   searchTimer = setTimeout(() => {
     if (q) searchBuckets(q);
-    else renderBuckets(allBuckets);
+    else refreshBucketList();
   }, 300);
 });
 
@@ -1165,7 +1176,7 @@ async function loadBuckets() {
     allBuckets = data;
     updateStats();
     buildFilters();
-    renderBuckets(allBuckets);
+    refreshBucketList();
   } catch (e) {
     document.getElementById('bucket-list').innerHTML = '<div class="loading">加载失败: ' + e.message + '</div>';
   }
@@ -1205,8 +1216,19 @@ function buildFilters() {
     filters.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
     btn.classList.add('active');
     currentFilter = btn.dataset.filter;
-    renderBuckets(filterBuckets(allBuckets));
+    refreshBucketList();
   });
+
+  var sortSel = document.getElementById('sort-select');
+  if (sortSel && !sortSel.dataset.bound) {
+    sortSel.dataset.bound = '1';
+    sortSel.addEventListener('change', function() {
+      currentSort = sortSel.value;
+      var q = (document.getElementById('search-input') || {}).value;
+      if (q && q.trim()) { searchBuckets(q.trim()); return; }   // 搜索态下重新拉取并排序
+      refreshBucketList();
+    });
+  }
 }
 
 function filterBuckets(buckets) {
@@ -1221,6 +1243,27 @@ function filterBuckets(buckets) {
     return buckets.filter(function(b) { return (b.domain || []).includes(d); });
   }
   return buckets;
+}
+
+function sortBuckets(buckets) {
+  if (currentSort === 'default') return buckets;
+  var ts = function(v) { var t = v ? Date.parse(v) : NaN; return isNaN(t) ? null : t; };
+  var key = (currentSort === 'created_desc' || currentSort === 'created_asc') ? 'created' : 'last_active';
+  var asc = (currentSort === 'active_asc' || currentSort === 'created_asc');
+  var copy = buckets.slice();   // 不改原数组
+  copy.sort(function(a, b) {
+    var ta = ts(a[key]), tb = ts(b[key]);
+    if (ta === null && tb === null) return 0;
+    if (ta === null) return 1;    // 无时间的稳定排到末尾
+    if (tb === null) return -1;
+    return asc ? ta - tb : tb - ta;
+  });
+  return copy;
+}
+
+// 按当前 过滤 + 排序 重新渲染桶列表
+function refreshBucketList() {
+  renderBuckets(sortBuckets(filterBuckets(allBuckets)));
 }
 
 function renderBuckets(buckets) {
@@ -1250,7 +1293,7 @@ async function searchBuckets(query) {
   try {
     var res = await fetch(BASE + '/api/search?q=' + encodeURIComponent(query));
     var results = await res.json();
-    renderBuckets(results);
+    renderBuckets(sortBuckets(results));
   } catch (e) {
     console.error('Search failed:', e);
   }
