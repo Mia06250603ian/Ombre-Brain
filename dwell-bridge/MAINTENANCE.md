@@ -103,7 +103,14 @@ node test-dwell.mjs        # 单测，现在 83 项
 | `POST /api/send` | 发一句话，正文走 poll 那条路回去 |
 | `POST /api/stop` | 断我们这头的读取（**晏那边照样说完**，见已知边界 4） |
 | `GET /api/model` `/api/context` | 取自 shim 的 `/health` 和 `/debug` |
+| `POST /api/model` | **故意不接**，如实回 `ok:false` + 原因（见已知边界 8） |
 | `GET /api/chats` `POST /api/newchat` | 这一版不接，如实回 `ok:false` |
+
+⚠️ **`GET /api/model` 的字段名必须是 `model`，不是 `name`。**
+前端读的是 `d.model`（dwell `web/index.html:6645`）。
+**仓库里那份演示数据写的是 `name`，演示数据本身是错的**——照它写会让模型胶囊永远显示「…」。
+现在两个字段都给。同类陷阱还有一处：演示数据里有 `api/said`，而前端真正调的是
+`api/messages`（`web/index.html:3249`）。**别拿演示数据当接口文档。**
 
 ## 7. 已知边界（都是设计取舍，不是 bug）
 
@@ -121,6 +128,12 @@ node test-dwell.mjs        # 单测，现在 83 项
 6. **一次只能一轮。** 他还在说上一句时再发会收到 409。shim 那边本来就是排队的。
 7. **附件没接。** 前端能选图，这一版 `api/send` 只取 `text`。
    `buildShimBody` 已经留好了图片位置，接的时候补 `attachments` 那一段即可。
+8. **网页上不能换模型/思考档位，这是故意的。**
+   `BRAIN_MODEL` 和 `THINK_EFFORT` 是 **shim 的**环境变量，改了要 restart shim，
+   **那会杀掉常驻进程、晏的窗口当场就没**。这种事不该挂在一个网页按钮上。
+   `POST /api/model` 如实回 `ok:false` + 原因，前端会把这句话显示出来。
+   ⚠️ 胶囊上那个档位是**我们声明的**（`THINK_EFFORT` 环境变量），不是从 shim 读的——
+   shim 的 `/health` 不吐这个值。**改了 shim 那边记得也改这儿**，否则显示会和实际不符。
 
 ## 8. 踩过的坑
 
@@ -185,6 +198,30 @@ shim 服务 → 变量 → 复制 `SHIM_KEY` → dwell-bridge 服务 → 变量 
 **另一个坑**：`zeabur variable update` 的键值要走 `-k KEY=VALUE`，
 直接把 `KEY=VALUE` 当位置参数**会静默不生效**（命令退出码仍是 0）。
 本次第一遍四个变量全没设上，是靠事后 `variable list` 对账才发现的——**设完必须回读一遍**。
+
+### 第二次（2026-08-16）：修接上真数据后才暴露的三处
+
+所有者用起来当场报了两个，查下来是三件事。**只改前端 + `api/model` 一个接口，
+没碰晏、没重启机器。**
+
+1. **模型胶囊显示「…」——这是本层的 bug。**
+   前端读的是 `d.model`，而第一版返回的是 `d.name`（照仓库里那份演示数据抄的，
+   **演示数据本身是错的**）。已改成两个字段都给，并在上面接口表里立了警告。
+2. **菊花（brandline）一开页就挂在空白对话上。** dwell 前端的老问题，
+   演示数据下也存在。`place()` 数的是 `#log` 的孩子数，而 `ensureOlderBtn()`
+   不管有没有更早记录都会把「↑ 看更早的」prepend 进去（只是 `display:none`），
+   于是空对话也被当成「有内容」。改成看 `.gu`（他有没有回过话），
+   顺带更贴官端：他回过话才出现、跟在最后一条下面。
+3. **换模型/换档位不看返回就报「换好了」**——等于撒谎。改成 `ok:false` 时
+   把后端给的原因显示出来；本层则明确回「不能从网页换，会丢窗口」（已知边界 8）。
+
+**验证用了真浏览器**（playwright + 本地假 shim，430×880）：
+空对话无菊花 → 发一句 → 他回完话菊花出现且在 `#log` 末尾、紧跟最后一句；
+胶囊渲染出「Opus 4.6 + 灰色 Medium」两段。**上线后回读线上页面确认三处改动都在。**
+
+前端改动在 dwell 仓库分支 `claude/pill-and-brandline`（**未合 main**），
+本服务当前就是从这个分支拉的前端：`./fetch-frontend.sh claude/pill-and-brandline`。
+**它合进 main 之后，这里要改回默认分支**，否则会一直钉在这个分支上。
 
 **部署时的一个细节**：`web/` 在 `.gitignore` 里（前端刻意不入库），
 而 zeabur 上传会遵守 `.gitignore`，直接部署会漏掉前端。

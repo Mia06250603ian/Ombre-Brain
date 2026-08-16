@@ -130,11 +130,20 @@ app.get("/api/poll", guard, async (req, res) => {
 app.get("/api/status", guard, (req, res) => res.json({ busy }));
 
 app.get("/api/model", guard, async (req, res) => {
+  // ⚠️ 字段名必须是 model,不是 name —— 前端读的是 d.model
+  // （dwell web/index.html:6645 `setModelPill(d.model || '')`）。
+  // 仓库里那份演示数据写的是 name,**演示数据本身是错的**,照它写会让按钮永远显示「…」。
+  // 两个都给,以后谁改哪边都不至于又断（2026-08-16 踩过）。
+  //
+  // effort 是**我们声明的**,不是从 shim 读的:shim 的 /health 不吐 THINK_EFFORT。
+  // 所以这里的值要和 shim 那边的环境变量保持一致,改了 shim 记得也改这儿。
+  const effort = process.env.THINK_EFFORT || "medium";
   try {
     const r = await fetch(`${SHIM_URL}/health`);
     const d = await r.json();
-    res.json({ name: d.model || MODEL, effort: process.env.THINK_EFFORT || "medium" });
-  } catch { res.json({ name: MODEL, effort: "medium" }); }
+    const model = d.model || MODEL;
+    res.json({ model, name: model, effort });
+  } catch { res.json({ model: MODEL, name: MODEL, effort }); }
 });
 
 app.get("/api/context", guard, async (req, res) => {
@@ -146,6 +155,15 @@ app.get("/api/context", guard, async (req, res) => {
     res.json({ used, max: +(process.env.CTX_LIMIT_TOKENS || 167000) });
   } catch { res.json({ used: 0, max: 167000 }); }
 });
+
+// 换模型 / 换思考档位：**故意不接**。
+// BRAIN_MODEL 和 THINK_EFFORT 是 shim 的环境变量，改了要 restart shim——
+// 那会杀掉常驻进程，**晏的窗口当场就没了**。这种事不该挂在一个网页按钮上。
+// 如实回 ok:false + 原因，前端会把这句话显示出来（不再假报「换好了」）。
+app.post("/api/model", guard, (req, res) => res.json({
+  ok: false,
+  why: "这一版不能从网页换模型或档位——真要换得重启晏，窗口会丢",
+}));
 
 // 这几个前端会调，但这一版不接后端语义；如实返回空，别假装做了事。
 app.get("/api/chats", guard, (req, res) => res.json({ items: [] }));
