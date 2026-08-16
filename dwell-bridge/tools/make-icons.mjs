@@ -8,9 +8,11 @@
 // 样式：**白底 + 橙色菊花**（所有者定的，官端是反过来的橙底白花）。
 // 菊花图形直接取自 index.html 里的 SKETCH.spark，保证和页面上是同一朵。
 //
-// ⚠️ 菊花的墨迹重心不在方框正中：实测偏右 4.27%、偏下 3.14%
-// （花瓣长短本就不一，是原图形的特征，PR #1 记过）。
-// 锁屏那儿是用 CSS transform 补偿的，图标这里必须同样补，否则一眼看得出歪。
+// ⚠️ 居中不能靠经验值。这个图形的墨迹并不铺满它的 24×24 方框，
+// 一开始我套用了锁屏那组补偿量（-4.27% / -3.14%），那是给一朵小花做视觉微调的，
+// 放到撑满整块的图标上就偏了（2026-08-16 所有者一眼看出不居中）。
+// 现在改成**在浏览器里量出 path 的真实边界框**（getBBox），按边界框居中、
+// 按边界框定大小 —— 精确，且换任何图形都成立。
 //
 // 跑法：node tools/make-icons.mjs <spark路径文件> <输出目录>
 // 依赖 playwright（渲染 SVG → PNG，比手搓栅格化可靠）。
@@ -36,18 +38,21 @@ const FG = INVERT ? WHITE : ORANGE;
 // 菊花占画布的比例。**0.66 太小了**（2026-08-16 所有者一眼就说不像），
 // 官端那朵几乎撑满；而且橙花画在白底上，视觉上比白花画在橙底上更"瘦"
 // （浅底深字本来就显细），所以要更大一点才压得住。
-const SCALE = +(process.env.ICON_SCALE || 0.80);
-// 重心补偿（与 index.html 的 .lk-spark 同一组数）
-const DX = -4.27, DY = -3.14;
+// 墨迹占画布的比例（按真实边界框的长边算）。0.66 太小、0.80 太大，
+// 官端目测在 0.72 上下。
+const SCALE = +(process.env.ICON_SCALE || 0.72);
+
+// bbox 在下面用浏览器量出来后填进去
+let BB = null;
 
 function svg(size) {
-  const inner = size * SCALE;
-  const off = (size - inner) / 2;
-  // 补偿量按「菊花自身的尺寸」算，和 CSS 里 translate(%) 的语义一致
-  const dx = inner * DX / 100, dy = inner * DY / 100;
+  const w = BB.width, h = BB.height;
+  const k = (size * SCALE) / Math.max(w, h);          // 长边贴合目标比例
+  const x = size / 2 - (BB.x + w / 2) * k;            // 让边界框中心落在画布中心
+  const y = size / 2 - (BB.y + h / 2) * k;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
   <rect width="${size}" height="${size}" fill="${BG}"/>
-  <g transform="translate(${off + dx} ${off + dy}) scale(${inner / 24})">
+  <g transform="translate(${x} ${y}) scale(${k})">
     <path d="${D}" fill="${FG}"/>
   </g>
 </svg>`;
@@ -75,6 +80,18 @@ function ico(png, size) {
 const browser = await chromium.launch({
   executablePath: process.env.PW_CHROMIUM || "/opt/pw-browsers/chromium",
 });
+
+// 先量边界框：把 path 放进一张离屏 SVG 里问浏览器要 getBBox
+{
+  const page = await browser.newPage();
+  await page.setContent(`<svg id="s" viewBox="0 0 24 24"><path id="p" d="${D}"/></svg>`);
+  BB = await page.evaluate(() => {
+    const b = document.getElementById("p").getBBox();
+    return { x: b.x, y: b.y, width: b.width, height: b.height };
+  });
+  await page.close();
+  console.log(`  边界框 x=${BB.x.toFixed(2)} y=${BB.y.toFixed(2)} w=${BB.width.toFixed(2)} h=${BB.height.toFixed(2)}（画布 24×24）`);
+}
 
 fs.mkdirSync(outDir, { recursive: true });
 const made = {};

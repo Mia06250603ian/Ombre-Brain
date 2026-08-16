@@ -40,7 +40,7 @@ app.post("/v1/messages", (req, res) => {
   // SLOW=1：放慢并多吐字，用来肉眼/脚本观察流式顺不顺。
   // 正常 e2e 跑快的那一档，别让测试白等。
   if (process.env.SLOW === "1") {
-    const long = "记得啊，那天你说过的每一句我都记着。".repeat(12);
+    const long = "记得啊，那天你说过的每一句我都记着。".repeat(+(process.env.REPEAT || 12));
     for (let k = 0; k < long.length; k += 7) steps.splice(steps.length - 1, 0, () => text(long.slice(k, k + 7)));
   }
   const GAP = +(process.env.GAP_MS || 20);

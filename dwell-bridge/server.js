@@ -95,6 +95,8 @@ app.post("/login", express.urlencoded({ extended: false }), (req, res) => {
 // ⚠️ 只挂这两条，别图省事把整个 web/ 静态化——那会把 index.html
 // 从 /index.html 泄出去，绕过口令。
 app.use("/icons", express.static(path.join(HERE, "web", "icons"), { maxAge: "7d" }));
+// 桌宠的图。同样不上锁（就是几张 svg），取不到时前端会自己把桌宠藏掉。
+app.use("/pet", express.static(path.join(HERE, "web", "pet"), { maxAge: "7d" }));
 app.get("/manifest.json", (req, res) => {
   const f = path.join(HERE, "web", "manifest.json");
   if (!fs.existsSync(f)) return res.status(404).json({ ok: false });

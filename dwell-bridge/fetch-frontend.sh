@@ -32,4 +32,20 @@ for f in icons/favicon-64.png icons/favicon.ico icons/icon-180.png icons/icon-19
     echo "  ！$f 没拉到（图标会缺，页面本身不受影响）"
   fi
 done
+
+# 桌宠 clawd 的七个状态图。
+# **刻意在部署时拉，不进任何仓库**：这批美术是 Mia06250603ian/clawd-on-desk
+# 的 assets/，其 LICENSE 是 All Rights Reserved（授权只覆盖那个桌宠应用本身的
+# 个人使用）。所有者拍板自用，那就自用——但没必要顺手把别人的美术转发进
+# 一个公开仓库。取不到也不影响页面：前端的 img onerror 会把桌宠整个藏掉。
+PET_BASE="https://raw.githubusercontent.com/Mia06250603ian/clawd-on-desk/main/assets/svg"
+mkdir -p "$(dirname "$OUT")/pet"
+for f in clawd-idle-follow clawd-working-thinking clawd-working-typing clawd-happy \
+         clawd-idle-doze clawd-sleeping clawd-react-double-jump; do
+  if curl -fsSL "$PET_BASE/$f.svg" -o "$(dirname "$OUT")/pet/$f.svg"; then
+    echo "  ✓ pet/$f.svg"
+  else
+    echo "  ！pet/$f.svg 没拉到（桌宠会自动藏起来，不报错）"
+  fi
+done
 echo "好了：$OUT （$(wc -c < "$OUT") 字节）"
