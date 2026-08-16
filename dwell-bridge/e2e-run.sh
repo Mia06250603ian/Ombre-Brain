@@ -61,6 +61,12 @@ has "他那条记下了" "$MSG" '"kind":"gu"'
 has "思考记下了"   "$MSG" '"kind":"think"'
 has "工具记下了"   "$MSG" '"kind":"tool"'
 
+say "④b 历史给的游标必须是事件游标（否则实时流会被整段重放 → 对话重复）"
+UPTO=$(curl -s -b /tmp/dwell-jar 'localhost:8790/api/messages?limit=400' | sed 's/.*"upto":\([0-9]*\).*/\1/')
+CUR=$(curl -s -b /tmp/dwell-jar 'localhost:8790/api/poll?since=999999' | sed 's/.*"next":\([0-9]*\).*/\1/')
+check "upto 等于事件游标而不是消息条数" "$UPTO" "$CUR"
+check "拿 upto 去 poll 收不到旧事件" "$(curl -s -b /tmp/dwell-jar "localhost:8790/api/poll?since=$UPTO" | grep -c '"events":\[\]')" "1"
+
 say "⑤ 游标不回头"
 check "同一个游标不重复给" "$(curl -s -b /tmp/dwell-jar 'localhost:8790/api/poll?since=999999' | grep -c '"events":\[\]')" "1"
 

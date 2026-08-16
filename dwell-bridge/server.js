@@ -150,7 +150,16 @@ app.get("/api/health", (req, res) => res.json({
 }));
 
 app.get("/api/messages", guard, (req, res) => {
-  res.json(msgs.slice({ limit: +(req.query.limit || 400), before: req.query.before || null }));
+  const page = msgs.slice({ limit: +(req.query.limit || 400), before: req.query.before || null });
+  /* ⚠️ `upto` 必须是**事件游标**，不是消息序号。
+     前端读完历史就拿它当起点接着收实时事件
+     （dwell `web/index.html`：`loadSaid()` 返回 upto → `cursor = upto` → `api/poll?since=cursor`）。
+     本层的账本和事件队列是两套独立编号：一轮对话可能只产生 2 条消息，
+     却有几十个事件。把消息序号当游标交出去，游标会**倒退**，
+     于是刚画完的那一轮事件被整段重放，屏幕上就出现重复的对话
+     ——2026-08-16 所有者报的「记录重复好几轮」，第二个来源就是这里
+     （第一个是 dwell 自己的 loadSaid 不清场，已在前端修）。 */
+  res.json({ ...page, upto: events.cursor() });
 });
 
 app.get("/api/poll", guard, async (req, res) => {
