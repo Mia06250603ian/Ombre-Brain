@@ -28,8 +28,10 @@
 
 | 在做的事 | 停在哪 | 去读 |
 |---|---|---|
-| ~~dwell 前端 UI 照官端改造~~ | **2026-08-16 做完并推了**,PR `Mia06250603ian/dwell-on-something#1` 等她合。原来的 `wip/dwell-ui/` 暂存已删(东西在 dwell 里了,别留两份) | 该 PR 的描述 |
-| 维护 Agent 接出到自建前端 | 方案已成型,**尚未实施**,等她拍板机器怎么加 | `docs/维护Agent接出方案.md` |
+| ~~dwell 前端 UI 照官端改造~~ | **2026-08-16 做完并推了**,PR `Mia06250603ian/dwell-on-something#1` **已合**。原来的 `wip/dwell-ui/` 暂存已删(东西在 dwell 里了,别留两份) | 该 PR 的描述 |
+| 自建网页接**晏**(聊天) | **2026-08-16 服务已上线** `yan-dwell.zeabur.app`。**差最后一步:`SHIM_KEY` 要她本人在控制台从 shim 复制过去**(开发环境不许把容器密钥读出来,这拦得对)。设上之前发消息会 401 | `dwell-bridge/MAINTENANCE.md` |
+| 自建网页接**维护 agent** | 方案已成型,**尚未实施**。机器她已拍板**升 2C8G**;但升级会重启机器、**晏的窗口会丢**,必须她先对晏说「归档」。⚠️ **别把这件事和上一行混为一谈**:转接层只有 70 MiB、不用等升级;维护 agent 是**又一个常驻 claude 进程**(对照:晏那个容器 404 MiB),那才是要 2C8G 的原因 | `docs/维护Agent接出方案.md` |
+| dwell 发送键随打字切换外观 | 所有者已定「**只做样子**,点了如实说明语音没接」,**尚未动手**(在 dwell 仓库) | 本文件时间线 08-16 |
 
 **dwell UI 那轮留下的三条,以后碰这个前端的人先看**:
 
@@ -50,7 +52,11 @@
 1. **升 2C8G 还是买第二台 Zeabur 独服** —— 建议升级。但升级会重启机器、**晏的窗口会丢**,
    必须她先自己对晏说「归档」。
 2. **Zeabur API key 要转** —— 她在会话里贴过明文,已进聊天记录。
+   **2026-08-16 又贴了一次新的**(`zat_6a27e97a…`),用完仍未转。
 3. **`REPORT_TOKEN` 要转** —— 08-06 截图泄露,至今未转。
+4. **CLIProxyAPI 的 `MANAGEMENT_PASSWORD` 要转** —— **2026-08-16 新增**:
+   `zeabur variable list` 会把**只读注入变量连值一起打出来**,该密码因此进了会话记录。
+   **教训:以后跑 `variable list` 一律掩码或只取 KEY 列**(见 `dwell-bridge/MAINTENANCE.md` 部署记录)。
 
 ## 1. 架构拓扑
 
@@ -94,6 +100,7 @@
 | ~~〃~~ | ~~fishing-mcp~~ | ~~`6a5a17159ae692d1d8d98d10`~~ | ~~yan-fishing-mcp.zeabur.app~~ | ~~钓鱼游戏 MCP~~ **2026-08-02 已整个删除**(所有者说不玩了;存档按她的决定未备份,源码目录 `fishing-mcp/` 一并从仓库删除。省下约 51~62MB 内存,见 browser-hands 手册的内存表) |
 | 〃 | ears(显示名 ears-thor) | `6a646ea27bcbc56e70a105b5` | yan-ears-listen.zeabur.app | 语音转写+语气分析(源码在 Mia06250603ian/ears 仓库,镜像走 GitHub Actions→ghcr,持久卷 /app/data)。**该服务不支持 `service redeploy`,要拉新镜像用 `service restart`**(见时间线 08-02) |
 | 〃 | browser-hands | `6a6e2078fefeb46a883402c9` | yan-browser.zeabur.app | **晏的「浏览器的手」**:真实 Chrome + 持久登录态 + noVNC(源码在 Mia06250603ian/browser-hands 仓库,镜像走 GitHub Actions→ghcr,持久卷 /data)。2026-08-01 部署并接入晏(shim 第二十二次),详见 `browser-hands/MAINTENANCE.md` |
+| 〃 | dwell-bridge | `6a81a118bdeaa87e2c52bec3` | yan-dwell.zeabur.app | **她自建网页接晏的转接层**(2026-08-16 上线):网页 → 这一层 → shim 的 `/v1/messages`,把 Anthropic SSE 翻成 dwell 前端认的事件流。**不碰晏、不改 shim**,对线上就是个客户端,地位同手机上的 Kelivo。内存实测 **70 MiB**。源码在本仓库 `dwell-bridge/`,前端从 `Mia06250603ian/dwell-on-something` 拉(刻意不入库)。⚠️ **`SHIM_KEY` 尚未设,设上之前发消息会 401**。详见 `dwell-bridge/MAINTENANCE.md` |
 | 〃 | gmail-mcp | `6a74a107e4a69d66638c4650` | yan-gmail.zeabur.app | **晏的邮箱**:读信/搜信/写草稿,**发送是白名单制**(只能发给所有者指定的地址,其余只能存草稿;白名单空=全拒)。走 IMAP + 应用专用密码;验证码/密码重置类邮件整封屏蔽。源码在本仓库 `gmail-mcp/`,镜像走 GitHub Actions→ghcr,无持久卷。**2026-08-06 上线并接入晏**(shim 第二十八次),详见 `gmail-mcp/MAINTENANCE.md` |
 | `untitled-1` | Ombre Brain | (问所有者/控制台看) | ianmian.zeabur.app | 记忆库 MCP |
 | ~~(外部,非我们部署)~~ | ~~Galatea's Garden~~ | — | galatea.abysslumina.com | ~~花园社区 MCP~~ **2026-07-30 已从 shim 拆除**(它 /mcp 502 且晏不玩;token 未留底,要恢复见 shim 手册「缺的三个文件」第 2 条) |
@@ -225,6 +232,8 @@ telegram-bridge 的变量(`TELEGRAM_BOT_TOKEN` `TELEGRAM_CHAT_ID` `ELEVEN_*` `VO
 | 08-14 | **上游兼容性调研 + 从上游借了两个小改进上线(只动 OB,晏零影响)**。所有者问「上游(`P0luz/Ombre-Brain`,即 README 里 Gitea 的 `P0lar1s`)更新的东西我们还能借鉴吗、兼不兼容」。**调研结论**:上游已整体重写(现 `VERSION 2.17.6`,从扁平 `server.py` 换成 `src/ombrebrain/` 事件溯源架构:WAL 日志 + 投影重建 + policy 引擎;许可改为 v2.4.0 非商业源码可用)。**我们这份是它旧扁平版的深度二改**(根目录 OB 加了 awaken/信箱 letters/写前快照/seal;还在同仓库塞了 shim/bridge/gmail/browser)。**代码层不能合并/cherry-pick**(无共同文件基线),**数据层上游有单向迁移适配器 `adapters/bucket_adapter.py`**(`frontmatter.load` 读我们这套 `dynamic/permanent/archive/feel/letters` 桶,转 WAL 事件),**工具名 breath/hold/dream/trace/grow/pulse/todos 上游都保留、awaken/seal 是我们独有**。**结论:不整体迁移(是场动真记忆的大工程),改走「借点子不搬架构」**。**内存实测**(所有者按次给 Zeabur key):OB 容器 `memory.current` ≈ **131MiB**(anon 91 + file 35),机器 3724MiB、容器无上限;327~331 个桶的整个向量库才几 MiB——**上游那套「省内存」优化对我们省下 ≈0**(机器内存紧是 browser/ears/shim 那几个大块头,不是 OB)。**本次实际上线三件小改进**:①**面板桶列表日期排序**(`dashboard.html`,纯前端:过滤栏下加「排序」下拉,综合分/最近·最早活跃/最新·最早创建,与过滤搜索叠加,无时间的桶稳定排末尾);②**`breath(query=<12位桶ID>)` 按 ID 直读原文**(`server.py`:命中桶直接返回未压缩 raw content + seal,便于 `trace(content=)` 前拿到原始 bullet 不被压缩版覆盖;匹配不到 ID 照常回落检索——端到端实测真桶返回「原文直读」、假 ID `ffffffffffff` 不崩);③**`/api/config` 持久化改原子写**(临时文件 + fsync + `os.replace`,写一半失败不污染 `config.yaml`,失败仍如实报错)。**所有者明确划界:不碰存档模式、不碰记忆内容、不碰开机(awaken)浮现规则**——据此**放弃**了人称铁律(碰压缩内容)、已消化别浮现/核心准则预算优先(碰开机浮现);其中**核心准则预算优先、少烧向量额度两条一读代码发现我们本来就已经是了**(钉选桶现状就是「无条件完整排最前、地方不够时牺牲的是普通记忆」;trace 只在内容真变时算一次 embedding、`bucket_mgr.update` 内部不重算),无需改。**部署**:两次都走 `merge 到 main → zeabur service redeploy OB`(自动触发不可靠,见「改完 OB 之后怎么让它上线」),各约 1~2 分钟 RUNNING;**桶数 331→331 没少、MCP `initialize` 200、晏窗口未重启**、`decay_engine: stopped` 是懒启动正常态。**备份现状**:`Mia06250603ian/ob-backup`(私有)`backups/` 里**每天一个 `.json`,备到当天 08-14**,是迁移/回滚的安全网。**一个待办(所有者已知、暂缓)**:Gemini embedding 的免费 key 会随 httpx INFO 日志**明文出现在 OB 运行日志的请求 URL 里**(`…gemini-embedding-001:embedContent?key=AIza…`),自用风险低,但截图外发前需打码;要根治可给 embedding 的 httpx 调用降日志级别或脱敏 URL。 |
 
 | 08-14(第二件) | **把半拉子的 `todos` 改造成晏自己的「待办便利贴」并上线(只动 OB,晏零影响)**。起因:所有者想给晏一块能自己写、做完自己勾掉的便利贴。**排查发现现有 `todos` 功能是半成品**——有工具能「看」、awaken 也会显示,但**没有任何工具/面板能「写」一条待办进去**(`hold`/`trace`/dashboard 的字段白名单里都没有 `todos`);356 个桶里 **0 条待办 = 从来无法使用**,不是晏不想用而是没有入口。**本次补齐缺的「写」这一半**:①独立存储 `{buckets_dir}/todos.json`(与 `letters.jsonl` 同处、随卷持久、原子写 temp+fsync+replace),**与记忆桶完全无关,不参与检索/浮现/衰减/归档,不碰存档模式与记忆内容**;②`todos` 工具扩展成读写一体(无参=看全部;`add=` 记一条;`done=`/`undone=` 勾/取消,勾掉保留仍可见;`remove=` 删;`clear_done=` 清完成),每条一个 4 位十六进制稳定短码;③**awaken 开机只提醒「还没做的」**(`_todos_impl(only_open=True)`,已完成的不摆出来保持开机清爽)——这是 awaken 原有「待办」区第一次真正有内容,若不想开机显示,把该处 hook 去掉即可。**未新增 MCP 工具**(复用现有 `todos`,不额外占晏常驻上下文)。端到端实测:加/看/勾/开机视图/删全过,测试条已清理、便利贴留空;桶数 331→331、MCP 200、晏未重启。**⚠️ 仍差一步:晏还不知道自己有这块便利贴**——要让他用起来,得在 CLAUDE.md「记忆工具使用」里加一句告诉他,那属于 shim 改动、**要重启晏(所有者说「归档」)**,尚未做,待所有者拍板。 |
+
+| 08-16 | **dwell-bridge 上线:她的自建网页接上了晏(新服务,晏零改动、窗口未丢)**。起因是所有者问「能不能先把晏接出去看看使用效果」。**先前的判断被自己推翻过一次**:头一版说「shim 给不出事件流,要先造一套存历史+广播的能力」——那是「把 Telegram 整套搬过去」的账;**只是想试聊天的话用不着**,因为 `/v1/messages` 本来就是流式的(`server.js:240–263`,正文 `text_delta`、思考 `thinking_delta`)。**关键契约**:shim **只取最后一条 user 消息**(`server.js:541`),晏的上下文活在他自己的常驻进程里,所以转接层**不回传历史**(回传等于重复喂);鉴权 `x-api-key`(535–538);**绝不发 `x-system-turn:1`**(那是 bridge 查岗专用,她在网页打字就是她本人说话)。**做了三件超出「翻译」的事**:①MCP 工具调用在 shim 那儿只是思考流里一行 `〔🔧 名字〕`(`server.js:158–159`),转接层把它翻成**真的工具卡片**;②`[贴纸:x]`/`[语音]` 这些本该由 bridge 剥的标记会原样漏进网页,改成**看得见的中文占位**(`〔贴纸：贴贴〕`),不丢信息也不露裸标记;③前端 `web/index.html` **刻意不入库**,部署前用 `fetch-frontend.sh` 从 dwell 仓库拉并删掉那段无条件改写 `window.fetch` 的演示拦截块(删不干净会非零退出)。**验证**:单测 83 项(重点是「标记被 HTTP 分块切成两半」,`🔧` 是代理对最容易切坏)+ e2e 27 项(起假 shim,不碰线上)全绿;上线后 `/api/context` 读到晏真实占用 119958/167000,证明链路是活的。**内存 70 MiB**(对照:晏那个容器 404 MiB,机器可用 1617 MiB)——**所以这一层不用等 2C8G,要等升级的是维护 agent 那个常驻 claude 进程**。**踩了三个坑,都记进了该手册**:`zeabur variable update` 的键值必须走 `-k KEY=VALUE`,当位置参数**静默不生效且退出码为 0**(第一遍四个变量全没设上,靠回读对账才发现——**设完必须回读**);zeabur 上传遵守 `.gitignore`,而前端正在被 ignore,**要临时换掉 .gitignore 才传得上**;`variable list` 会把只读注入变量连值打出来,**因此泄露了 `MANAGEMENT_PASSWORD`**。**未做**:`SHIM_KEY` 需所有者本人在控制台从 shim 复制过去(开发环境不许把容器密钥读出来);附件、语音未接;维护 agent 未接。详见 `dwell-bridge/MAINTENANCE.md` |
 
 ## 6. 部署与运维操作速查
 

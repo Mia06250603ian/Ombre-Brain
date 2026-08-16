@@ -1,7 +1,9 @@
 # dwell-bridge 维护手册
 
 > 把 dwell 那份自建网页接到晏身上的转接层。
-> 2026-08-16 初版。**服务尚未部署**，代码写完并演练过，等所有者拍板上机器。
+> 2026-08-16 初版并上线。**服务已部署**：`yan-dwell.zeabur.app`，
+> service id `6a81a118bdeaa87e2c52bec3`，与 shim 同项目同环境。
+> ⚠️ **`SHIM_KEY` 尚未设**（见部署记录），设上之前发消息会收到上游 401。
 
 ## 0. 一句话
 
@@ -141,3 +143,50 @@ node test-dwell.mjs        # 单测，现在 83 项
   （`web/index.html` 全文只有 CSS 和一行 HTML）。这一层也没做语音。
 - **维护 agent 还没接。** 这一版接的是晏（聊天）。主线只有一间屋，
   agent 要进来得先决定谁常驻——见 `../docs/维护Agent接出方案.md`。
+
+## 10. 部署记录
+
+### 第一次（2026-08-16）：建服务并上线
+
+**全程没碰晏、没碰 shim、没重启机器、窗口未丢**——这是新建一个独立服务，
+和已有服务是两个容器。
+
+- Zeabur 位置：项目 `cli-proxy-api--cpa`（`6a53a9fc22dd6ef375eb7484`），
+  env `6a53a9fcb6ce8edcb0163f97`，**service id `6a81a118bdeaa87e2c52bec3`**，
+  域名 `yan-dwell.zeabur.app`
+- 建法：`zeabur deploy --create --name dwell-bridge --project-id <项目>`
+  （CLI 没有 `service create`，建新服务走 `deploy --create`）
+- **PLANTYPE 验到 `nodejs`** —— 照 shim 踩坑 17 的规矩，部署后第一件事就看这个，
+  不是 nodejs 就是工作目录漂了、传错东西了
+- 域名：`domain create --domain yan-dwell -g`（`-g` = 用 zeabur.app 的二级域名）
+
+**验收**（全过）：
+- `/api/health` → `ok:true, locked:true`
+- 未登录时根路径给登录页、`/api/messages` 回 **401**
+- 登录后拿到网页 **317038 字节**，`window.fetch =` **0 处**（演示拦截块确实删干净了）、
+  `handle(d)` / `api/poll` / `api/messages` 都在
+- `/api/context` 读到 **119958 / 167000** —— 这是晏**真实的**窗口占用，
+  证明到 shim 的链路是活的
+- 容器内存 `memory.current` = **70.1 MiB**，与上线前本地实测（64→73 MiB）吻合。
+  对照：晏那个容器（shim + 常驻 claude 进程）**403.9 MiB**；
+  当时机器 `MemAvailable` 1617 MiB。**这一层不到可用内存的 5%，
+  所以它不需要等 2C8G 升级**——要等升级的是维护 agent（那才是又一个常驻 claude 进程）。
+
+**⚠️ 没做完的一步：`SHIM_KEY` 还没设。**
+取值被开发环境的安全策略挡住了（不许把容器里的密钥读出来，这拦得对）。
+**所以必须由所有者在 Zeabur 控制台手动搬一次**：
+shim 服务 → 变量 → 复制 `SHIM_KEY` → dwell-bridge 服务 → 变量 → 新增同名同值 → restart。
+**别让它走聊天记录**——SHIM_KEY 换一次要连 Kelivo 那头一起改，比换 Zeabur key 贵。
+
+**教训（这次真发生的）**：`zeabur variable list` 会把**只读注入变量连值一起打出来**，
+其中包含 `MANAGEMENT_PASSWORD`。本次因此把 CLIProxyAPI 的管理密码打进了会话记录，
+已建议所有者更换。**以后跑 `variable list` 一律加 `| sed` 掩码，或只取 KEY 列。**
+
+**另一个坑**：`zeabur variable update` 的键值要走 `-k KEY=VALUE`，
+直接把 `KEY=VALUE` 当位置参数**会静默不生效**（命令退出码仍是 0）。
+本次第一遍四个变量全没设上，是靠事后 `variable list` 对账才发现的——**设完必须回读一遍**。
+
+**部署时的一个细节**：`web/` 在 `.gitignore` 里（前端刻意不入库），
+而 zeabur 上传会遵守 `.gitignore`，直接部署会漏掉前端。
+本次做法是部署前临时把 `.gitignore` 换成只有 `node_modules/`，传完再还原。
+**下次部署记得同样处理**，否则页面会回「网页文件还没放进来」。
