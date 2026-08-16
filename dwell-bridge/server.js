@@ -25,6 +25,11 @@ const SHIM_KEY = process.env.SHIM_KEY || "";
 const DWELL_PASS = process.env.DWELL_PASS || "";
 const MODEL = process.env.BRAIN_MODEL || "claude-opus-4-6";
 const TURN_TIMEOUT_MS = +(process.env.TURN_TIMEOUT_MS || 600000);   // 他想久一点是常事，给足 10 分钟
+// 聊天记录落盘的位置。**必须指向一个持久卷**（比如 /data），
+// 否则容器一重建照样清空 —— 那正是所有者report的「每推一次就丢一次记录」。
+// 不设 = 只在内存里（行为与改动前一致）。
+const DATA_DIR = process.env.DATA_DIR || "";
+const LOG_FILE = DATA_DIR ? path.join(DATA_DIR, "messages.jsonl") : "";
 
 // 盐每次启动换一把：重启 = 所有已登录的会话失效。对一个维护入口来说这是想要的。
 const SALT = Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -36,6 +41,27 @@ if (!DWELL_PASS) log("⚠️ DWELL_PASS 没设——**页面没有锁**，绝对
 
 const events = makeEventLog();
 const msgs = makeMsgLog();
+
+/* ── 聊天记录落盘 ──
+   只是"界面上翻得到的记录"，不是晏的记忆（他的记忆在自己的进程和 OB 里）。
+   追加写，一行一条；开机读回最后一批。任何一步失败都只写日志，不影响聊天。 */
+function persist(m) {
+  if (!LOG_FILE || !m) return;
+  try { fs.appendFileSync(LOG_FILE, JSON.stringify(m) + "\n"); }
+  catch (e) { log("[persist]", e.message); }
+}
+function restoreLog() {
+  if (!LOG_FILE) { log("[persist] DATA_DIR 没设——记录只在内存里，重建即丢"); return; }
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (!fs.existsSync(LOG_FILE)) { log("[persist] 还没有记录文件，从空开始"); return; }
+    const lines = fs.readFileSync(LOG_FILE, "utf8").split("\n").filter(Boolean).slice(-4000);
+    const list = [];
+    for (const ln of lines) { try { list.push(JSON.parse(ln)); } catch {} }
+    log("[persist] 接回", msgs.restore(list), "条记录");
+  } catch (e) { log("[persist] 读不回来:", e.message); }
+}
+restoreLog();
 let busy = false;
 let lastErr = null;      // 最后一次上游报错，给 /api/health 排查用
 let turnAbort = null;    // 当前这轮的 AbortController，停止键要用
@@ -120,7 +146,7 @@ const guard = (req, res, next) => authed(req) ? next() : res.status(401).json({ 
 
 app.get("/api/health", (req, res) => res.json({
   ok: true, busy, shim: SHIM_URL, msgs: msgs.count(), cursor: events.cursor(),
-  locked: !!DWELL_PASS, lastErr,
+  locked: !!DWELL_PASS, persisted: !!LOG_FILE, lastErr,
 }));
 
 app.get("/api/messages", guard, (req, res) => {
@@ -207,7 +233,7 @@ app.post("/api/send", guard, async (req, res) => {
 
 async function runTurn(text) {
   busy = true;
-  msgs.addMe(text);
+  msgs.addMe(text); persist(msgs.last());
   events.push(evEcho(text));
 
   const strip = makeStripper();
@@ -228,7 +254,7 @@ async function runTurn(text) {
         const id = `t${Date.now()}-${++toolN}`;
         events.push(evToolUse(p.name, id));
         events.push(evToolDone(id));            // 拿不到结果，立刻收尾，别让它一直转圈
-        msgs.addTool(p.name);
+        msgs.addTool(p.name); persist(msgs.last());
       } else if (p.text) {
         full += p.text;
         events.push(evText(p.text));
@@ -283,8 +309,8 @@ async function runTurn(text) {
     turnAbort = null;
   }
 
-  if (think.trim()) msgs.addThink(think.trim());
-  if (full.trim()) { msgs.addGu(full.trim()); events.push(evFinal(full.trim())); }
+  if (think.trim()) { msgs.addThink(think.trim()); persist(msgs.last()); }
+  if (full.trim()) { msgs.addGu(full.trim()); persist(msgs.last()); events.push(evFinal(full.trim())); }
   events.push(evResult(!!errText, errText));
   busy = false;
   log("[turn] 完", { 字数: full.length, 思考: think.length, 工具: toolN, 错: errText || "-" });

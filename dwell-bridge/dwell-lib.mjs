@@ -215,6 +215,16 @@ export function makeMsgLog({ cap = 4000 } = {}) {
         more: pool.length > page.length,
       };
     },
+    // 开机把落盘的记录接回来。seq 重新编号（游标只在本次运行内有意义），
+    // 但顺序和内容原样保留。
+    restore(list) {
+      for (const m of list || []) {
+        if (!m || !m.kind || typeof m.text !== "string") continue;
+        items.push({ seq: ++seq, kind: m.kind, text: m.text, at: m.at || 0, ...(m.extra ? { extra: m.extra } : {}) });
+      }
+      if (items.length > cap) items = items.slice(-cap);
+      return items.length;
+    },
     last() { return items.length ? items[items.length - 1] : null; },
     count() { return items.length; },
   };
