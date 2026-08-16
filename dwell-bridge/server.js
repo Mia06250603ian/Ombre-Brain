@@ -129,11 +129,17 @@ app.get("/api/poll", guard, async (req, res) => {
   const since = req.query.since;
   // 长轮询：有新的立刻回，没有就挂着等，最多 25 秒——
   // 免得手机上每秒打一枪空请求。
+  //
+  // ⚠️ 这里的等待粒度直接决定「流式顺不顺」。原来是 250ms，
+  // 等于每批增量白白多压 0~250ms，再叠上一个网络来回，
+  // 就成了「蹦一大段 → 干等 → 再蹦一段」（所有者原话：卡式输出）。
+  // 25ms 几乎不占 CPU（一轮对话也就多几十次空转判断），换来的是明显更连续。
+  // 前端那头还有一个按帧匀速器把到货的一批摊平，两边一起才顺。
   const deadline = Date.now() + 25000;
   for (;;) {
     const r = events.since(since);
     if (r.events.length || Date.now() > deadline) return res.json(r);
-    await new Promise((r2) => setTimeout(r2, 250));
+    await new Promise((r2) => setTimeout(r2, 25));
     if (res.writableEnded) return;
   }
 });

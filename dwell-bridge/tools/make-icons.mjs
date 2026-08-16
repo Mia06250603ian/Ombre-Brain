@@ -28,9 +28,15 @@ if (!pathFile || !outDir) {
 const D = fs.readFileSync(pathFile, "utf8").trim();
 const ORANGE = "#e1734f";
 const WHITE = "#ffffff";
+// 反色版（官端那种橙底白花）。ICON_INVERT=1 生成这一版。
+const INVERT = process.env.ICON_INVERT === "1";
+const BG = INVERT ? ORANGE : WHITE;
+const FG = INVERT ? WHITE : ORANGE;
 
-// 菊花占画布的比例。官端那张花几乎撑满，留一点边看着才不挤。
-const SCALE = 0.66;
+// 菊花占画布的比例。**0.66 太小了**（2026-08-16 所有者一眼就说不像），
+// 官端那朵几乎撑满；而且橙花画在白底上，视觉上比白花画在橙底上更"瘦"
+// （浅底深字本来就显细），所以要更大一点才压得住。
+const SCALE = +(process.env.ICON_SCALE || 0.80);
 // 重心补偿（与 index.html 的 .lk-spark 同一组数）
 const DX = -4.27, DY = -3.14;
 
@@ -40,9 +46,9 @@ function svg(size) {
   // 补偿量按「菊花自身的尺寸」算，和 CSS 里 translate(%) 的语义一致
   const dx = inner * DX / 100, dy = inner * DY / 100;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-  <rect width="${size}" height="${size}" fill="${WHITE}"/>
+  <rect width="${size}" height="${size}" fill="${BG}"/>
   <g transform="translate(${off + dx} ${off + dy}) scale(${inner / 24})">
-    <path d="${D}" fill="${ORANGE}"/>
+    <path d="${D}" fill="${FG}"/>
   </g>
 </svg>`;
 }
