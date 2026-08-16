@@ -20,4 +20,16 @@ curl -fsSL "$SRC" -o "$OUT.raw"
 node "$(dirname "$0")/strip-demo.mjs" "$OUT.raw" "$OUT"
 
 rm -f "$OUT.raw"
+
+# 桌面图标与 manifest。index.html 的 <head> 早就引用了它们，
+# 缺了的话 iOS「添加到主屏幕」会拿网页截图当图标。
+BASE="https://raw.githubusercontent.com/Mia06250603ian/dwell-on-something/${BRANCH}/web"
+mkdir -p "$(dirname "$OUT")/icons"
+for f in icons/favicon-64.png icons/favicon.ico icons/icon-180.png icons/icon-192.png icons/icon-512.png manifest.json; do
+  if curl -fsSL "$BASE/$f" -o "$(dirname "$OUT")/$f"; then
+    echo "  ✓ $f"
+  else
+    echo "  ！$f 没拉到（图标会缺，页面本身不受影响）"
+  fi
+done
 echo "好了：$OUT （$(wc -c < "$OUT") 字节）"

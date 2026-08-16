@@ -90,6 +90,17 @@ app.post("/login", express.urlencoded({ extended: false }), (req, res) => {
 // index.html 不放在本仓库（免得和 dwell 仓库各存一份、日久两边不一样）。
 // 部署前跑 fetch-frontend.sh 从 dwell 仓库拉一份进 web/，顺手删掉演示拦截块。
 
+// 图标和 manifest **不上锁**：iOS 抓 apple-touch-icon 时不一定带 cookie，
+// 上了锁就会拿不到图、退回用网页截图当图标。它们只是图片，没有任何私密内容。
+// ⚠️ 只挂这两条，别图省事把整个 web/ 静态化——那会把 index.html
+// 从 /index.html 泄出去，绕过口令。
+app.use("/icons", express.static(path.join(HERE, "web", "icons"), { maxAge: "7d" }));
+app.get("/manifest.json", (req, res) => {
+  const f = path.join(HERE, "web", "manifest.json");
+  if (!fs.existsSync(f)) return res.status(404).json({ ok: false });
+  res.type("application/manifest+json").send(fs.readFileSync(f, "utf8"));
+});
+
 app.get("/", (req, res) => {
   if (!authed(req)) return res.type("html").send(LOGIN_PAGE.replace("__ERR__", ""));
   const f = path.join(HERE, "web", "index.html");

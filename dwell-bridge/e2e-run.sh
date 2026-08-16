@@ -23,6 +23,12 @@ check "根路径给登录页" "$(curl -s localhost:8790/ | grep -c '口令')" "1
 check "接口一律 401" "$(curl -s -o /dev/null -w '%{http_code}' localhost:8790/api/messages)" "401"
 check "发话也被挡" "$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8790/api/send -H 'Content-Type: application/json' -d '{"text":"喂"}')" "401"
 
+say "①b 图标与 manifest 不上锁，但不能顺带泄出页面"
+check "图标不带口令能取" "$(curl -s -o /dev/null -w '%{http_code}' localhost:8790/icons/icon-180.png)" "200"
+check "manifest 不带口令能取" "$(curl -s -o /dev/null -w '%{http_code}' localhost:8790/manifest.json)" "200"
+check "/index.html 取不到（没把整个 web/ 静态化）" "$(curl -s -o /dev/null -w '%{http_code}' localhost:8790/index.html)" "404"
+check "未登录的根路径不含真页面" "$(curl -s localhost:8790/ | grep -c 'function handle')" "0"
+
 say "② 登录"
 check "错口令被拒" "$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8790/login -d 'pass=wrong')" "401"
 curl -s -c /tmp/dwell-jar -o /dev/null -X POST localhost:8790/login -d 'pass=hunter2'

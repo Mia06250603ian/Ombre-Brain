@@ -223,6 +223,25 @@ shim 服务 → 变量 → 复制 `SHIM_KEY` → dwell-bridge 服务 → 变量 
 本服务当前就是从这个分支拉的前端：`./fetch-frontend.sh claude/pill-and-brandline`。
 **它合进 main 之后，这里要改回默认分支**，否则会一直钉在这个分支上。
 
+### 第三次（2026-08-16）：补桌面图标
+
+所有者要「添加到主屏幕」的图标。**查下来 index.html 的 `<head>` 里早就引用了
+`icons/favicon-64.png`、`icons/favicon.ico`、`icons/icon-180.png`、`manifest.json`
+四个文件，只是仓库里根本不存在**（发布时被剥掉了）——所以 iOS 只能拿网页截图当图标。
+**因此 index.html 一个字没改**，只是把缺的文件补出来。
+
+- 样式：**白底 + 橙色菊花**（所有者定的；官端是反过来的橙底白花）
+- 菊花取自 index.html 的 `SKETCH.spark`，和页面上是同一朵
+- **做了重心补偿**（偏右 4.27% / 偏下 3.14%，PR #1 记过的图形特征），不补一眼看得出歪
+- 生成脚本 `tools/make-icons.mjs`（playwright 渲染 SVG→PNG）。
+  **playwright 不进 `package.json`**——它是一次性工具，服务本身不需要它。
+  跑法见脚本头注；本机的 playwright 装在 `/tmp`，ESM 不认 `NODE_PATH`，
+  所以要么在装了它的目录里跑，要么临时软链。
+- 图标与 manifest **不上锁**：iOS 抓 apple-touch-icon 时不一定带 cookie，
+  上了锁会拿不到图、退回截图当图标。它们只是图片，没有私密内容。
+  ⚠️ **只挂 `/icons` 和 `/manifest.json` 两条，绝不要把整个 `web/` 静态化**——
+  那会让 `/index.html` 绕过口令直接被取走。e2e 里加了四条守这个（含 `/index.html` 必须 404）。
+
 **部署时的一个细节**：`web/` 在 `.gitignore` 里（前端刻意不入库），
 而 zeabur 上传会遵守 `.gitignore`，直接部署会漏掉前端。
 本次做法是部署前临时把 `.gitignore` 换成只有 `node_modules/`，传完再还原。
