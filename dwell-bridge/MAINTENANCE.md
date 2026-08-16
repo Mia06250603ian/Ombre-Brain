@@ -148,7 +148,8 @@ node test-dwell.mjs        # 单测，现在 83 项
 
 ## 9. 待办 / 没做的
 
-- **服务还没部署。** 机器、域名、`SHIM_KEY` 都等所有者拍板。
+- **`SHIM_KEY` 还没设**（服务本身已上线，见部署记录第一次）。
+  要所有者本人在控制台从 shim 搬过去，设上之前发消息一律 401。
 - **口令是单一口令，没有账号体系。** 对一个人自用的维护入口够了；
   真要多人用得另说。
 - **附件（图片）没接**，见已知边界 7。
@@ -156,6 +157,18 @@ node test-dwell.mjs        # 单测，现在 83 项
   （`web/index.html` 全文只有 CSS 和一行 HTML）。这一层也没做语音。
 - **维护 agent 还没接。** 这一版接的是晏（聊天）。主线只有一间屋，
   agent 要进来得先决定谁常驻——见 `../docs/维护Agent接出方案.md`。
+- **桌宠（clawd）接不了——是许可问题，不是技术问题。**
+  前端 `PET` 要 `pet/clawd-*.svg` 七个文件，`Mia06250603ian/clawd-on-desk`
+  的 `assets/svg/` 里七个**全都有**，拷过去就能跑。**但那个目录的 `assets/LICENSE`
+  是 All Rights Reserved**：「You may NOT copy, modify, distribute, or use any
+  artwork from this directory without explicit written permission … **except for
+  personal use of the Clawd on Desk application as distributed by this project**」。
+  也就是说授权只覆盖「那个桌宠应用本身」，搬进 dwell 用**不在授权范围内**，
+  提交进公开的 dwell 仓库更是明确禁止的「distribute」。
+  Clawd 角色版权属 Anthropic，其余美术由各作者保留。
+  **要接得先拿到书面许可，或者换一个自己有权用的小图。已报备所有者，等她定。**
+  （⚠️ 同一个仓库的螃蟹动图 2026-08-07 已经被用进 Telegram 贴纸了，
+  当时的记录没提许可这回事——同一颗雷，一并报备。）
 
 ## 10. 部署记录
 
