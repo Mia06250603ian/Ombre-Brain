@@ -727,9 +727,14 @@ MCP 客户端**只在连接时抓一次工具定义、不自动刷新**,而晏�
 数据保留、过滤发生在 breath 的三处路径 ✅。
 **⚠️ 与 deny 的一处差别(排障要知道)**:过期桶 **`include_dormant=True` 也翻不出来**
 ——那个开关只管 dormant,过期过滤不受它控制。
-**两个修法**:①把那几行挪进 `_trace_one` 让批量真正生效(`expires_at` 无状态,不像 deny 要读原有计数,
-天然能批量,推荐);②照 deny 的先例显式拒绝。**改 OB 不重启晏**,走 merge → `service redeploy`。
-**落地的那段文案已经把「一次只改一个桶」保留下来**,所以在修好之前他不会被坑。
+**所有者拍板:照 deny 的先例显式拒绝**(不是让批量生效)。**已改好、已提交,尚未上线** ——
+`server.py` 加了 `if batch and expires_at: return "expires_at 只支持单条记忆…"`,
+并在 `trace` 的工具说明里点了一句「deny/undeny/expires_at只支持单条」;
+新增回归用例 `test_batch_expires_at_is_rejected_loudly`(含两条反向守护:单条照旧能设、批量普通改动不受影响),
+`tests/test_deny_expire.py` **8 → 9 项**,CI 那四个文件合计 **60 项全绿**。
+**改 OB 不重启晏**,上线走 merge → `zeabur service redeploy`(自动触发不可靠,见 OPERATIONS「改完 OB 之后怎么让它上线」)。
+⚠️ **工具说明那一句会让 `trace` 的定义长十几个字符**,而晏只在**重连时**抓一次工具定义
+——他会在下一次部署 shim 重启时一并拿到,顺序上正好。
 
 **成品(逐字抄进 CLAUDE.md「记忆工具使用」节,建议紧跟在「待办便利贴」那段之后):**
 
