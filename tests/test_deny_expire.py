@@ -86,3 +86,41 @@ class TestExpire:
         assert _meta(mgr, bid)["expires_at"] == "2026-09-01"
         await mgr.update(bid, expires_at="")
         assert "expires_at" not in _meta(mgr, bid)
+
+
+class TestDenyGuards:
+    """守卫:批量 deny 必须**显式拒绝**,不能静默不做。
+    静默的话调用方会以为「已经否认了」,而那条记错的记忆照旧浮现 —— 比不做还糟。
+    (2026-08-19 自测发现的真洞,原样上线就是这个后果。)"""
+
+    @pytest.mark.asyncio
+    async def test_batch_deny_is_rejected_loudly(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("OMBRE_BUCKETS_DIR", str(tmp_path))
+        import importlib
+        import server as srv
+        importlib.reload(srv)
+        mgr = srv.bucket_mgr
+        tr = srv.trace.fn if hasattr(srv.trace, "fn") else srv.trace
+        a = await mgr.create(content="A", name="A", tags=["x"], importance=8, domain=["d"])
+        b = await mgr.create(content="B", name="B", tags=["x"], importance=8, domain=["d"])
+
+        out = await tr(bucket_id=f"{a},{b}", deny=True)
+        assert "只支持单条" in out, "批量 deny 必须报错,不能静默"
+        meta = mgr._load_bucket(mgr._find_bucket_file(a))["metadata"]
+        assert not meta.get("denied"), "被拒绝时不许留下半截状态"
+
+        # 反向:批量的普通修改不能被误伤
+        out2 = await tr(bucket_id=f"{a},{b}", importance=5)
+        assert "成功 2" in out2
+
+    @pytest.mark.asyncio
+    async def test_deny_and_undeny_together_rejected(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("OMBRE_BUCKETS_DIR", str(tmp_path))
+        import importlib
+        import server as srv
+        importlib.reload(srv)
+        tr = srv.trace.fn if hasattr(srv.trace, "fn") else srv.trace
+        bid = await srv.bucket_mgr.create(content="x", name="x", tags=["x"],
+                                          importance=5, domain=["d"])
+        out = await tr(bucket_id=bid, deny=True, undeny=True)
+        assert "不能同时" in out

@@ -1374,6 +1374,13 @@ async def trace(
     ids = [bid.strip() for bid in bucket_id.split(",") if bid.strip()]
     batch = len(ids) > 1
 
+    # deny/undeny 只支持单条(要读该桶原有的否认计数,且否认是逐条确认的动作)。
+    # ⚠️ 必须**显式拒绝**,不能默默不做:批量分支不认这两个参数,
+    #    静默的话调用方会以为「已经否认了」,而那条记错的记忆照旧浮现 ——
+    #    比不做还糟(2026-08-19 自测发现,原样上线就是这个后果)。
+    if batch and (deny or undeny):
+        return "deny/undeny 只支持单条记忆，请逐条调用（否认是逐条确认的动作，不做批量）。"
+
     async def _trace_one(bid: str) -> str:
         # --- Delete mode / 删除模式 ---
         if delete:
