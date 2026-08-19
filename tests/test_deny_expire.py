@@ -124,3 +124,36 @@ class TestDenyGuards:
                                           importance=5, domain=["d"])
         out = await tr(bucket_id=bid, deny=True, undeny=True)
         assert "不能同时" in out
+
+    @pytest.mark.asyncio
+    async def test_batch_expires_at_is_rejected_loudly(self, tmp_path, monkeypatch):
+        """2026-08-19(晚):与批量 deny 同一个坑 —— 批量分支不认 expires_at,
+        原样上线会回「成功 2 个:没有任何字段需要修改」而一个桶都没写上,
+        调用方以为到期日设好了,那几条临时记忆照旧天天浮现。必须显式拒绝。"""
+        monkeypatch.setenv("OMBRE_BUCKETS_DIR", str(tmp_path))
+        import importlib
+        import server as srv
+        importlib.reload(srv)
+        mgr = srv.bucket_mgr
+        tr = srv.trace.fn if hasattr(srv.trace, "fn") else srv.trace
+        a = await mgr.create(content="A", name="A", tags=["x"], importance=8, domain=["d"])
+        b = await mgr.create(content="B", name="B", tags=["x"], importance=8, domain=["d"])
+
+        out = await tr(bucket_id=f"{a},{b}", expires_at="2026-09-01")
+        assert "只支持单条" in out, "批量 expires_at 必须报错,不能静默"
+        for bid in (a, b):
+            meta = mgr._load_bucket(mgr._find_bucket_file(bid))["metadata"]
+            assert not meta.get("expires_at"), "被拒绝之后不许有任何桶被写上到期日"
+
+        # 反向守护:单条照旧能设,别把正常路径改坏
+        ok = await tr(bucket_id=a, expires_at="2026-09-01")
+        assert "2026-09-01" in ok
+        meta = mgr._load_bucket(mgr._find_bucket_file(a))["metadata"]
+        assert meta.get("expires_at") == "2026-09-01"
+
+        # 反向守护:批量普通改动不受影响
+        out2 = await tr(bucket_id=f"{a},{b}", importance=3)
+        assert "批量操作 2 个桶" in out2
+        for bid in (a, b):
+            meta = mgr._load_bucket(mgr._find_bucket_file(bid))["metadata"]
+            assert int(meta.get("importance")) == 3

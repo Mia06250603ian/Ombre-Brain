@@ -1270,7 +1270,7 @@ async def trace(
     undeny: bool = False,
     expires_at: str = "",
 ) -> str:
-    """修改记忆元数据或内容。bucket_id支持逗号分隔多个ID批量操作（批量时content和name忽略）。merge=另一个bucket_id时将该源桶合并入bucket_id：内容追加、标签去重、importance取大、情感取平均、删除源桶；钉选桶不可作为合并任意一方。resolved=1沉底/0激活,pinned=1钉选/0取消,digested=1隐藏(保留但不浮现)/0取消隐藏。content=改正文：默认整桶替换，append=True时追加到原文之后（往桶里补内容用追加，别读出来拼好再整体替换）。delete=True删除。所有内容修改和删除前系统自动留快照：history=True查看该桶的历史版本列表，restore=版本号（history返回的version字段）把桶恢复到该版本（被误删的桶也能这样复活）。trigger_date=YYYY-MM-DD设/改前瞻触发日期（到那天出现在awaken今日浮现区）,"done"=标记已处理不再浮现,"clear"=移除触发日期。deny=True：她纠正/否认了这条记忆（"我早就不这样了"）——记一次否认并大幅降权，第2次否认后该桶退出检索（仍可被关键词搜到、数据保留）。记错的事别再自信复述。undeny=True：撤销否认（否认错了用这个），清零计数并解除退出状态。expires_at=YYYY-MM-DD设到期日（临时约定/截止类记忆，过了那天自动退出检索，数据保留），空串"clear"=清除。只传需改的,-1或空=不改。"""
+    """修改记忆元数据或内容。bucket_id支持逗号分隔多个ID批量操作（批量时content和name忽略；deny/undeny/expires_at只支持单条）。merge=另一个bucket_id时将该源桶合并入bucket_id：内容追加、标签去重、importance取大、情感取平均、删除源桶；钉选桶不可作为合并任意一方。resolved=1沉底/0激活,pinned=1钉选/0取消,digested=1隐藏(保留但不浮现)/0取消隐藏。content=改正文：默认整桶替换，append=True时追加到原文之后（往桶里补内容用追加，别读出来拼好再整体替换）。delete=True删除。所有内容修改和删除前系统自动留快照：history=True查看该桶的历史版本列表，restore=版本号（history返回的version字段）把桶恢复到该版本（被误删的桶也能这样复活）。trigger_date=YYYY-MM-DD设/改前瞻触发日期（到那天出现在awaken今日浮现区）,"done"=标记已处理不再浮现,"clear"=移除触发日期。deny=True：她纠正/否认了这条记忆（"我早就不这样了"）——记一次否认并大幅降权，第2次否认后该桶退出检索（仍可被关键词搜到、数据保留）。记错的事别再自信复述。undeny=True：撤销否认（否认错了用这个），清零计数并解除退出状态。expires_at=YYYY-MM-DD设到期日（临时约定/截止类记忆，过了那天自动退出检索，数据保留），空串"clear"=清除。只传需改的,-1或空=不改。"""
 
     if not bucket_id or not bucket_id.strip():
         return "请提供有效的 bucket_id。"
@@ -1380,6 +1380,13 @@ async def trace(
     #    比不做还糟(2026-08-19 自测发现,原样上线就是这个后果)。
     if batch and (deny or undeny):
         return "deny/undeny 只支持单条记忆，请逐条调用（否认是逐条确认的动作，不做批量）。"
+
+    # expires_at 同理(2026-08-19 晚补):批量分支同样不认它,原样上线就是**同一个静默失败**——
+    # trace("桶A,桶B", expires_at=…) 会回「批量操作 2 个桶,成功 2 个:没有任何字段需要修改」,
+    # 而两个桶一个都没写上,调用方以为到期日设好了,那几条临时记忆照旧天天浮现。
+    # 上面那条 08-19 只堵了 deny/undeny,把这个漏在了外面(所有者拍板:照 deny 的先例显式拒绝)。
+    if batch and expires_at:
+        return "expires_at 只支持单条记忆，请逐条调用（到期日要逐条确认，不做批量）。"
 
     async def _trace_one(bid: str) -> str:
         # --- Delete mode / 删除模式 ---
