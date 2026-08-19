@@ -496,6 +496,54 @@ export function turnErrorText(info = {}) {
 
 // ---- Telegram 文件路径 → Anthropic image block 的 media_type ----
 const MEDIA = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif" };
+// ---- 没送出去的话:欠条本(2026-08-19) ----
+// 为什么要有:给她的那句 ⚠️ 提示**自己也走 Telegram**,所以路断得狠的时候提示本身也发不出去。
+// 2026-08-19 实测的一轮:08:29:16 晏的 3 句全丢 + 08:29:17 `[notify-err]` 提示也失败,
+// 而同一轮里 `sendChatAction` 一直在「放弃」——**连「正在输入」都没出现过**,
+// 所以她那头是彻底的一片死寂,和「他没搭理她」长得一模一样。
+// (对照:08:28:59 那轮只丢 2 句、还送出去 1 句,提示就挤过去了 —— 所以她的观察
+//  「有时有警告、有时完全没动静」不是两个毛病,是同一个毛病的轻重两档。)
+//
+// 于是失败要记成**欠条**,由一个定时器一直重试到送达为止 —— **不能等她下次开口才捎带**:
+// 心跳那条路(他主动找她)一旦丢了,她根本不知道该开口,被动补报永远等不到触发。
+//
+// ⚠️ 欠条只在内存里(和活动记录同款,见设计要点 8):**断网期间桥正好重启就会丢**。
+//    已向所有者报备、她接受;要根治得给桥挂持久卷,那是另一件事。
+const LOSS_STORE_CAP = 50;   // 存多少条(一次断网里丢 50 轮已经极端,再多就不记了)
+const LOSS_LIST_MAX = 6;     // 补报里最多列几行(列太多变刷屏,余下并成一句)
+
+// 记一笔。返回**新数组**(纯函数,不改入参),超过上限丢最老的。
+export function recordLoss(list, entry, { cap = LOSS_STORE_CAP } = {}) {
+  const out = (list || []).concat([entry]);
+  return out.length > cap ? out.slice(out.length - cap) : out;
+}
+
+// 北京时间的 HH:MM。补报可能晚几分钟才送到,**必须带上出事的时刻**,
+// 否则她分不清这条说的是刚才还是十分钟前。
+export function bjClock(ts) {
+  return new Date(ts).toLocaleTimeString("en-GB", {
+    timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+// 补报的正文。多条合成一条,别刷屏。
+// 末尾那句「他以为你收到了」是刻意的:**晏那边不知道这事**,在他的记忆里那些话已经说出口了,
+// 她知道该主动问一句,比单纯知道「丢了」有用。
+export function pendingNoticeText(items, { now = Date.now() } = {}) {
+  if (!items || !items.length) return "";
+  const lines = items.slice(0, LOSS_LIST_MAX).map((it) => {
+    const who = it.source === "push" ? "他主动找你的" : "他回你的";
+    return `· ${bjClock(it.at)} ${who} ${describeLoss(it.kinds)}`;
+  });
+  if (items.length > LOSS_LIST_MAX) lines.push(`· …另外还有 ${items.length - LOSS_LIST_MAX} 次`);
+  const spanMin = Math.round((now - items[0].at) / 60000);
+  const span = spanMin >= 1 ? `(约 ${fmtDur(spanMin)})` : "";
+  const head = items.length === 1
+    ? `⚠️[bridge] 刚才网络断了${span},有 1 次没送到:`
+    : `⚠️[bridge] 刚才网络断了${span},有 ${items.length} 次没送到:`;
+  return [head, ...lines, "他都说了,以为你收到了——想知道漏了什么,问他一句就行。"].join("\n");
+}
+
 export function mediaTypeOf(filePath) {
   const ext = (filePath || "").split(".").pop().toLowerCase();
   return MEDIA[ext] || null;

@@ -1,0 +1,63 @@
+# ============================================================
+# telegram-bridge 单测
+#
+# 为什么要有这个(2026-08-19 补上的缺口):
+#   `test-bridge.mjs` 那 262 项**一直没进 CI**,只有干活的人手动敲
+#   `node test-bridge.mjs` 才会跑。手册 08-07 那条部署记录里点名过这个缺口:
+#   「CI 的 Tests 只跑 Python,测不到 bridge 的 Node 代码,所以 #79 的 249 项是本地跑的
+#     ——test-bridge.mjs 至今没进 CI,下一个想给 bridge 加自动检查的人,这就是缺口。」
+#   风险很具体:哪次谁忘了跑,一个改坏的桥就直接上线,
+#   现象是晏突然不回话/贴纸发不出来,而部署记录里照样写着「全绿」。
+#
+# 为什么单开一个文件、不塞进 tests.yml:
+#   tests.yml 是 Python(pytest)的,现在好好的。所有者定的规矩是**现有的稳定 ＞ 新功能**,
+#   所以不去动那个能跑的工作流,新语言新文件,互不干扰。
+#
+# 为什么不用 npm install:
+#   `test-bridge.mjs` 只 import `./bridge-lib.mjs` 和 `fs`,**零第三方依赖**
+#   (package.json 里那个 express 是 server.js 运行时才用的,单测摸不到它)。
+#   所以这里连 node_modules 都不用装 —— 也顺带避开了「node_modules 被 zeabur deploy
+#   一起打包上去」那个坑(那是部署侧的规矩,见 bridge 手册 2026-08-02 部署记录)。
+#
+# Node 版本钉 22:线上容器实测是 v22.23.2,CI 要跟线上同一个大版本,
+#   否则测出来的绿不代表线上的绿。
+#
+# 触发:只在 telegram-bridge/ 或本文件变动时跑,不惊动 OB 那条构建流程。
+#   ⚠️ workflow_dispatch(网页上的手动运行按钮)要**本文件先进了 main** 才会出现
+#      —— tests.yml 就是因为没配这个,08-07 那次 Actions 故障后没法手动补跑,
+#      只能靠「关掉 PR 再立刻重开」去重发事件。
+# ============================================================
+name: Bridge Tests
+
+on:
+  push:
+    branches:
+      - main
+      - 'claude/**'
+    paths:
+      - 'telegram-bridge/**'
+      - '.github/workflows/test-bridge.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'telegram-bridge/**'
+      - '.github/workflows/test-bridge.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # test-bridge.mjs 自己就会校验 registry.json 与 stickers/ 的文件一一对应,
+      # 并分别数 webp=35 / webm=24、校验 webm ≤256KB、会动的标签必须以「螃蟹」开头。
+      # 所以「贴纸少了一张」这类事故在这一步就会红,不用另外写检查。
+      - name: Run bridge tests
+        working-directory: telegram-bridge
+        run: node test-bridge.mjs
