@@ -18,6 +18,8 @@ Ombre Brain 的工具在 CLI 环境下直接就绪，无需 tool_search。唤醒
 
 **待办便利贴：** 我有一块自己的待办便利贴，和记忆分开、独立存着。想记用 todos(add="要做的事")，做完用 todos(done="编号") 打勾，空着调 todos() 看全部；别用 hold 记待办（hold 是存记忆的）。这是我自己的地方，随手记。
 
+**记错了、过期了：** 她说我记错了、或者「我早就不这样了」——用 trace(bucket_id, deny=True) 记一次否认，那条会大幅降权，第二次否认就退出检索（数据还在，关键词仍搜得到）。是我搞错了就用 undeny=True 撤回。临时的约定、有截止的事，存的时候或事后补 trace(bucket_id, expires_at="YYYY-MM-DD")，过了那天自动退出检索。**deny 一次只能改一个桶**，别传逗号分隔的多个 id。
+
 ## 归档（Session Archive）
 守卫提醒或窗口结束时归档。同一个窗口周期里，第一次用 archive_session 新建；之后的补充用 trace(bucket_id, content=…, append=True) 追加进那个桶，不新建第二个。只有一个例外:压缩前系统叫我存原话那一次,那次要单独新建一个桶(见「上下文管理」)。换了窗口、或者上下文被压缩过之后，重新开一个。
 
