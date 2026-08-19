@@ -9,6 +9,7 @@ import {
   APP_LIST_TOP, APP_MIN_WORTH,
   describeErr, isRetriableNetErr, turnErrorText, describeLoss,
   letterDecide, letterPrompt, LETTER_HOUR, LETTER_MIN, LETTER_WINDOW_MIN,
+  recordLoss, pendingNoticeText, bjClock,
 } from "./bridge-lib.mjs";
 import fs from "fs";
 
@@ -728,6 +729,77 @@ const undiciErr = (causeName, causeMsg, code) => {
   eq([LETTER_HOUR, LETTER_MIN, LETTER_WINDOW_MIN], [22, 30, 90], "写信-默认 22:30 + 90 分钟窗口");
   ok(LETTER_HOUR * 60 + LETTER_MIN + LETTER_WINDOW_MIN <= 24 * 60,
      "写信-默认窗口不跨零点(跨了的话「今天提醒过没」的日期比较会错乱)");
+}
+
+// ---- 欠条本 / 自动补报(2026-08-19) ----
+// 背景:给她的 ⚠️ 提示自己也走 Telegram,路断狠了提示跟正文一起死,她那头完全没动静
+// (连「正在输入」都没有)。所以失败要记欠条,由定时器补到送达为止。
+{
+  const T = (hhmm) => Date.parse(`2026-08-19T${hhmm}:00Z`);
+  const loss = (at, kinds, source = "reply") => ({ at, kinds, source, chatId: 1 });
+
+  // recordLoss 是纯函数:不许改入参(改了的话调用方的旧引用会跟着变,排查起来要命)
+  {
+    const a = [];
+    const b = recordLoss(a, loss(T("09:29"), { text: 2, sticker: 0, voice: 0 }));
+    eq(a.length, 0, "欠条-recordLoss 不改入参");
+    eq(b.length, 1, "欠条-recordLoss 返回新数组");
+  }
+
+  // 上限:超了丢最老的,别在长时间断网时无限涨
+  {
+    let l = [];
+    for (let i = 0; i < 60; i++) l = recordLoss(l, loss(T("09:29") + i * 1000, { text: 1, sticker: 0, voice: 0 }));
+    ok(l.length <= 50, "欠条-存储有上限(不会无限涨)");
+    eq(l[l.length - 1].at, T("09:29") + 59 * 1000, "欠条-丢的是最老的,留最新的");
+  }
+
+  // 空的时候不许产出文案(否则定时器会发一条空消息给她)
+  eq(pendingNoticeText([], { now: T("09:33") }), "", "欠条-没欠条时不产出文案");
+  eq(pendingNoticeText(null, { now: T("09:33") }), "", "欠条-入参为 null 也不崩");
+
+  // 正常合并:多条并成一条,别刷屏
+  {
+    const l = [
+      loss(T("09:29"), { text: 3, sticker: 0, voice: 0 }),
+      loss(T("09:32"), { text: 1, sticker: 0, voice: 0 }, "push"),
+    ];
+    const t = pendingNoticeText(l, { now: T("09:33") });
+    ok(t.includes("有 2 次没送到"), "欠条-多条合成一条并报出次数");
+    ok(t.includes("他回你的 3 句话"), "欠条-回复轮的措辞");
+    ok(t.includes("他主动找你的 1 句话"), "欠条-心跳轮说成「他主动找你」(不是「回你」)");
+    ok(t.includes("以为你收到了"), "欠条-要点明晏那边不知情,她才知道该问一句(别删)");
+    // 补报可能晚几分钟才送到,必须带时刻,否则她分不清说的是刚才还是十分钟前
+    ok(/\d\d:\d\d/.test(t), "欠条-每条带出事时刻");
+    ok(!t.includes("fetch failed"), "欠条-永远不许把 fetch failed 甩给她(与设计要点 10 同款守护)");
+  }
+
+  // 列表上限:太多不刷屏,余下并成一句,但总数仍如实报出
+  {
+    let l = [];
+    for (let i = 0; i < 10; i++) l = recordLoss(l, loss(T("09:20") + i * 60000, { text: 1, sticker: 0, voice: 0 }));
+    const t = pendingNoticeText(l, { now: T("09:33") });
+    ok(t.includes("有 10 次没送到"), "欠条-总数如实报,不因为省略而少算");
+    ok(t.includes("另外还有 4 次"), "欠条-最多列 6 行,余下并成一句");
+    ok(t.split("\n").length <= 9, "欠条-补报不超过 9 行(别刷屏)");
+  }
+
+  // 只有一条时不说「有 1 次」的复数腔,时长不足一分钟不硬凑
+  {
+    const t = pendingNoticeText([loss(T("09:32"), { text: 2, sticker: 0, voice: 0 })], { now: T("09:32") + 20000 });
+    ok(t.includes("有 1 次没送到"), "欠条-单条也把次数说清楚");
+    ok(!t.includes("约 0"), "欠条-不足一分钟不说「约 0 分钟」");
+  }
+
+  // 贴纸/语音也要说对种类,别一律说成「句话」(设计要点 10 那次实测抓到过的措辞错)
+  {
+    const t = pendingNoticeText([loss(T("09:32"), { text: 0, sticker: 1, voice: 0 })], { now: T("09:33") });
+    ok(t.includes("张贴纸"), "欠条-贴纸说成「张贴纸」不说「句话」");
+  }
+
+  // bjClock 走北京时区,和查岗/写信那套口径一致
+  eq(bjClock(Date.parse("2026-08-19T09:29:00Z")), "17:29", "欠条-时刻按北京时间(UTC+8)");
+  eq(bjClock(Date.parse("2026-08-19T16:00:00Z")), "00:00", "欠条-跨零点也对");
 }
 
 console.log(fail ? `\n${fail}/${n} FAILED` : `${n} 项全绿 ✓`);

@@ -12,6 +12,7 @@ import {
   takeCheckMarker, lookupPrompt, computeStreak, appDurations, ACTIVITY_CAP, STREAK_GAP_MIN,
   letterDecide, letterPrompt, LETTER_HOUR, LETTER_MIN, LETTER_WINDOW_MIN, LETTER_QUIET_MIN,
   describeErr, isRetriableNetErr, turnErrorText,
+  recordLoss, pendingNoticeText,
 } from "./bridge-lib.mjs";
 
 const PORT = process.env.PORT || 8080;
@@ -311,8 +312,11 @@ async function runQueue() {
   //   ① shim 那一步断了 = 他没答上来,她的话可能白说了 → 得告诉她;
   //   ② 往 Telegram 发那一步断了 = 他答了、没送到 → 说人话,并且只报丢了几句。
   // 给她发提示这件事本身也走 Telegram,所以一律 catch 住:发不出去就只落日志,不能再抛。
+  // 返回**发出去了没有**:发不出去就得记欠条,由 noticeTick 一直补到送达
+  // (2026-08-19:提示自己也走 Telegram,路断狠了它跟正文一起死,她那头彻底没动静)。
   const notify = async (text) => {
-    try { await sendReply(t.chatId, text); } catch (e) { log("[notify-err]", describeErr(e)); }
+    try { await sendReply(t.chatId, text); return true; }
+    catch (e) { log("[notify-err]", describeErr(e)); return false; }
   };
   log("[turn]", { len: t.text.length, imgs: t.images.length, curfew: !!t.curfew, lookup: !!t.lookup, letter: !!t.letter });
   // 最外层这个 try/finally 是命根子:inflight 和 typing 必须无论如何都收干净,
@@ -336,7 +340,11 @@ async function runQueue() {
         await sendThinking(t.chatId, r.thinking);
         const stat = await sendOutput(t.chatId, outText, { fallback: wants ? null : "⚠️[bridge] 空回复,看下 shim 日志" });
         // 真有话没送到才吭声(查岗轮不吭声,她没问)
-        if (stat.failed && !t.curfew && !t.letter) await notify(turnErrorText({ stage: "send", ...stat }));
+        if (stat.failed && !t.curfew && !t.letter) {
+          const told = await notify(turnErrorText({ stage: "send", ...stat }));
+          // 连提示都没送出去 = 她那头完全没动静,记欠条等路通了补报
+          if (!told) queueLoss({ at: Date.now(), kinds: stat.kinds, source: "reply", chatId: t.chatId });
+        }
       }
       if (wants && !t.lookup) queueLookup(t.chatId);
     }
@@ -435,7 +443,12 @@ app.post("/push", async (req, res) => {
   // 心跳消息里也可能写 [查岗](他醒来想先看一眼再决定说什么)
   const { text, wants } = takeCheckMarker(raw);
   try {
-    if (text) await sendOutput(lastChatId, text);
+    // 他主动找她(心跳)。以前发失败只落一行 [push-err],**对话里一个字都没有**
+    // ——她根本不知道他找过她。现在记欠条,由 noticeTick 补报。
+    if (text) {
+      const stat = await sendOutput(lastChatId, text);
+      if (stat.failed) queueLoss({ at: Date.now(), kinds: stat.kinds, source: "push", chatId: lastChatId });
+    }
     if (wants) queueLookup(lastChatId);
     res.json({ ok: true, lookup: wants });
   } catch (e) { log("[push-err]", describeErr(e)); res.status(502).json({ ok: false, error: e.message }); }
@@ -565,7 +578,48 @@ function letterTick() {
 }
 if (LETTER_ON) setInterval(letterTick, LETTER_CHECK_MIN * 60000);
 
-app.get("/health", (_q, r) => r.json({ ok: true, on: BRIDGE_ON, polling, inflight, buffered: buffer.length, queued: turnQueue.length, stickers: stickerTags.length, ears: EARS_ON, report: REPORT_ON, curfew: CURFEW_ON, activity: activity.length, letter: LETTER_ON, letterAt: `${String(LETTER_AT_HOUR).padStart(2,"0")}:${String(LETTER_AT_MIN).padStart(2,"0")}`, letterDoneToday: lastLetterDay === bjToday() }));
+// ---- 没送出去的话:欠条本 + 自动补报(2026-08-19) ----
+// 起因(所有者实地观察,日志逐条对上):她说「有时候收到 ⚠️ 提示,有时候直接空回、
+// 连『正在输入』都没有」。查下来是同一个毛病的轻重两档 —— 给她的提示、晏的话、
+// 甚至「正在输入」(sendChatAction)**走的是同一条路**,路断狠了一起死。
+// 见 bridge-lib.mjs 的「欠条本」注释与手册设计要点 19。
+//
+// **为什么是定时器而不是「等她下次说话时捎带」**:所有者点名要自动的,而且被动补报
+// 有个死角 —— 心跳(他主动找她)丢了的话,她根本不知道该开口,那条欠条就永远压着。
+const NOTICE_ON = process.env.NOTICE_ON !== "0";              // 急救开关:设 0 关掉补报
+const NOTICE_RETRY_MS = Number(process.env.NOTICE_RETRY_MS ?? 30000);
+const NOTICE_MAX_AGE_MIN = Number(process.env.NOTICE_MAX_AGE_MIN ?? 1440);
+let pendingLosses = [];   // 只在内存:断网期间桥正好重启就会丢(已报备)
+function queueLoss(entry) {
+  pendingLosses = recordLoss(pendingLosses, entry);
+  log("[notice] 记下欠条:", entry.source, JSON.stringify(entry.kinds), "共", pendingLosses.length, "条");
+}
+async function noticeTick() {
+  if (!pendingLosses.length) return;
+  // 太老的丢掉,免得隔天冒出来一条莫名其妙的补报
+  const cutoff = Date.now() - NOTICE_MAX_AGE_MIN * 60000;
+  const fresh = pendingLosses.filter((x) => x.at >= cutoff);
+  if (fresh.length !== pendingLosses.length) {
+    log("[notice] 丢掉", pendingLosses.length - fresh.length, "条过老的欠条");
+    pendingLosses = fresh;
+  }
+  if (!pendingLosses.length) return;
+  // 别插到他正在说话的中间(和写信提醒同款让路)
+  if (inflight || turnQueue.length || buffer.length) return;
+  const chatId = pendingLosses[0].chatId || lastChatId;
+  if (!chatId) return;
+  const text = pendingNoticeText(pendingLosses, { now: Date.now() });
+  try {
+    await sendReply(chatId, text);
+    log("[notice] 补报成功,销掉", pendingLosses.length, "条欠条");
+    pendingLosses = [];    // 只有真送到才销账
+  } catch (e) {
+    log("[notice] 补报还没通,留着下次再试:", describeErr(e));
+  }
+}
+if (NOTICE_ON) setInterval(noticeTick, NOTICE_RETRY_MS);
+
+app.get("/health", (_q, r) => r.json({ ok: true, on: BRIDGE_ON, polling, inflight, buffered: buffer.length, queued: turnQueue.length, stickers: stickerTags.length, ears: EARS_ON, report: REPORT_ON, curfew: CURFEW_ON, activity: activity.length, letter: LETTER_ON, letterAt: `${String(LETTER_AT_HOUR).padStart(2,"0")}:${String(LETTER_AT_MIN).padStart(2,"0")}`, letterDoneToday: lastLetterDay === bjToday(), notice: NOTICE_ON, pendingLosses: pendingLosses.length }));
 app.listen(PORT, () => log(`telegram-bridge on :${PORT} shim=${SHIM_URL} on=${BRIDGE_ON}`));
 
 if (!BRIDGE_ON) log("[bridge] BRIDGE_ON=0,只留 /health");
