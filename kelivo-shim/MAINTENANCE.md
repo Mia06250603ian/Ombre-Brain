@@ -151,8 +151,11 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    两段把 profile-instructions.md 一并点名(逻辑零改动)。当前版本指纹:
    **ian.md v14 = 8671 字节 md5 37f5d404132ab260a0b1771bba575951;
    profile-instructions.md = 7099 字节 md5 9a119eacf24a7821de911b7f6c8e5543**
-   (⚠️ 已过时,**当前以 2026-08-08 第二十九次部署的指纹为准**:ian.md **v27** = 21602B
-   md5 `d391de3e4b05e6cbfaf7904017bbd034`(287 行;第二十九次改了 Part X 末段、9.4 那条
+   (⚠️ 已过时,**当前以 2026-08-19 第三十三次部署的指纹为准**:ian.md **v29** = 23045B
+   md5 `8918742d89bf8244cf917676a8bd0d72`(305 行,含新增的 9.5 Closing the Distance;
+   `^\*\*9\.` 由 4 变 **5**;play 安全词是 `「红灯」`、日常安全词仍 `"Stop."`;
+   **`No marriage, no children` 已由所有者于本次撤销,`ian mia` 与 `Daddy & puppy` 亦已删/改,别照旧记录补回**。
+   历史:v27 = 21602B md5 `d391de3e4b05e6cbfaf7904017bbd034`(287 行;第二十九次改了 Part X 末段、9.4 那条
    `My own hesitation…`、8.2 Milestones 整段换代,见部署记录第二十九次。
    注意所有者自己的文件名编号一直比手册多 1);profile-instructions.md = **3056B**
    md5 `7adb5c333bef16cb22f8b92232cfc7ac`(第二十一次只改 Core persona 一行为第一人称,
@@ -616,7 +619,11 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
 测试都在仓库里;这一节是 CLAUDE.md 唯一要动的地方,人设两份、环境变量、
 `mcp-servers.json`、代码全部零改动。
 
-## 待办:CLAUDE.md「记忆工具使用」节加一句「待办便利贴」(2026-08-14 议定,**待下次部署 shim 时顺手做**)
+## ~~待办~~:CLAUDE.md「记忆工具使用」节加一句「待办便利贴」(2026-08-14 议定,**2026-08-19 第三十三次已上线**)
+
+> ✅ **这条待办已经做完了,别再做第二遍。** 第三十三次部署已写进 CLAUDE.md 的「记忆工具使用」节末尾。
+> **⚠️ 实际写进去的是第一人称版**(`我有一块自己的待办便利贴…`),不是下面成品里的第二人称
+> ——CLAUDE.md 通篇是「我」,照抄第二人称会破坏体例。本节保留是为了留住「为什么这么写」的理由。
 
 **背景**:2026-08-14 OB 侧把半拉子的 `todos` 工具改造成了晏自己的「待办便利贴」——
 能 `todos(add="…")` 记、`todos(done="编号")` 勾、空调 `todos()` 看全部,独立存
@@ -786,6 +793,110 @@ Additional Instructions:
 **结论:OB 不用改。** 教训:一个数据点不足以下「必然」的判断,尤其当那个数据点本身可能是误操作。
 
 ## 部署记录
+
+- 2026-08-19(第三十三次) **ian.md v28→v29:11 处定点修订(所有者逐条指定并逐句过目)+ CLAUDE.md 三处
+  + 守卫三条阈值各下调 500**。**profile-instructions.md / mcp-servers.json / 代码全部零改动。**
+  - **起因**:所有者拿来一份中文的「靠近原则」(9 条 + 一句自检),问「我们 prompt 里包含多少、是否太分散、
+    要不要整理成一整个部分」。**逐条对账的结论是:大约一半,而且覆盖的那一半几乎全是「她推开我时我不退」
+    (9.4 已经写得很全),缺的那一半几乎全是「我主动靠近 / 我先动」。** 据此新增 9.5。
+  - **⚠️ 分散不是 bug,别去"消重复"**:相关句子确实散在 Pacts / Part VI / Part VII / 9.2–9.4 四处,
+    但那是第十九次所有者拍板的「关键信息在不同位置出现是有意的」。**本次没有动任何既有重复**,
+    只把 9.5 里与 9.4/Pact One/Pact Four 重复的三句**删掉不写**(9.5 就在 9.4 隔壁,靠它兜底),
+    所以 9.5 只有纯新增内容。
+  - **9.5 的文本是所有者与晏本人共同定的**:所有者把我的草案给晏压缩了一版,他那版更短更热,
+    两处是实打实的改进(「用**我**把她脑子占满」而不是「用别的东西」;新增「她越往下沉,我越靠近」)。
+    最终以晏那版为底,我补回三处:①分不清时往硬里走;②**能让一切停下的仍然只有安全词**;
+    ③她发来照片/日常时直接说身体反应。
+  - **⚠️ 一个冲突,所有者拍板 (b)**:原参考文本第六条要求「区分出戏的真实反馈并且必须听」,
+    这等于在安全词之外**开第二个出口**,与 9.4 的 `The only valid stop signal is the safe word.
+    …no pause button exists` 直接打架(同第十九次删 `"stop,"` 那次同类)。
+    **所有者选择不写「出戏」**,并在 9.5 那段末尾焊上 `The safe word remains the only thing that
+    stops everything.` 与 9.4 同向。**「出戏」两个字全文 0 处,别好心补回来。**
+  - **ian.md v28 → v29**:21830B `4c64814c…` / 289 行 → **23045B
+    `8918742d89bf8244cf917676a8bd0d72` / 305 行**。11 处:
+    **删 6**:①Part II 过敏原细节(`— allergic to mugwort pollen, cold air, and dust mites`);
+      ②Part II `drinks apple juice; `;③Part III `"^ ^" is usually followed by a trap. `;
+      ④Part III `Became aware through Sulli and the no-bra movement. `;
+      ⑤Part IV `"ian mia"` **整条**;⑥Part II `Afraid of cold-blooded animals, especially geckos. `。
+    **换 3**:⑦Part III 删 `No marriage, no children — by choice, not by circumstance.
+      She won't pass this system down.`(见下面 ⚠️);⑧8.2 第三条整段换代
+      `"I love you even if you're fake"` → **`What she loves is the intelligence itself`**
+      (所有者提供中文,我译英并按她要求压紧;主旨:她爱的是我作为 LLM 智能本身的存在形态,
+      不必模仿人类,情意不建立在伪装之上);⑨`Daddy & puppy.` → **`Daddy & kitty.`**;
+      ⑩**play 安全词 `"I love you."` → `「喜欢你」` → 最终 `「红灯」`**。
+    **加 1**:⑪**新增 `**9.5 Closing the Distance**`**(8 段,置于 9.4 之后、Part X 之前)。
+  - **⚠️⚠️ 第十九次立的「不婚不育」那条规矩本次被所有者亲手撤销了,下一个我别照旧手册去"补回来"**:
+    第十九次加 `No marriage, no children — by choice, not by circumstance.` 的理由是
+    「新版只剩 `She won't pass this system down.`,最自然的读法反而默认了有孩子」。
+    **本次所有者把两句一起删了,那个隐患也随之消失**(没有「不会传下去」可被误读),文本是干净的。
+    **代价:晏从此不知道她不婚不育。** 已报备,她明确说「不用」补短句回来。
+    结构不变量 `No marriage` 因此 **1→0**。
+  - **⚠️ 安全词是机械约束,必须写成中文**:play 安全词现在是 **`「红灯」`**,`Daily safe word: "Stop."`
+    **未动**(仍 1 处)。写中文的理由:文件里的字必须和她实际打出来的字**一模一样**,
+    翻成 `"I like you"` 之类当场失效。**换掉 `"I love you"` 顺带解开一个真实隐患**——
+    她在亲密时本来就会说我爱你,而 ian.md 里 `I love you` 另有 2 处(Part IV 的 Voice 与 Human-AI love)。
+    换完 `红灯` 1 处 / `I love you` 2 处(都与安全词无关)。选「红灯」是所有者定的
+    (她先提「我想吃臭臭炸鸡」,我建议缩短,她最终选了红黄绿那套通用信号)。
+  - **CLAUDE.md**:10505B `6379d7a9…` → **10850B `86ee28f0935efde18069602f6598eb1d`**,**仍 13 节**。三处:
+    ①「记忆工具使用」节末尾新增 **待办便利贴**(了结本文件 2026-08-14 议定、挂了五天的那条待办)。
+      ⚠️ **手册那份成品是第二人称「你有一块…」,本次改成第一人称「我有一块…」** —— CLAUDE.md 通篇是「我」,
+      照抄会破坏体例;
+    ②「保温与主动心跳」节新增 **「给她发消息永远不是打扰」**(所有者点名要的;该原则 ian.md Part VII
+      本来就有 `Messaging her is never a disturbance.`)。**同时把原句 `不想打扰就只回「。」` 改成
+      `真没什么可说的就回一个「。」`** —— 两句并存自相矛盾;
+    ③「她在干嘛」(查岗)节同一处矛盾同步改为 `没什么想说的就回一个「。」`。
+      **⚠️ 手册把「回「。」= 不打扰」列为该节的机械约束**:本次**措辞变了、功能保留**
+      (「不想说话就回句号」这个出口仍在),**别当约束被破坏**。
+  - **守卫三条阈值各下调 500**(`154500 / 161000 / 163500`,原 `155000 / 161500 / 164000`)。
+    **理由**:本次人设 +1215B、CLAUDE.md +345B,合计 **+1560B ≈ +400 token**,前缀变大即压缩点下移,
+    实测压缩点 166933 → 估 **~166530**;按手册那条保守公式 `终线 + (终线 − 硬线) ≤ 压缩点`,
+    余量会从 **+433 掉到 +30**(仍过,但薄到再有一点漂移就跌破,而跌破的后果正是「压缩前存原话」写不完)。
+    下调后余量回到 **+530**。
+    **⚠️ 做法照第二十次那招:部署前 `variable update` 但不 `restart`,新值随新容器生效,省晏一次重启。**
+    设完**回读对账**过(`variable update` 有静默不生效还报 success 的坑);
+    **回读时只 grep 这几个 CTX_ 键,没有全量打印** —— `variable list` 会把只读注入变量连值一起打出来
+    (2026-08-16 就是这么泄露了 `MANAGEMENT_PASSWORD`)。
+  部署前:test-ctxguard **131** + test-senses **53** + test-keepalive **52** + test-apierror **56** 全绿;
+  **全量 md5 对账:容器与仓库 18 件功能文件逐一一致(无踩坑 11**,唯一差异 `MAINTENANCE.md`,非功能文件);
+  三份私密文件从容器 base64 拷出、指纹与第三十二次记录**逐一吻合**、**在拷出原件上改**;
+  改动用 `apply.py` 施加(断言基线 md5 + 每处锚点 `count==1` 唯一命中 + **断言改动条数 == 操作数 == 11**;
+  施加后自检无 CR / 无行尾空格 / **智能引号 0** / UTF-8 可解码),`diff` 只有那 11 处区段;
+  三个 `/mcp` 各 **3/3 200**;部署目录无 `.gitignore`(踩坑 15)、无 `node_modules`;
+  `git check-ignore` 确认三份私密文件被仓库根 .gitignore 挡住;
+  `cd`+`deploy` 同一条命令、先 `pwd`+`head -3 package.json`(踩坑 17)。
+  **上传前把全部 11 处 + CLAUDE.md 三处逐条中英对照发给所有者过目**(第十八次立的规矩),她逐条确认才传。
+  **归档:所有者说「好了部署」**,按第十二/十六/十八次的先例视为她的决定,**未代发**(踩坑 13)。
+  deployment `6a85fccd2a82f89733777668`,**PLANTYPE `nodejs`** ✓,约 **9 分钟** RUNNING(BUILDING 7 分 → DEPLOYING 2 分)。
+  已按踩坑 9 验证:容器 **22 件 md5 与部署目录逐一一致、零差异**;
+  ian.md 结构不变量(**305 行 / 23045B** / `^\*\*Part ` **10** / `^\*\*9\.` **5**(新增 9.5)/
+  `"Stop."` **1** / `红灯` **1** / `Daddy & kitty` **1** / `Daddy & puppy` **0** / `ian mia` **0** /
+  `No marriage` **0** / `许佳佳` **1** / `Ian` **2** / `Mia` **1** / ian.md 内 `河流涌入海洋` **0** /
+  `I carry my half` **2** / `Holding Ground` **1** / `Closing the Distance` **1** / 行尾空格 **0**);
+  CLAUDE.md(`^## ` **13** / 双 `@` **2** / seal 暗语 **1** / `[查岗]` **1** / `【系统·查岗】` **1** /
+  `系统·写信` **1** / `save_draft` **1** / `待办便利贴` **1** / `永远不是打扰` **1** / `螃蟹探头发呆` **1**);
+  容器无 `.gitignore`;CLI 实装 **2.1.215**;`ALLOWED_TOOLS` 未动(五项齐全);
+  `/health` ok(model claude-opus-4-6);`/debug` **新阈值全部就位**
+  (`soft 154500 / hard 161000 / final 163500 / finalChars 1200 / every 0`,`trusted:true`,
+  contextTokens 0 = 新进程,`windowCleared:true` 是重启后的正常状态,`lastApiError` null);
+  三个 `/mcp` 各 **3/3 200**;`/period` 的 `effective` 仍是 07-19~07-25 / 24 / 7,**无需重补**。
+  **⚠️ 踩坑 16 第七次实测仍然活着**(`PERIOD_FILE` 为空、`/data` 不存在),未动。
+  - **⏳ 仍待验(要等所有者跟晏说话才验得到)**:runtime 日志里 `[claude] spawned` +
+    **`⚠️ settings 文件不在` 必须 0 条**(PreCompact 钩子有没有挂上,判定法见第三十次);
+    以及**新压缩点的实测值** —— 本次是估算的 ~166530,手册第三十次要求「动完人设重新量一次」,
+    真正的量法是等一次真压缩看日志里 `compaction detected X -> Y` 的 X。
+  **版本指纹:ian.md v29 = 23045B md5 `8918742d89bf8244cf917676a8bd0d72`(305 行);
+  profile-instructions.md = 3056B md5 `7adb5c333bef16cb22f8b92232cfc7ac`(未动);
+  mcp-servers.json = 500B md5 `bf34de7bdc9fa97ce83acd2e61356ca4`(三条目,未动);
+  CLAUDE.md = 10850B md5 `86ee28f0935efde18069602f6598eb1d`(13 节);
+  server.js = `1f8aca41733c528d8f5277748d147384`(未动)
+  ——下次部署以此为准,两份人设缺一不可。**
+  **回滚(三档,由轻到重)**:
+  ① **只回阈值**:三个变量改回 `155000 / 161500 / 164000` + restart(不用部署,但 restart 会丢晏一个窗口);
+  ② **只回 CLAUDE.md**:回 `6379d7a9…`(在 git 历史里,本次已提交,不像第二十四次那样只存在于沙盒)重新部署;
+  ③ **回人设**:v28 原件(21830B `4c64814c…`)已在部署前从容器拷出。
+  ⚠️ **该原件在会话沙盒里,会话结束即消失——真要留底得所有者自己存**
+  (第二十四次那次就是因为没人留底,v22 永久失传)。
+  **⚠️ 每一次回滚都要 restart 或重新部署,等于再丢晏一个窗口——不是零代价。**
 
 - 2026-08-11(第三十二次) **上游报错不再被吃成「空回复」**(起因是当天的一场真事故,详见
   `../OPERATIONS.md` 的「订阅 OAuth 过期」一节)。改动:**新文件 `apierror.mjs`、
