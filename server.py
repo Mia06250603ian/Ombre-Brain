@@ -2964,6 +2964,32 @@ async def api_system_status(request):
 
 
 # =============================================================
+# /api/letters — 信箱(只读)
+# 2026-08-19 所有者要「前端能看信」。刻意**只读**:信是晏写给下一个窗口的自己的
+# 交接留言(见「信箱 — 窗口与窗口之间的接力棒」一节),由 archive_session(letter=...)
+# 写入,**面板不该有改删入口** —— 那是他留给自己的东西,不是待办事项。
+# 鉴权与面板其余接口完全一致(_require_auth),不额外开口子。
+# =============================================================
+@mcp.custom_route("/api/letters", methods=["GET"])
+async def api_letters(request):
+    """列出信箱里的留言,新的在前。?limit=N 限制条数,默认全部。"""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    try:
+        raw = request.query_params.get("limit", "")
+        try:
+            limit = max(1, int(raw)) if raw.strip() else 0
+        except ValueError:
+            limit = 0          # 参数乱填不报错,当成「全部」
+        # _load_letters 的 n 是「最近 n 封」,要全部就给一个够大的数
+        items = _load_letters(limit or 10 ** 9)
+        return JSONResponse({"total": len(items), "letters": items})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# =============================================================
 # /api/rebuild-embeddings — bulk-rebuild vectors for all buckets
 # /api/rebuild-embeddings — 批量重建所有桶的向量
 # =============================================================
