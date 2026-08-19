@@ -416,9 +416,23 @@ class BucketManager:
                 post.metadata.pop("trigger_handled", None)
         if "trigger_handled" in kwargs:
             post["trigger_handled"] = bool(kwargs["trigger_handled"])
+        # --- 否认计数(2026-08-19):她纠正过这条记忆几次。检索时按次数乘法降权 ---
+        if "denied" in kwargs:
+            post["denied"] = max(0, int(kwargs["denied"]))
+        # --- 到期日(2026-08-19):YYYY-MM-DD。过期后退出检索,数据保留可查。空串=清除 ---
+        #     与 trigger_date 是一对镜像:那个是「到那天浮现」,这个是「到那天退休」。
+        if "expires_at" in kwargs:
+            if kwargs["expires_at"]:
+                post["expires_at"] = str(kwargs["expires_at"])
+            else:
+                post.metadata.pop("expires_at", None)
 
         # --- Auto-refresh activation time / 自动刷新激活时间 ---
-        post["last_active"] = now_iso()
+        # ⚠️ touch=False 时刻意不刷新:「她纠正了我」不是「这条记忆活跃了」。
+        #    时间分 _calc_time_score 是按 last_active 算的(越近分越高),
+        #    否认时若顺手刷新,等于一边降权一边加权,自己打自己(2026-08-19 读代码时发现)。
+        if kwargs.get("touch", True):
+            post["last_active"] = now_iso()
 
         try:
             with open(file_path, "w", encoding="utf-8") as f:
@@ -692,6 +706,13 @@ class BucketManager:
                     # 已解决的桶仅在排序时降权
                     if meta.get("resolved", False):
                         normalized *= 0.3
+                    # 被她纠正过的记忆:每否认一次乘 0.1(封顶两次),排到最后面。
+                    # 与 resolved 同一处、同一形式的乘法惩罚 —— 刻意不发明新机制。
+                    # 注意:阈值判定在上面用的是未惩罚的原始分,所以被否认的桶
+                    # **仍能被关键词搜到**(和 resolved 一样),只是不会自信地排在前面。
+                    denied_n = int(meta.get("denied", 0) or 0)
+                    if denied_n > 0:
+                        normalized *= 0.1 ** min(denied_n, 2)
                     bucket["score"] = round(normalized, 2)
                     scored.append(bucket)
             except Exception as e:
