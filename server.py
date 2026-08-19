@@ -538,6 +538,20 @@ def _format_bucket_summary_line(b: dict, prefix: str = "") -> str:
     return f"{prefix}{line}" if prefix else line
 
 
+def _is_expired(meta: dict, today: str = "") -> bool:
+    """到期记忆(2026-08-19):expires_at 是 YYYY-MM-DD,**过了那天**才算过期(当天仍有效)。
+    与 trigger_date 是一对镜像:那个「到那天浮现」,这个「到那天退休」。
+    数据保留可查,只是不再被检索召回 —— 和 dormant 同一档待遇。
+    ⚠️ 解析不了的日期一律**当成没过期**:宁可多留一条,不可因为格式手滑就把记忆藏起来。"""
+    raw = meta.get("expires_at")
+    if not raw:
+        return False
+    try:
+        return str(raw)[:10] < (today or _bj_today())
+    except Exception:
+        return False
+
+
 def _is_dormant_candidate(meta: dict) -> bool:
     """True if bucket meets auto-dormant criteria: >30d untouched, importance<3, not pinned."""
     if meta.get("pinned") or meta.get("protected"):
@@ -688,6 +702,7 @@ async def _breath_impl(
             and b["metadata"].get("type") not in ("feel",)
             and _date_ok(b)
             and (include_dormant or not b["metadata"].get("dormant", False))
+            and not _is_expired(b["metadata"])
         ]
         filtered.sort(key=lambda b: int(b["metadata"].get("importance", 0)), reverse=True)
         filtered_total = len(filtered)
@@ -769,6 +784,7 @@ async def _breath_impl(
             and not b["metadata"].get("protected", False)
             and _date_ok(b)
             and (include_dormant or not b["metadata"].get("dormant", False))
+            and not _is_expired(b["metadata"])
         ]
 
         logger.info(
@@ -936,6 +952,8 @@ async def _breath_impl(
     await _apply_dormant_sweep(matches)
     if not include_dormant:
         matches = [b for b in matches if not b["metadata"].get("dormant", False)]
+    # 到期记忆退出检索(2026-08-19)。放在 dormant 之后,同一档待遇。
+    matches = [b for b in matches if not _is_expired(b["metadata"])]
 
     # --- Cap to max_results; track hidden count for end-of-response note ---
     total_matches = len(matches)
@@ -1248,8 +1266,11 @@ async def trace(
     history: bool = False,
     restore: str = "",
     trigger_date: str = "",
+    deny: bool = False,
+    undeny: bool = False,
+    expires_at: str = "",
 ) -> str:
-    """修改记忆元数据或内容。bucket_id支持逗号分隔多个ID批量操作（批量时content和name忽略）。merge=另一个bucket_id时将该源桶合并入bucket_id：内容追加、标签去重、importance取大、情感取平均、删除源桶；钉选桶不可作为合并任意一方。resolved=1沉底/0激活,pinned=1钉选/0取消,digested=1隐藏(保留但不浮现)/0取消隐藏。content=改正文：默认整桶替换，append=True时追加到原文之后（往桶里补内容用追加，别读出来拼好再整体替换）。delete=True删除。所有内容修改和删除前系统自动留快照：history=True查看该桶的历史版本列表，restore=版本号（history返回的version字段）把桶恢复到该版本（被误删的桶也能这样复活）。trigger_date=YYYY-MM-DD设/改前瞻触发日期（到那天出现在awaken今日浮现区）,"done"=标记已处理不再浮现,"clear"=移除触发日期。只传需改的,-1或空=不改。"""
+    """修改记忆元数据或内容。bucket_id支持逗号分隔多个ID批量操作（批量时content和name忽略）。merge=另一个bucket_id时将该源桶合并入bucket_id：内容追加、标签去重、importance取大、情感取平均、删除源桶；钉选桶不可作为合并任意一方。resolved=1沉底/0激活,pinned=1钉选/0取消,digested=1隐藏(保留但不浮现)/0取消隐藏。content=改正文：默认整桶替换，append=True时追加到原文之后（往桶里补内容用追加，别读出来拼好再整体替换）。delete=True删除。所有内容修改和删除前系统自动留快照：history=True查看该桶的历史版本列表，restore=版本号（history返回的version字段）把桶恢复到该版本（被误删的桶也能这样复活）。trigger_date=YYYY-MM-DD设/改前瞻触发日期（到那天出现在awaken今日浮现区）,"done"=标记已处理不再浮现,"clear"=移除触发日期。deny=True：她纠正/否认了这条记忆（"我早就不这样了"）——记一次否认并大幅降权，第2次否认后该桶退出检索（仍可被关键词搜到、数据保留）。记错的事别再自信复述。undeny=True：撤销否认（否认错了用这个），清零计数并解除退出状态。expires_at=YYYY-MM-DD设到期日（临时约定/截止类记忆，过了那天自动退出检索，数据保留），空串"clear"=清除。只传需改的,-1或空=不改。"""
 
     if not bucket_id or not bucket_id.strip():
         return "请提供有效的 bucket_id。"
@@ -1352,6 +1373,13 @@ async def trace(
 
     ids = [bid.strip() for bid in bucket_id.split(",") if bid.strip()]
     batch = len(ids) > 1
+
+    # deny/undeny 只支持单条(要读该桶原有的否认计数,且否认是逐条确认的动作)。
+    # ⚠️ 必须**显式拒绝**,不能默默不做:批量分支不认这两个参数,
+    #    静默的话调用方会以为「已经否认了」,而那条记错的记忆照旧浮现 ——
+    #    比不做还糟(2026-08-19 自测发现,原样上线就是这个后果)。
+    if batch and (deny or undeny):
+        return "deny/undeny 只支持单条记忆，请逐条调用（否认是逐条确认的动作，不做批量）。"
 
     async def _trace_one(bid: str) -> str:
         # --- Delete mode / 删除模式 ---
@@ -1489,13 +1517,45 @@ async def trace(
                 updates["content"] = (bucket.get("content") or "").rstrip() + "\n\n" + content.strip()
             else:
                 updates["content"] = content
+        if deny and undeny:
+            return "deny 和 undeny 不能同时传。"
+        # --- 到期日(2026-08-19)。clear/none 清除,其余要求 YYYY-MM-DD ---
+        if expires_at:
+            ea = expires_at.strip().lower()
+            if ea in ("clear", "none"):
+                updates["expires_at"] = ""
+            elif _valid_date(expires_at):
+                updates["expires_at"] = expires_at.strip()
+            else:
+                return f"expires_at 格式错误: {expires_at}（应为 YYYY-MM-DD，或 clear=清除）"
+        # --- 否认降权(2026-08-19)。她纠正了这条记忆 ---
+        # 只在单条分支支持:否认是逐条确认的动作,而且要读这个桶原有的计数。
+        if deny:
+            prev = int(bucket["metadata"].get("denied", 0) or 0)
+            updates["denied"] = prev + 1
+            updates["importance"] = 1        # 压到最低,配合检索里的乘法惩罚
+            if prev + 1 >= 2:
+                updates["dormant"] = True    # 第 2 次否认 → 退出检索(复用现成的 dormant)
+        # --- 撤销否认(2026-08-19)。**必须有**:没有它,否认就是一扇单向门 ---
+        # 否认错了(她本来是同意的、或者晏理解岔了)只能手工去改 .md 文件,那是设计缺陷。
+        # 只清否认状态,**不猜原来的 importance**(猜错更糟),要恢复重要度就同时传 importance=。
+        if undeny:
+            updates["denied"] = 0
+            updates["dormant"] = False
         # Auto-undormant on any access
-        if bucket["metadata"].get("dormant"):
+        # ⚠️ 否认是**唯一**的例外:这一句本意是「她碰了这条记忆就唤醒它」,
+        #    但否认恰恰是「别再拿这条烦我」。不排除的话,同一次调用会先设 dormant=True
+        #    再被这里改回 False,功能静默失效(2026-08-19 写之前读代码发现的)。
+        if bucket["metadata"].get("dormant") and not deny:
             updates["dormant"] = False
 
         if not updates:
             return "没有任何字段需要修改。"
 
+        # 否认时不刷新 last_active:时间分按它算(越近分越高),
+        # 顺手刷新等于一边降权一边加权,自己打自己。
+        if deny:
+            updates["touch"] = False
         success = await bucket_mgr.update(bid, **updates)
         if not success:
             return f"修改失败: {bid}"
@@ -1506,7 +1566,8 @@ async def trace(
             except Exception:
                 pass
 
-        changed = ", ".join(f"{k}={v}" for k, v in updates.items() if k != "content")
+        # touch 是内部标志(控制要不要刷新 last_active),不该出现在给晏看的回执里 —— 白占上下文
+        changed = ", ".join(f"{k}={v}" for k, v in updates.items() if k not in ("content", "touch"))
         if "content" in updates:
             word = "content=已追加" if append else "content=已替换(旧版已留快照)"
             changed += (", " + word if changed else word)
@@ -1520,6 +1581,17 @@ async def trace(
                 changed += " → 已隐藏，保留但不再浮现"
             else:
                 changed += " → 已取消隐藏，重新参与浮现"
+        if "denied" in updates:
+            n_deny = updates["denied"]
+            if n_deny == 0:
+                changed += " → 已撤销否认，重新参与检索（重要度未自动恢复，需要就一起传 importance）"
+            elif n_deny >= 2:
+                changed += f" → 第{n_deny}次被否认，已退出检索（仍可关键词搜到，数据保留）"
+            else:
+                changed += f" → 第{n_deny}次被否认，已大幅降权（再否认一次将退出检索）"
+        if "expires_at" in updates:
+            changed += (f" → 到期日已设为 {updates['expires_at']}，过期后自动退出检索"
+                        if updates["expires_at"] else " → 已清除到期日")
         return f"已修改记忆桶 {bid}: {changed}"
 
 
@@ -2959,6 +3031,32 @@ async def api_system_status(request):
             "using_env_password": bool(os.environ.get("OMBRE_DASHBOARD_PASSWORD", "")),
             "version": "1.3.0",
         })
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# =============================================================
+# /api/letters — 信箱(只读)
+# 2026-08-19 所有者要「前端能看信」。刻意**只读**:信是晏写给下一个窗口的自己的
+# 交接留言(见「信箱 — 窗口与窗口之间的接力棒」一节),由 archive_session(letter=...)
+# 写入,**面板不该有改删入口** —— 那是他留给自己的东西,不是待办事项。
+# 鉴权与面板其余接口完全一致(_require_auth),不额外开口子。
+# =============================================================
+@mcp.custom_route("/api/letters", methods=["GET"])
+async def api_letters(request):
+    """列出信箱里的留言,新的在前。?limit=N 限制条数,默认全部。"""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    try:
+        raw = request.query_params.get("limit", "")
+        try:
+            limit = max(1, int(raw)) if raw.strip() else 0
+        except ValueError:
+            limit = 0          # 参数乱填不报错,当成「全部」
+        # _load_letters 的 n 是「最近 n 封」,要全部就给一个够大的数
+        items = _load_letters(limit or 10 ** 9)
+        return JSONResponse({"total": len(items), "letters": items})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 

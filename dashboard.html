@@ -98,6 +98,33 @@
     backdrop-filter: blur(8px);
     border-bottom: 1px solid var(--border);
   }
+  /* 照 .config-section 的视觉语言写:浅色面 + 双向柔和阴影。
+     ⚠️ 别用 --card / --text-dim 之外自己发明的变量名 —— 这个面板的调色板见 :root,
+     写错变量名不会报错,只会静默掉进 fallback,结果就是深色卡片贴在浅色页面上
+     (2026-08-19 第一版就是这么错的,靠截图才看出来)。 */
+  .letters-intro {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 20px; padding: 20px 24px; margin-bottom: 20px;
+    line-height: 1.8; font-size: 13px; color: var(--text-dim);
+    box-shadow: 6px 6px 14px var(--shadow-dark-subtle), -6px -6px 14px var(--shadow-light);
+  }
+  .letters-intro b { color: var(--text); }
+  .letters-note { display: block; margin-top: 8px; color: var(--text-light); font-size: 12px; }
+  .letters-count { color: var(--text-dim); font-size: 12px; margin: 0 0 14px 4px; }
+  .letter-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 20px; padding: 20px 24px; margin-bottom: 16px;
+    box-shadow: 6px 6px 14px var(--shadow-dark-subtle), -6px -6px 14px var(--shadow-light);
+  }
+  .letter-time {
+    color: var(--text-light); font-size: 12px; margin-bottom: 10px;
+    letter-spacing: .04em;
+  }
+  /* 留言是他自己写的散文,原样保留换行;长串也要能断,免得撑破卡片 */
+  .letter-text {
+    white-space: pre-wrap; word-break: break-word;
+    line-height: 1.9; color: var(--text); font-size: 14px;
+  }
   .tab {
     padding: 14px 22px;
     font-size: 13px;
@@ -704,6 +731,7 @@
   <div class="tab active" data-tab="list">记忆桶</div>
   <div class="tab" data-tab="breath">Breath 模拟</div>
   <div class="tab" data-tab="network">记忆网络</div>
+  <div class="tab" data-tab="letters">信箱</div>
   <div class="tab" data-tab="config">配置</div>
   <div class="tab" data-tab="import">导入</div>
   <div class="tab" data-tab="settings">设置</div>
@@ -812,6 +840,16 @@
     <button onclick="detectPatterns()">🔍 检测高频模式</button>
     <div id="import-patterns" style="margin-top:16px;"></div>
   </div>
+</div>
+
+<div class="content" id="letters-view" style="display:none">
+  <div class="letters-intro">
+    信箱是<b>晏留给「下一个自己」的交接留言</b>——每次窗口要归档时,他把嘱托写在这里
+    (她最近心情如何、哪个话题没聊完),下个窗口 awaken 时第一眼就能看到。
+    <span class="letters-note">事实走记忆桶,嘱托走信箱。这里只读。</span>
+  </div>
+  <div id="letters-count" class="letters-count"></div>
+  <div id="letters-list"></div>
 </div>
 
 <div class="content" id="config-view" style="display:none">
@@ -1146,10 +1184,12 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.getElementById('list-view').style.display = target === 'list' ? '' : 'none';
     document.getElementById('breath-view').style.display = target === 'breath' ? '' : 'none';
     document.getElementById('network-view').style.display = target === 'network' ? '' : 'none';
+    document.getElementById('letters-view').style.display = target === 'letters' ? '' : 'none';
     document.getElementById('config-view').style.display = target === 'config' ? '' : 'none';
     document.getElementById('import-view').style.display = target === 'import' ? '' : 'none';
     document.getElementById('settings-view').style.display = target === 'settings' ? '' : 'none';
     if (target === 'network') loadNetwork();
+    if (target === 'letters') loadLetters();
     if (target === 'config') loadConfig();
     if (target === 'import') { pollImportStatus(); loadImportResults(); }
     if (target === 'settings') loadSettingsStatus();
@@ -1165,6 +1205,52 @@ document.getElementById('search-input').addEventListener('input', (e) => {
     else refreshBucketList();
   }, 300);
 });
+
+// 信箱(只读)。接口 /api/letters 返回 {total, letters:[{time,text}]},新的在前。
+// 刻意不做「改/删」:那是他留给自己的东西,面板只负责让她看见。
+async function loadLetters() {
+  const box = document.getElementById('letters-list');
+  const cnt = document.getElementById('letters-count');
+  box.innerHTML = '<div class="letters-count">读取中…</div>';
+  cnt.textContent = '';
+  try {
+    const res = await fetch(BASE + '/api/letters');
+    const data = await res.json();
+    if (!res.ok) throw new Error((data && data.error) ? data.error : `HTTP ${res.status}`);
+    const items = Array.isArray(data.letters) ? data.letters : [];
+    if (!items.length) {
+      box.innerHTML = '<div class="letters-count">还没有留言。</div>';
+      return;
+    }
+    cnt.textContent = `共 ${data.total} 封,新的在前`;
+    // 用 textContent 塞内容,不拼 HTML —— 留言是自由文本,拼字符串等于给自己开 XSS
+    box.innerHTML = '';
+    for (const it of items) {
+      const card = document.createElement('div');
+      card.className = 'letter-card';
+      const t = document.createElement('div');
+      t.className = 'letter-time';
+      t.textContent = fmtLetterTime(it.time);
+      const b = document.createElement('div');
+      b.className = 'letter-text';
+      b.textContent = it.text || '';
+      card.appendChild(t); card.appendChild(b);
+      box.appendChild(card);
+    }
+  } catch (e) {
+    box.innerHTML = '';
+    const d = document.createElement('div');
+    d.className = 'letters-count';
+    d.textContent = '读取失败:' + e.message;
+    box.appendChild(d);
+  }
+}
+function fmtLetterTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;               // 时间格式不对就原样显示,别显示 Invalid Date
+  return d.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+}
 
 async function loadBuckets() {
   try {
