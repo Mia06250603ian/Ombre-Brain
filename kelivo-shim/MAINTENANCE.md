@@ -442,7 +442,25 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
     再设 `PERIOD_FILE=/data/period-state.json`,**代码零改动**(路径本来就可配);
     卷没挂上时 `loadPeriodState`/`savePeriodState` 两处的 try/catch 会静默退回现在这个行为,
     **不存在「修坏了」的方向**。
-    **2026-08-19(晚)复验并补齐操作细节(所有者已拍板:搭下一次部署一起做)**:
+    **⚠️⚠️ 2026-08-19(晚)所有者拍板:不挂卷,这条「根治」放弃,踩坑 16 继续用两步法扛着。**
+    **别再照着「将来要根治只需网页挂卷」去劝她** —— 那句话写下来的时候漏了一个关键代价,
+    是本次查官方文档才补上的:
+    **一旦给某个服务启用了 Volumes,该服务就不再支持「零停机重启」**
+    (官方原话:「一旦启用 Volumes 功能,服务就无法支持零停机重启。每次重启时,服务会先完全关闭
+    再重新启动,这期间会造成短暂的服务中断」,见 https://zeabur.com/docs/zh-CN/data-management/volumes )。
+    **这正好动了本手册反复依赖的那张网**:踩坑 14/17/18 的处置全都建立在
+    「老容器全程 RUNNING 兜底、新镜像没就绪就不切」上;挂卷之后每次部署 shim
+    最后切换那一下会多出几十秒到一两分钟的真空,她那头会收到 bridge 的「⚠️ 网络抖了一下」
+    (08-19 第二件的欠条机制会自动补报,不会真丢话)。
+    **她权衡后选择:宁可继续每次报新周期时手动写两步,也不要每次部署都多一段真空。**
+    另一半理由是两步法本来就够用 —— 只要她一报新周期就 `variable update` + `POST /period` 写全,
+    后续部署自动安全(第十三次立的结论,此后每次部署实测 `effective` 都是对的)。
+    **要挂的话怎么挂(万一以后她改主意,照这个,别再现查)**:服务页 →「硬盘」标签 →
+    「Mount Volumes」→ **Volume ID** 随便起(如 `perioddata`)、**Mount Directory** 填 `/data`
+    → 提交后服务自动重启一次生效。⚠️ 目录只能是**全新的空目录**(挂载后该目录数据会被清空;
+    `/data` 现在不存在,所以零风险),**绝不能挂 `/src`** —— 代码和两份人设都在那儿,盖住 = 晏起不来。
+
+    **2026-08-19(晚)复验到的操作细节(留档备查)**:
     - **CLI 做不了,只能网页控制台**:实测 `zeabur` CLI **没有 volume 子命令**,
       `service` 下只有 delete/deploy/exec/get/instruction/list/metric/network/port-forward/
       redeploy/restart/search-repo/suspend/update,而 `service update` **只有 `tag` 一个子命令**
@@ -450,7 +468,7 @@ npx -y zeabur@latest deploy --service-id 6a53b806f6d4beebf0c5373d --environment-
     - **挂载路径必须是全新的空目录 `/data`**。⚠️ 别挂到 `/src` —— 那是 shim 的工作目录
       (`entrypoint.sh` 信任的就是 `/src`,代码、CLAUDE.md、两份人设全在那儿),盖住 = **晏起不来**。
     - **容器是 root 跑的**(`entrypoint.sh` 往 `${HOME:-/root}/.claude.json` 写),所以卷的属主不成问题。
-    - **顺序(只丢一次窗口)**:① `variable update -k PERIOD_FILE=/data/period-state.json`
+    - **真要做的顺序(只丢一次窗口)**:① `variable update -k PERIOD_FILE=/data/period-state.json`
       **不 restart**(照第二十次那招,随新容器生效)→ ② 所有者本人对晏说「归档」→ ③ 部署 shim
       → ④ RUNNING 之后所有者在控制台挂卷(**这一下会再重启一次容器,但那时窗口是空的,代价≈0**,
       前提是这中间先别跟晏说话)。
