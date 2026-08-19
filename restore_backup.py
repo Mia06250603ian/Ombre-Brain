@@ -27,14 +27,15 @@
   | 没备份的 | 实测大小 | 丢了会怎样 |
   |---|---|---|
   | `embeddings.db`        | 16 MB   | **语义检索失灵**,要跑 `backfill_embeddings.py` 重建(费额度和时间) |
-  | `letters.jsonl`        | 33 KB   | **晏写给她的信全没了** —— 这条最要命,而它很小,值得加进导出 |
+  | ~~`letters.jsonl`~~    | 33 KB   | **2026-08-19 起已加进备份**(见 backup_exporter.export_all)。它是**窗口之间的接力棒**——归档时留给下一个窗口的自己,不是写给她的情书(那走 gmail),别再搞混 |
   | `.history/`            | 123 个文件 | 每个桶的历史版本快照没了,`trace(restore=版本)` 回滚不了 |
-  | `todos.json`           | 2 B     | 晏的待办便利贴 |
+  | ~~`todos.json`~~       | 2 B     | **2026-08-19 起已加进备份** |
   | `dehydration_cache.db` | 336 KB  | 压缩缓存,丢了无所谓,会自己重建 |
 
   **所以真实的恢复流程是两步,不是一步**:
     ① 本脚本还原记忆桶 → ② `backfill_embeddings.py` 重建向量索引
-  信、历史快照、便利贴**没有退路可走**(备份里就没有)。
+  **历史快照(`.history/`)仍然没有退路**;信箱与便利贴 2026-08-19 起已覆盖,
+  但**那天之前的 58 份历史备份里都没有**,拿旧备份还原时留意。
 
 **安全**:
   · 必须显式给 --dest,**不提供任何默认值** —— 免得手一抖写到线上桶目录;
@@ -95,7 +96,27 @@ def restore(backup_path: str, dest: str, dry_run: bool = False) -> dict:
             stats[cat] += 1
             written += 1
 
-    return {"declared": declared, "written": written, "stats": stats, "skipped": skipped}
+    # --- 信箱与便利贴(2026-08-19 起备份里才有) ---
+    # 旧备份没有这两个键 → 跳过,不报错(向后兼容:58 份历史备份都没有)。
+    letters = data.get("letters")
+    todos = data.get("todos")
+    n_letters = 0
+    if isinstance(letters, list) and letters:
+        n_letters = len(letters)
+        if not dry_run:
+            os.makedirs(dest, exist_ok=True)
+            with open(os.path.join(dest, "letters.jsonl"), "w", encoding="utf-8") as f:
+                for e in letters:
+                    f.write(json.dumps(e, ensure_ascii=False) + "\n")
+    has_todos = todos is not None
+    if has_todos and not dry_run:
+        os.makedirs(dest, exist_ok=True)
+        with open(os.path.join(dest, "todos.json"), "w", encoding="utf-8") as f:
+            json.dump(todos, f, ensure_ascii=False, indent=2)
+
+    return {"declared": declared, "written": written, "stats": stats, "skipped": skipped,
+            "letters": n_letters, "letters_in_backup": letters is not None,
+            "todos": has_todos}
 
 
 def main() -> int:
@@ -121,6 +142,12 @@ def main() -> int:
     for c in CATEGORIES:
         print(f"  {c:<10} {r['stats'][c]:>4} 个")
     print(f"  {'合计':<10} {r['written']:>4} 个   (备份自报 total={r['declared']})")
+    if r["letters_in_backup"]:
+        print(f"  {'信箱':<10} {r['letters']:>4} 封")
+    else:
+        print("  信箱       (这份备份里没有 —— 2026-08-19 之前的备份都不含信箱)")
+    if r["todos"]:
+        print(f"  {'便利贴':<9} 有")
     for s in r["skipped"]:
         print("  ⚠️ " + s)
 

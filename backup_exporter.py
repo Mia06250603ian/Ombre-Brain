@@ -145,6 +145,41 @@ class BackupExporter:
             })
 
         total = sum(len(v) for v in by_type.values())
+
+        # --- 信箱与便利贴(2026-08-19 补) ---
+        # 为什么要加:2026-08-19 实测发现备份**只覆盖记忆桶**,而信箱是窗口与窗口之间的
+        # 接力棒(归档时留给下一个窗口的自己:她最近心情如何、哪个话题没聊完)。
+        # 记忆桶丢了还有备份,**信丢了就是真没了**,而它只有 33KB —— 值这个位置。
+        # 便利贴顺带一起,它才 2 字节。
+        # ⚠️ 仍然没覆盖的:embeddings.db(16MB,还原后要跑 backfill_embeddings.py 重建)、
+        #    .history/(123 个版本快照)。见 restore_backup.py 头部那张表。
+        # **两个都做成「读不到就跳过」**:任何一个出问题都不许把整次备份带下水
+        #    —— 备份的第一职责是「桶一定要存下来」。
+        letters, todos = [], None
+        base = getattr(self.bucket_mgr, "base_dir", None)
+        if base:
+            try:
+                with open(os.path.join(base, "letters.jsonl"), encoding="utf-8") as f:
+                    for ln in f:
+                        ln = ln.strip()
+                        if not ln:
+                            continue
+                        try:
+                            letters.append(json.loads(ln))
+                        except Exception:
+                            continue          # 单行坏了只丢那一行,不影响其余
+            except FileNotFoundError:
+                pass
+            except Exception as e:
+                logger.warning(f"备份信箱失败(不影响记忆桶): {e}")
+            try:
+                with open(os.path.join(base, "todos.json"), encoding="utf-8") as f:
+                    todos = json.load(f)
+            except FileNotFoundError:
+                pass
+            except Exception as e:
+                logger.warning(f"备份便利贴失败(不影响记忆桶): {e}")
+
         return {
             "exported_at": datetime.now(timezone.utc).isoformat(),
             "total": total,
@@ -152,6 +187,9 @@ class BackupExporter:
             "permanent": by_type["permanent"],
             "feel": by_type["feel"],
             "archive": by_type["archive"],
+            # 新增两个键。旧备份没有这两个键,还原脚本按「缺了就跳过」处理,向后兼容。
+            "letters": letters,
+            "todos": todos,
         }
 
     # ---------------------------------------------------------

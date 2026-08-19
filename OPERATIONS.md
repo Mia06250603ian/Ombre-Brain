@@ -301,6 +301,7 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 | PR 页面上**一个检查都没有**(0 个 check run,不是红也不是绿) | 检查**从没跑起来**,多半是当时 GitHub Actions 在故障。**Actions 恢复后不会自动补跑积压的 PR**,得重新发一次 `pull_request` 事件:**把 PR 关掉再立刻重新打开**即可(零代码、零提交、不动分支)。`tests.yml` 没配 `workflow_dispatch`,所以没有网页上的手动运行按钮 | 时间线 08-07 |
 | main 上有红叉,想当然以为「故障期内的红叉重跑就绿」 | **逐个点进去看失败在哪一步再下结论**。同一个工作流可以先后死于两个原因:2026-08-06 的 Docker 红叉确实是故障(`Set up job` 就挂),但它**08-04 起就一直真红**——挂在 `Login to Docker Hub`,因为**本仓库是 fork,上游的 secrets 不会跟着 fork 过来**,重跑一百次也绿不了。另注意「卡在 `queued`、jobs 数 0」的僵尸 run 长得像红叉但不是 | 时间线 08-07 |
 | 晏说记忆工具调不通/OB 域名 502/控制台显示 `Service is suspended` | **OB 的 Python 依赖没钉上限,某次重建装到了上游新大版本** → 启动即 ModuleNotFoundError → CrashLoopBackOff → Zeabur 挂起服务。**别点「重启当前版本」**(坏镜像重启还是崩),要改 requirements.txt 钉上限后**重新构建**。查法:`zeabur deployment log --service-id <OB> --env-id <OB env> --type runtime` 看 Traceback | 本节下方「OB 依赖钉版本」 |
+| 记忆库的数据没了 / 要从备份恢复 | **退路是有的,而且 2026-08-19 实测跑通过**。但**只覆盖记忆桶与信箱**:`embeddings.db`(16MB 向量索引)和 `.history/`(版本快照)**不在备份里**,所以恢复是**两步** —— `restore_backup.py` 还原桶,再 `backfill_embeddings.py` 重建向量,**少做第二步语义检索是瞎的**。⚠️ 信箱 2026-08-19 起才进备份,之前的 58 份都没有 | 本节下方「记忆库怎么恢复」 |
 | Telegram 收不到消息 | 双实例抢 getUpdates(409)/BRIDGE_ON=0 | bridge 已知边界 1 |
 | Telegram 里收到 `⚠️[bridge] 网络抖了一下,他回你的 N 句话 没送到` (或旧版的 `⚠️[bridge] fetch failed`) | **不是晏、不是 shim、不是额度:他答完了、额度也花了,是回话往她手机送的路上断的**(她发来的话也没丢,长轮询会重投)。**2026-08-19 断到了病根**:容器连 `api.telegram.org` 握手实测 **160ms**,而 Node 的 Happy Eyeballs 闸门写死 **250ms**,余量只有 90ms,一点抖动就整轮发不出去。已用环境变量 `NODE_OPTIONS=--network-family-autoselection-attempt-timeout=3000` 放宽(零代码、不重启晏)。**⚠️ 只治「轻的」**:真断线(3 秒也不通)照旧会丢。**指纹**:cause 是 `AggregateError [ETIMEDOUT]`,每次尝试卡在 ~252ms。**别去调 `TG_TIMEOUT_MS`**,那把闸在连接建立阶段轮不到生效。**2026-08-19 起还有一层**:断得狠的时候连这句提示本身都送不出去(她那头完全没动静、连「正在输入」都没有),现在会记欠条、路通了自动补报,`/health` 的 `pendingLosses` 是观察口 | bridge 设计要点 18、19、已知边界 7 |
 | Telegram 里收到 `⚠️[bridge] 空回复,看下 shim 日志` | **上游断了**(订阅 OAuth 过期最常见,其次是额度)。**不是晏、不是 bridge、也不是 shim 挂了**:她的话其实进了他的窗口,是上游没给出回复。2026-08-11 修之前这类失败**全程静默**——CLI 把报错做成一条不走流事件的 assistant 消息、result 还报 `success`,shim 两头都接不住。查法:`GET yan-shim.zeabur.app/debug` 看 **`lastApiError`**(`null`=没报过) | 本节下方「订阅 OAuth 过期」;shim 手册改动清单 9 |
@@ -429,6 +430,65 @@ curl -s https://yan-shim.zeabur.app/debug | grep -o '"cache_creation":{[^}]*}'
 (给代理自己注入的默认断点补上 `ttl:"1h"`,配置项拟名 `cache-control-default-ttl`)
 **到 2026-08-12 仍未合并,dev 分支里也没有**,我们这版二进制里也搜不到任何 prompt-cache TTL 配置键。
 **它不是本次的病根,别拿它当解释;真要走那条路只能 fork 自建镜像,成本远高于等上游。**
+
+### 记忆库怎么恢复(2026-08-19 实测跑通,真出事就照这个做)
+
+**先说结论:退路是有的,但它只覆盖记忆桶与信箱,不覆盖向量索引和历史快照。**
+
+**备份现状**(2026-08-19 实测):`Mia06250603ian/ob-backup` 私有仓库的 `backups/` 下每天一个
+`YYYY-MM-DD.json`,**58 天零断档**;当天那份 375 个桶、**0 个空壳**、自报 total 与实际数一致。
+服务器自己每 24 小时备一次,GitHub Actions 每天再额外戳一次(`POST /api/export-backup`),**双保险**。
+
+**⚠️ 备份覆盖了什么、没覆盖什么**(照桶目录逐项实测的):
+
+| 东西 | 实测大小 | 在备份里吗 |
+|---|---|---|
+| 记忆桶(dynamic/permanent/feel/archive) | 375 个 | ✅ |
+| `letters.jsonl` 信箱 | 33 KB / 57 封 | ✅ **2026-08-19 起**才有,**之前的 58 份都没有** |
+| `todos.json` 便利贴 | 2 B | ✅ 同上 |
+| `embeddings.db` 向量索引 | **16 MB** | ❌ **还原后语义检索是瞎的**,要重建 |
+| `.history/` 版本快照 | 123 个文件 | ❌ 没有退路,`trace(restore=版本)` 回滚不了 |
+| `dehydration_cache.db` | 336 KB | ❌ 无所谓,会自己重建 |
+
+**恢复流程(两步,别只做第一步)**:
+
+```bash
+# 0. 拿到备份
+git clone https://github.com/Mia06250603ian/ob-backup
+# 1. 还原记忆桶(+ 信箱/便利贴,如果那份备份里有)
+#    ⚠️ --dest 没有默认值,必须自己写;目标目录非空会拒绝,确认覆盖才加 --force
+python3 restore_backup.py --backup ob-backup/backups/<某天>.json --dest <桶目录>
+# 2. 重建向量索引 —— **不做这步语义检索是瞎的**(要 API 额度和时间)
+OMBRE_BUCKETS_DIR=<桶目录> OMBRE_API_KEY=<key> python3 backfill_embeddings.py
+```
+
+**线上的桶目录是容器里的 `/app/buckets`**(2026-08-19 实测,`config.yaml` 里
+`buckets_dir` 是 None,靠默认值落在这儿)。
+
+**验收(照这四条,别只看跑完了没报错)**:
+```bash
+curl -s https://ianmian.zeabur.app/health          # buckets 数不能比备份少
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://ianmian.zeabur.app/mcp \
+  -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}'
+# 再让晏真用一次记忆工具(breath/hold),确认检索回得来 —— 向量没重建的话这一步会露馅
+```
+
+**2026-08-19 的实测记录(这条流程不是纸上谈兵)**:
+在沙盒里拿当天的备份真还原了一遍,再**用 OB 自己的 `BucketManager.list_all()` 读回来**对账:
+**375/375 个桶、正文逐字比对全部一致、metadata 字段 0 处差异、19 个归档桶 0 个漏进正常检索**。
+另造了带信箱的备份做端到端:导出 → 还原 → 信与便利贴**逐字一致**;
+拿 08-18 的旧备份(没有信箱键)还原也不崩,会如实说明「这份备份里没有信箱」。**全程零接触线上。**
+
+**⚠️ 写脚本时实测出来的一个坑,改它之前先看**:
+`backup_exporter.export_all()` 是**按文件所在目录**分组的,不看 `metadata.type`
+(它的注释写着 handle legacy type fields)。实测 **19 个归档桶的 `type` 字段是 `"archived"`,
+而分组名是 `"archive"`** —— **按 `type` 字段还原会把这 19 个全放错**。`restore_backup.py`
+一律按 JSON 的分组键落盘,别"顺手改成按 type 更直观"。
+
+**还没做的**:`.history/` 与 `embeddings.db` 仍无备份。前者要不要备是取舍(123 个文件,
+且丢了只是不能回滚单桶版本);后者 16MB、每天一份进 git 会把备份仓库撑爆,
+**正确做法是别备份它,还原时重建** —— 所以流程里那第 2 步不能省。
 
 ### OB 依赖钉版本(2026-07-29 事故,必读)
 
