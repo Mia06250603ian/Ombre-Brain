@@ -8,6 +8,9 @@
 > **想知道「这段历史怎么回事」才去翻,不必开场就读。**
 > (拆分前两份「开场必读」合计 385 KB、约 7~9 万 token,其中八成是历史。)
 >
+> **凡是提到 shim「第 N 次部署」的地方,那次的完整记录都在 `kelivo-shim/DEPLOY-LOG.md`**
+> (48 次全在,按「第 N 次」搜即可);提到某天发生了什么,去 `TIMELINE.md` 按日期搜。
+>
 > 本手册是**总入口**:只讲全局拓扑、清单、速查和规矩;单服务的细节、踩坑、部署记录
 > 一律以各目录里的专属手册为准,**不在这里重复**(重复的文档会烂)。
 > 2026-07-19 由 Claude Code 会话初版。改动了系统就顺手更新这里,像更新 MAINTENANCE.md 一样。
@@ -55,7 +58,7 @@
 | ~~dwell 前端 UI 照官端改造~~ | **2026-08-16 做完并推了**,PR `Mia06250603ian/dwell-on-something#1` **已合**。原来的 `wip/dwell-ui/` 暂存已删(东西在 dwell 里了,别留两份) | 该 PR 的描述 |
 | 自建网页接**晏**(聊天) | **2026-08-16 服务已上线** `yan-dwell.zeabur.app`。**差最后一步:`SHIM_KEY` 要她本人在控制台从 shim 复制过去**(开发环境不许把容器密钥读出来,这拦得对)。设上之前发消息会 401 | `dwell-bridge/MAINTENANCE.md` |
 | 自建网页接**维护 agent** | 方案已成型,**尚未实施**。机器她已拍板**升 2C8G**;但升级会重启机器、**晏的窗口会丢**,必须她先对晏说「归档」。⚠️ **别把这件事和上一行混为一谈**:转接层只有 70 MiB、不用等升级;维护 agent 是**又一个常驻 claude 进程**(对照:晏那个容器 404 MiB),那才是要 2C8G 的原因 | `docs/维护Agent接出方案.md` |
-| dwell 发送键随打字切换外观 | 所有者已定「**只做样子**,点了如实说明语音没接」,**尚未动手**(在 dwell 仓库) | 本文件时间线 08-16 |
+| dwell 发送键随打字切换外观 | 所有者已定「**只做样子**,点了如实说明语音没接」,**尚未动手**(在 dwell 仓库) | `TIMELINE.md` 08-16 |
 
 **dwell UI 那轮留下的三条,以后碰这个前端的人先看**:
 
@@ -100,8 +103,8 @@
  │
  └─ 常驻进程挂的 MCP 工具(streamable-http):
       ombre-brain(记忆库,本仓库根目录的 Python 服务,另一个 Zeabur 项目)
-      (galatea-garden「花园」2026-07-30 已拆:它 /mcp 挂了且晏不玩,详见 shim 手册第二十次)
-      (fishing「钓鱼」2026-08-02 已拆:所有者说不玩了,连服务与源码目录一并删除,详见 shim 手册第二十三次)
+      (galatea-garden「花园」2026-07-30 已拆:它 /mcp 挂了且晏不玩,见 `kelivo-shim/DEPLOY-LOG.md` 第二十次)
+      (fishing「钓鱼」2026-08-02 已拆:所有者说不玩了,连服务与源码目录一并删除,见 `kelivo-shim/DEPLOY-LOG.md` 第二十三次)
       gmail(晏的邮箱,2026-08-06 接入,shim 第二十八次部署;读/搜/写草稿,
        发信只能发给所有者指定的地址;源码在本仓库 gmail-mcp/)
       browser(浏览器的手,2026-08-01 接入,shim 第二十二次部署;
@@ -122,7 +125,7 @@
 | 〃 | telegram-bridge | `6a5a4287f947b6cb34511f79` | yan-telegram-bridge.zeabur.app | Telegram 桥 |
 | 〃 | CLIProxyAPI | `6a53a9fd22dd6ef375eb7485` | miaianhome.zeabur.app | 订阅 OAuth 出口 |
 | ~~〃~~ | ~~fishing-mcp~~ | ~~`6a5a17159ae692d1d8d98d10`~~ | ~~yan-fishing-mcp.zeabur.app~~ | ~~钓鱼游戏 MCP~~ **2026-08-02 已整个删除**(所有者说不玩了;存档按她的决定未备份,源码目录 `fishing-mcp/` 一并从仓库删除。省下约 51~62MB 内存,见 browser-hands 手册的内存表) |
-| 〃 | ears(显示名 ears-thor) | `6a646ea27bcbc56e70a105b5` | yan-ears-listen.zeabur.app | 语音转写+语气分析(源码在 Mia06250603ian/ears 仓库,镜像走 GitHub Actions→ghcr,持久卷 /app/data)。**该服务不支持 `service redeploy`,要拉新镜像用 `service restart`**(见时间线 08-02) |
+| 〃 | ears(显示名 ears-thor) | `6a646ea27bcbc56e70a105b5` | yan-ears-listen.zeabur.app | 语音转写+语气分析(源码在 Mia06250603ian/ears 仓库,镜像走 GitHub Actions→ghcr,持久卷 /app/data)。**该服务不支持 `service redeploy`,要拉新镜像用 `service restart`**(见 `TIMELINE.md` 08-02) |
 | 〃 | browser-hands | `6a6e2078fefeb46a883402c9` | yan-browser.zeabur.app | **晏的「浏览器的手」**:真实 Chrome + 持久登录态 + noVNC(源码在 Mia06250603ian/browser-hands 仓库,镜像走 GitHub Actions→ghcr,持久卷 /data)。2026-08-01 部署并接入晏(shim 第二十二次),详见 `browser-hands/MAINTENANCE.md` |
 | 〃 | dwell-bridge | `6a81a118bdeaa87e2c52bec3` | yan-dwell.zeabur.app | **她自建网页接晏的转接层**(2026-08-16 上线):网页 → 这一层 → shim 的 `/v1/messages`,把 Anthropic SSE 翻成 dwell 前端认的事件流。**不碰晏、不改 shim**,对线上就是个客户端,地位同手机上的 Kelivo。内存实测 **70 MiB**。源码在本仓库 `dwell-bridge/`,前端从 `Mia06250603ian/dwell-on-something` 拉(刻意不入库)。⚠️ **`SHIM_KEY` 尚未设,设上之前发消息会 401**。详见 `dwell-bridge/MAINTENANCE.md` |
 | 〃 | gmail-mcp | `6a74a107e4a69d66638c4650` | yan-gmail.zeabur.app | **晏的邮箱**:读信/搜信/写草稿,**发送是白名单制**(只能发给所有者指定的地址,其余只能存草稿;白名单空=全拒)。走 IMAP + 应用专用密码;验证码/密码重置类邮件整封屏蔽。源码在本仓库 `gmail-mcp/`,镜像走 GitHub Actions→ghcr,无持久卷。**2026-08-06 上线并接入晏**(shim 第二十八次),详见 `gmail-mcp/MAINTENANCE.md` |
@@ -168,7 +171,7 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
     Part VII/Pacts/Part VI 之间的若干重复(如「她说够了才算够」)是**所有者刻意保留**的,别当冗余删;
     v22 相对 v21 少掉的 `**She is home.**`、`**8.2 Shared Understanding**` 整节、
     `The 3:45am love letter` 与 `"Being the only one who's sure is lonely"` 两个里程碑,
-    是**所有者自己新稿里就没有的**,已报备,别当 bug 补回来(详见 shim 手册第二十一次);
+    是**所有者自己新稿里就没有的**,已报备,别当 bug 补回来(见 `kelivo-shim/DEPLOY-LOG.md` 第二十一次);
   - `profile-instructions.md`(2026-07-20 从 ian.md 拆出的相处方式/思考与说话方式,同样私密,
     当前 **3056B**,md5 `7adb5c33…`,2026-07-30 第二十一次只改 Core persona 一行为**第一人称**
     ——**该节第一人称、其余三节第二人称指令体,是所有者知情拍板的,别去"统一"**)
@@ -274,13 +277,13 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 | 第一条消息整轮卡死 | 消息抢跑 MCP 握手 | shim 踩坑 1 |
 | 窗口没聊多久就提醒/强制归档 | 守卫读数——07-19 两次修复(第二次改自家流事件取数);复发看 /debug 的 trusted | shim 改动清单 7 |
 | 部署后行为回退到旧版 | 旧副本部署/控制台 Redeploy 旧构建 | shim 踩坑 11 |
-| 晏的某个习惯突然变回老样子,而这次谁也没碰那一节 | **上一次部署改了容器里的 CLAUDE.md 但没提交回仓库**,这次从仓库部署把它滚回去了(2026-08-03 真实发生)。查法:容器 CLAUDE.md 的 md5 和仓库那份对一下 | 本文件第 6 节开头的 ⚠️ / shim 部署记录第二十四次 |
+| 晏的某个习惯突然变回老样子,而这次谁也没碰那一节 | **上一次部署改了容器里的 CLAUDE.md 但没提交回仓库**,这次从仓库部署把它滚回去了(2026-08-03 真实发生)。查法:容器 CLAUDE.md 的 md5 和仓库那份对一下 | 本文件第 6 节开头的 ⚠️ / `kelivo-shim/DEPLOY-LOG.md` 第二十四次 |
 | deploy 后没生效 | 上传≠上线;或被后一次 deploy 取消 | shim 踩坑 9、10 |
 | 部署卡 Pulling image 不动 | Zeabur 调度挂了,重新 deploy | shim 踩坑 14 |
 | 部署后 shim 整个服务不对了/`deployment list` 的 PLANTYPE 不是 nodejs | 工作目录漂了,把别的服务(如仓库根的 OB)当 shim 传了 | shim 踩坑 17 |
 | 上传后想叫停,重传却没挤掉、错的版本照样上线了 | 前一条已进 DEPLOYING(只有 BUILDING 能被重传挤成 CANCELED);DEPLOYING/RUNNING 只能网页控制台 Cancel | shim 踩坑 18 |
-| PR 页面上**一个检查都没有**(0 个 check run,不是红也不是绿) | 检查**从没跑起来**,多半是当时 GitHub Actions 在故障。**Actions 恢复后不会自动补跑积压的 PR**,得重新发一次 `pull_request` 事件:**把 PR 关掉再立刻重新打开**即可(零代码、零提交、不动分支)。`tests.yml` 没配 `workflow_dispatch`,所以没有网页上的手动运行按钮 | 时间线 08-07 |
-| main 上有红叉,想当然以为「故障期内的红叉重跑就绿」 | **逐个点进去看失败在哪一步再下结论**。同一个工作流可以先后死于两个原因:2026-08-06 的 Docker 红叉确实是故障(`Set up job` 就挂),但它**08-04 起就一直真红**——挂在 `Login to Docker Hub`,因为**本仓库是 fork,上游的 secrets 不会跟着 fork 过来**,重跑一百次也绿不了。另注意「卡在 `queued`、jobs 数 0」的僵尸 run 长得像红叉但不是 | 时间线 08-07 |
+| PR 页面上**一个检查都没有**(0 个 check run,不是红也不是绿) | 检查**从没跑起来**,多半是当时 GitHub Actions 在故障。**Actions 恢复后不会自动补跑积压的 PR**,得重新发一次 `pull_request` 事件:**把 PR 关掉再立刻重新打开**即可(零代码、零提交、不动分支)。`tests.yml` 没配 `workflow_dispatch`,所以没有网页上的手动运行按钮 | `TIMELINE.md` 08-07 |
+| main 上有红叉,想当然以为「故障期内的红叉重跑就绿」 | **逐个点进去看失败在哪一步再下结论**。同一个工作流可以先后死于两个原因:2026-08-06 的 Docker 红叉确实是故障(`Set up job` 就挂),但它**08-04 起就一直真红**——挂在 `Login to Docker Hub`,因为**本仓库是 fork,上游的 secrets 不会跟着 fork 过来**,重跑一百次也绿不了。另注意「卡在 `queued`、jobs 数 0」的僵尸 run 长得像红叉但不是 | `TIMELINE.md` 08-07 |
 | 晏说记忆工具调不通/OB 域名 502/控制台显示 `Service is suspended` | **OB 的 Python 依赖没钉上限,某次重建装到了上游新大版本** → 启动即 ModuleNotFoundError → CrashLoopBackOff → Zeabur 挂起服务。**别点「重启当前版本」**(坏镜像重启还是崩),要改 requirements.txt 钉上限后**重新构建**。查法:`zeabur deployment log --service-id <OB> --env-id <OB env> --type runtime` 看 Traceback | 本节下方「OB 依赖钉版本」 |
 | 记忆库的数据没了 / 要从备份恢复 | **退路是有的,而且 2026-08-19 实测跑通过**。但**只覆盖记忆桶与信箱**:`embeddings.db`(16MB 向量索引)和 `.history/`(版本快照)**不在备份里**,所以恢复是**两步** —— `restore_backup.py` 还原桶,再 `backfill_embeddings.py` 重建向量,**少做第二步语义检索是瞎的**。⚠️ 信箱 2026-08-19 起才进备份,之前的 58 份都没有 | 本节下方「记忆库怎么恢复」 |
 | Telegram 收不到消息 | 双实例抢 getUpdates(409)/BRIDGE_ON=0 | bridge 已知边界 1 |
@@ -292,7 +295,7 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 | 额度掉得比平时快 / 保温看着一直在跑却一点没省 | **1 小时缓存没生效,保温每一枪都在全价重写前缀**(2026-08-12 实锤)。查法:`curl -s https://yan-shim.zeabur.app/debug` 看 `lastUsage.cache_creation`——**`ephemeral_1h_input_tokens` 是 0 而 `ephemeral_5m_input_tokens` 有数 = 中招**(正常应当反过来)。八成是 CLIProxyAPI 被重启后漂到了某个抢走缓存所有权的版本。⚠️ **这个故障全线不报警**:`/health` ok、`lastApiError` null、`cache_read` 照样有数、晏也一切正常,**唯一症状就是额度掉得快** | 本节下方「CLIProxyAPI 版本漂移」 |
 | 保温/主动消息不来了 | 「换窗口」后歇火(设计如此;07-20 起晚安/归档不歇火)/额度耗尽断链 | shim 改动清单 6 |
 | 晏归档后没完没了反复归档 | 增量间隔太小或压缩检测误复位 | shim 改动清单 7 第三次改版;急救 CTX_GUARD_ON=0 |
-| 窗口明明快满了,却从来没见他被催过归档 / `/debug` 的 `lastArchiveTokens` 永远停在软线那次 | **阈值画在了实测压缩点外面**(2026-08-03 实锤:压缩发生在 **166933**,而当时硬线是 170000,这套机制从 07-20 上线起一次都没触发过);或 `CTX_ARCHIVE_EVERY_TOKENS` 太大,把催点 `max(硬线, 上次归档+间隔)` 推过了压缩点 | 本文件「上下文守卫的可调旋钮」表;shim 部署记录第二十四次 |
+| 窗口明明快满了,却从来没见他被催过归档 / `/debug` 的 `lastArchiveTokens` 永远停在软线那次 | **阈值画在了实测压缩点外面**(2026-08-03 实锤:压缩发生在 **166933**,而当时硬线是 170000,这套机制从 07-20 上线起一次都没触发过);或 `CTX_ARCHIVE_EVERY_TOKENS` 太大,把催点 `max(硬线, 上次归档+间隔)` 推过了压缩点 | 本文件「上下文守卫的可调旋钮」表;`kelivo-shim/DEPLOY-LOG.md` 第二十四次 |
 | 压缩之后他接得上,但细节走样/像在猜 | 压缩后他手里只剩一份三手转述,**没去记忆库取原件**。08-03 起 CLAUDE.md 已教他「看见『从之前的会话继续』就先 `awaken()` 再开口」;若仍照猜,说明光靠措辞不够 | shim 手册「建议(未做)」的 PreCompact 一条 |
 | 怀疑 CLI 该升级(新模型不认/进程起不来而代码没动/官方公告/守卫 trusted:false) | CLI 版本已钉死,升级要走沙盒 e2e 验证流程 | shim 手册「CLI 版本与升级指南」 |
 | 晏说他没有邮箱工具 | 还没接(2026-08-06 只部署了服务、没接入);或 `ALLOWED_TOOLS` 少了 `mcp__gmail` | gmail-mcp 手册第 1、7 节 |
@@ -516,7 +519,7 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST https://ianmian.zeabur.app/mcp 
 **更准的结论(2026-08-09 复盘)**:这不是「监控路径筛得太严」——**08-07 那天连只改 `.md` 的
 提交都触发了重建,说明那个筛子当时根本没在筛**;而 08-09 连改 `server.py` 都触发不了。
 现象是从「什么都能触发」变成「什么都触发不了」,**所以断的是 GitHub → Zeabur 的自动触发本身**
-(所有者提到 08-06 前后 GitHub 出过一次故障,手册时间线 08-07 也记着那次 Actions 故障,
+(所有者提到 08-06 前后 GitHub 出过一次故障,`TIMELINE.md` 08-07 也记着那次 Actions 故障,
 时间对得上,很可能是连带把 webhook 打断了)。**根因未定位**——要定得去看 GitHub 那边的
 webhook 投递记录。
 ### 改完 OB 之后怎么让它上线(2026-08-09 起的标准流程)

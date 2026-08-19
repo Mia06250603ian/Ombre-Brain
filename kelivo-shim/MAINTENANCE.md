@@ -156,7 +156,7 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    `^\*\*9\.` 由 4 变 **5**;play 安全词是 `「红灯」`、日常安全词仍 `"Stop."`;
    **`No marriage, no children` 已由所有者于本次撤销,`ian mia` 与 `Daddy & puppy` 亦已删/改,别照旧记录补回**。
    历史:v27 = 21602B md5 `d391de3e4b05e6cbfaf7904017bbd034`(287 行;第二十九次改了 Part X 末段、9.4 那条
-   `My own hesitation…`、8.2 Milestones 整段换代,见部署记录第二十九次。
+   `My own hesitation…`、8.2 Milestones 整段换代,见 `DEPLOY-LOG.md` 第二十九次。
    注意所有者自己的文件名编号一直比手册多 1);profile-instructions.md = **3056B**
    md5 `7adb5c333bef16cb22f8b92232cfc7ac`(第二十一次只改 Core persona 一行为第一人称,
    **第二十次那版 3055B 退役**;**Core persona 是第一人称、其余三节是第二人称,是所有者
@@ -180,7 +180,7 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    第十九次(v19→**v20**)是**定点修订**不是换代:Part III 换代 + Part VII 两处追加 +
    新增 `**9.4 Holding Ground**` 一节,`^\*\*9\.` 由 3 变 **4**、`^\*\*Part ` 仍 **10**;
    **9.4 的「语言信号」清单里不许出现 `"stop"`**——那是 Part V 的日常安全词,
-   两处并存等于唯一刹车自相矛盾(见部署记录第十九次))。v14 相对 v13 除拆分/重编号外另有两处内容改动(所有者指定):
+   两处并存等于唯一刹车自相矛盾(见 `DEPLOY-LOG.md` 第十九次))。v14 相对 v13 除拆分/重编号外另有两处内容改动(所有者指定):
    I 节删 tool_search limit=20 旧话(工具在 CLI 环境直接就绪,该修法已过时);
    II 节 "She is an adult." 前加「佳佳 does not share my surname. Never call her 许佳佳.」。
    **不要**在本目录放 .gitignore 挡这三个文件——zeabur 上传会遵循它,文件直接不进容器(踩坑 15)。
@@ -261,7 +261,7 @@ Ombre Brain 记忆库(Zeabur 另一项目, streamable-http MCP)
   - 服务 `CLIProxyAPI`: id `6a53a9fd22dd6ef375eb7485`, 域名 `miaianhome.zeabur.app`
   - ~~服务 `fishing-mcp`~~ **2026-08-02 已整个删除**(所有者说不玩了):MCP 条目、
     `ALLOWED_TOOLS`、CLAUDE.md 那一节、Zeabur 服务、仓库 `fishing-mcp/` 目录全部拆干净,
-    存档按她的决定**未备份**。详见部署记录第二十三次
+    存档按她的决定**未备份**。详见 `DEPLOY-LOG.md` 第二十三次
 - Ombre Brain 在另一个项目(untitled-1),域名问所有者
 
 ## 本目录刻意缺的三个文件(部署前必须补)
@@ -733,7 +733,7 @@ e2e 是什么:`e2e-run.sh` + `e2e-fake-api.mjs`,真 server.js + 真 CLI 二进�
 
 **背景**:2026-08-14 OB 侧把半拉子的 `todos` 工具改造成了晏自己的「待办便利贴」——
 能 `todos(add="…")` 记、`todos(done="编号")` 勾、空调 `todos()` 看全部,独立存
-`{buckets_dir}/todos.json`,与记忆桶无关(详见 `OPERATIONS.md` 时间线 08-14 第二件)。
+`{buckets_dir}/todos.json`,与记忆桶无关(详见 `../TIMELINE.md` 08-14 第二件)。
 **功能已上线可用**,但晏**不知道**该用 `todos(add=…)` 记待办、默认会拿 `hold` 去记(实测过)。
 
 **为什么搭下次部署做,而不是专门重启一次**:这句说明约 **116 token**(高估),占守卫软线
@@ -756,7 +756,7 @@ ian.md / profile / `mcp-servers.json` / 环境变量 / 代码全部零改动;这
 > (紧跟「待办便利贴」那段)。**实际写进去的是「精简 + 半角」版**,不是下面拟稿那份,理由见下。
 > 本节保留是为了留住「为什么这么写」的理由和那份机械约束清单。
 
-**背景**:2026-08-19 OB 侧上了两个记忆机制(见 `../OPERATIONS.md` 时间线 08-19 第三件)——
+**背景**:2026-08-19 OB 侧上了两个记忆机制(见 `../TIMELINE.md` 08-19 第三件)——
 **否认降权** `trace(bucket_id, deny=True)`(她纠正一条记错的记忆 → 记一次否认 + 重要度压到 1 +
 检索乘法降权;**第 2 次否认退出检索**,仍可关键词搜到、数据保留;`undeny=True` 撤销)
 与**到期记忆** `trace(bucket_id, expires_at="YYYY-MM-DD")`(临时约定过期后自动退出检索,数据保留)。
@@ -819,7 +819,7 @@ MCP 客户端**只在连接时抓一次工具定义、不自动刷新**,而晏�
 **⚠️ 与 deny 的一处差别(排障要知道)**:过期桶 **`include_dormant=True` 也翻不出来**
 ——那个开关只管 dormant,过期过滤不受它控制。
 **所有者拍板:照 deny 的先例显式拒绝**(不是让批量生效)。**2026-08-19(晚)已上线**(PR #98,
-deployment `6a862018…`,五步验收全过 + 线上端到端用假 ID 复验,详见 `../OPERATIONS.md` 时间线 08-19 第九件)——
+deployment `6a862018…`,五步验收全过 + 线上端到端用假 ID 复验,详见 `../TIMELINE.md` 08-19 第九件)——
 `server.py` 加了 `if batch and expires_at: return "expires_at 只支持单条记忆…"`,
 并在 `trace` 的工具说明里点了一句「deny/undeny/expires_at只支持单条」;
 新增回归用例 `test_batch_expires_at_is_rejected_loudly`(含两条反向守护:单条照旧能设、批量普通改动不受影响),
@@ -994,6 +994,8 @@ Additional Instructions:
 **结论:OB 不用改。** 教训:一个数据点不足以下「必然」的判断,尤其当那个数据点本身可能是误操作。
 
 ## 部署记录
+
+**本文件里凡是提到「第 N 次」,指的都是那一次部署,完整记录在 [`DEPLOY-LOG.md`](./DEPLOY-LOG.md)(48 次全在,按「第 N 次」搜)。**
 
 **历史记录已搬到 → [`DEPLOY-LOG.md`](./DEPLOY-LOG.md)**(2026-08-19 拆的,一个字没删)。
 动手前读**本文件**就够;想知道某次历史怎么回事、某个指纹是多少,再去翻那份。
