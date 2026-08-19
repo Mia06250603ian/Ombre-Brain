@@ -745,7 +745,8 @@ MCP 客户端**只在连接时抓一次工具定义、不自动刷新**,而晏�
 数据保留、过滤发生在 breath 的三处路径 ✅。
 **⚠️ 与 deny 的一处差别(排障要知道)**:过期桶 **`include_dormant=True` 也翻不出来**
 ——那个开关只管 dormant,过期过滤不受它控制。
-**所有者拍板:照 deny 的先例显式拒绝**(不是让批量生效)。**已改好、已提交,尚未上线** ——
+**所有者拍板:照 deny 的先例显式拒绝**(不是让批量生效)。**2026-08-19(晚)已上线**(PR #98,
+deployment `6a862018…`,五步验收全过 + 线上端到端用假 ID 复验,详见 `../OPERATIONS.md` 时间线 08-19 第九件)——
 `server.py` 加了 `if batch and expires_at: return "expires_at 只支持单条记忆…"`,
 并在 `trace` 的工具说明里点了一句「deny/undeny/expires_at只支持单条」;
 新增回归用例 `test_batch_expires_at_is_rejected_loudly`(含两条反向守护:单条照旧能设、批量普通改动不受影响),
