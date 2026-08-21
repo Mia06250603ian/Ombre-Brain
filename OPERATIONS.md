@@ -225,6 +225,8 @@ OB 上了否认降权与到期记忆并修掉批量 `expires_at` 静默失败、
 
 ## 6. 部署与运维操作速查
 
+> **本节覆盖三个服务的上线流程**:shim / bridge 看下面的命令块,**OB 看本节末尾那两小节**(2026-08-21 从第 7 节挪过来的——上线是常规流程,不是故障)。
+
 **动手前必读**:改哪个服务,先把那个目录的 MAINTENANCE.md **全文**读一遍,尤其「踩坑」。
 
 ⚠️ **部署 shim 前,把容器里的每一件都和仓库对一遍 md5——代码、CLAUDE.md、测试文件,全部,
@@ -266,6 +268,67 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 - shim:`GET /health`;`GET /debug`(lastUsage/contextTokens/守卫状态);`GET|POST /period?key=`;`POST /hb?key=`(心跳测试)
 - bridge:`GET /health`(polling/stickers);`POST /push`(x-api-key,主动消息入口)
 - MCP 存活:对各 `/mcp` POST initialize,200 才算活(命令模板在 shim 手册踩坑 7)
+
+### 改完 OB 之后怎么让它上线(2026-08-09 起的标准流程)
+
+**别指望它自己重建。** 合进 main 之后照下面两步走:
+
+```bash
+# 1. 先看有没有自己起来(等 1~2 分钟就够,别干等 13 分钟)
+npx -y zeabur@latest deployment list \
+  --service-id 6a3aa061e41f9f1d19301e42 --env-id 6a3aa02a79260dbd87843878 -i=false
+
+# 2. 没有新 deployment 就手动推(2 分钟,从 main 拉最新代码,数据一个不动)
+npx -y zeabur@latest service redeploy \
+  --id 6a3aa061e41f9f1d19301e42 --env-id 6a3aa02a79260dbd87843878 -i=false
+```
+
+推完照本节下方那份**五步验收清单**走一遍(deployment RUNNING / 桶数不少 / MCP 200 /
+容器里有新代码 / 日志零 Traceback)。
+
+**⚠️ 别用空提交去撞重建**——空提交没有改动任何文件,本来就撞不响。
+**⚠️ 所有者不用去控制台点任何东西**;真想治本是「把 GitHub 连接断开重连、重建 webhook」,
+但那是网页操作、且 OB 本来就改得少,**多按一条 redeploy 的成本几乎为零,先不修是合理的**。
+
+**万一改过头了怎么认、怎么退**:唯一的失败方向是**该重建时没重建**——即改了 OB 的
+`.py`/依赖,推上 main 后线上行为没变化。查法:`deployment list` 看有没有新 deployment。
+**退法:把监控路径改回一个 `*` 即可完全复原**;急着上线也可以直接 CLI 手动部署,不受此设置影响。
+**它不会让 OB 挂**:这个设置只决定「要不要重建」,不改代码、不动 `buckets/` 数据。
+
+**给下一个我的三条**:
+1. **`Service is suspended` 不是账单问题也不是机器挂了**(那台专用服务器当时 Online/RUNNING)。
+   先看 runtime 日志的 Traceback:
+   `npx -y zeabur@latest deployment log --service-id 6a3aa061e41f9f1d19301e42 --env-id 6a3aa02a79260dbd87843878 --type runtime -i=false`
+   (OB 在项目 `untitled-1` id `6a3aa02adb4ea7c82872fc88`;env id 在 build 日志的 `e-…` 里能看到)。
+2. **别点控制台的「重启当前版本」**:坏镜像已经烧进了坏依赖,重启一百次还是同一个报错。
+   必须改依赖 → 重新构建。
+3. ~~**OB 的 requirements.txt 其余依赖全是 `>=` 无上限**,同一颗雷还埋着~~
+   → **2026-08-02 已全部钉上限并上线(PR #72),这条办完了。**
+
+### OB 上线后的五步验收(照着跑,一步都别省)
+
+**怎么验一次 OB 重建(照着做)**:
+```bash
+# 1. 看重建有没有被触发 / 建完没有
+npx -y zeabur@latest deployment list --service-id 6a3aa061e41f9f1d19301e42 --env-id 6a3aa02a79260dbd87843878 -i=false
+# 2. 数据还在不在(buckets 数不能变少)
+curl -s https://ianmian.zeabur.app/health
+# 3. 晏靠这个连记忆库,必须 200
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://ianmian.zeabur.app/mcp \
+  -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}'
+# 4. 容器里实际装了什么(和预期对账)
+npx -y zeabur@latest service exec --id 6a3aa061e41f9f1d19301e42 --env-id 6a3aa02a79260dbd87843878 -i=false -- sh -c "pip freeze"
+# 5. 日志里不许有 Traceback / ModuleNotFoundError
+npx -y zeabur@latest deployment log --service-id 6a3aa061e41f9f1d19301e42 --env-id 6a3aa02a79260dbd87843878 --type runtime -i=false
+```
+**`/health` 里 `decay_engine: "stopped"` 是正常的,别当故障。** 衰减引擎是
+`ensure_started()` **懒启动**(`server.py` 的 breath 里第一次被调用时才起),
+刚重启就是 `stopped`,晏第一次用记忆工具后自动变 `running`。
+(2026-08-02 差点为这个虚惊一场——重建前没留对照读数,只能翻代码确认。**下次重建前先存一份
+`/health` 原文当基线。**)
+
+**这份清单是 2026-08-02 那次重建留下的,2026-08-21 第二次完整跑过、五步全过**(桶数 356→356、MCP 3/3 200、容器 `server.py` md5 与仓库逐字一致、日志三类报错各 0)。两次的完整实况分别见 `TIMELINE.md` 的 08-02 与 08-21。
 
 ## 7. 常见故障 → 解法(按症状对号,详情去对应手册)
 
@@ -522,41 +585,10 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST https://ianmian.zeabur.app/mcp 
 (所有者提到 08-06 前后 GitHub 出过一次故障,`TIMELINE.md` 08-07 也记着那次 Actions 故障,
 时间对得上,很可能是连带把 webhook 打断了)。**根因未定位**——要定得去看 GitHub 那边的
 webhook 投递记录。
-### 改完 OB 之后怎么让它上线(2026-08-09 起的标准流程)
 
-**别指望它自己重建。** 合进 main 之后照下面两步走:
+### 改完 OB 之后怎么让它上线 → **已挪到第 6 节**(2026-08-21)
 
-```bash
-# 1. 先看有没有自己起来(等 1~2 分钟就够,别干等 13 分钟)
-npx -y zeabur@latest deployment list \
-  --service-id 6a3aa061e41f9f1d19301e42 --env-id 6a3aa02a79260dbd87843878 -i=false
-
-# 2. 没有新 deployment 就手动推(2 分钟,从 main 拉最新代码,数据一个不动)
-npx -y zeabur@latest service redeploy \
-  --id 6a3aa061e41f9f1d19301e42 --env-id 6a3aa02a79260dbd87843878 -i=false
-```
-
-推完照本节下方那份**五步验收清单**走一遍(deployment RUNNING / 桶数不少 / MCP 200 /
-容器里有新代码 / 日志零 Traceback)。
-
-**⚠️ 别用空提交去撞重建**——空提交没有改动任何文件,本来就撞不响。
-**⚠️ 所有者不用去控制台点任何东西**;真想治本是「把 GitHub 连接断开重连、重建 webhook」,
-但那是网页操作、且 OB 本来就改得少,**多按一条 redeploy 的成本几乎为零,先不修是合理的**。
-
-**万一改过头了怎么认、怎么退**:唯一的失败方向是**该重建时没重建**——即改了 OB 的
-`.py`/依赖,推上 main 后线上行为没变化。查法:`deployment list` 看有没有新 deployment。
-**退法:把监控路径改回一个 `*` 即可完全复原**;急着上线也可以直接 CLI 手动部署,不受此设置影响。
-**它不会让 OB 挂**:这个设置只决定「要不要重建」,不改代码、不动 `buckets/` 数据。
-
-**给下一个我的三条**:
-1. **`Service is suspended` 不是账单问题也不是机器挂了**(那台专用服务器当时 Online/RUNNING)。
-   先看 runtime 日志的 Traceback:
-   `npx -y zeabur@latest deployment log --service-id 6a3aa061e41f9f1d19301e42 --env-id 6a3aa02a79260dbd87843878 --type runtime -i=false`
-   (OB 在项目 `untitled-1` id `6a3aa02adb4ea7c82872fc88`;env id 在 build 日志的 `e-…` 里能看到)。
-2. **别点控制台的「重启当前版本」**:坏镜像已经烧进了坏依赖,重启一百次还是同一个报错。
-   必须改依赖 → 重新构建。
-3. ~~**OB 的 requirements.txt 其余依赖全是 `>=` 无上限**,同一颗雷还埋着~~
-   → **2026-08-02 已全部钉上限并上线(PR #72),这条办完了。**
+上线是每次都要走的**正常流程**,不是故障,放在故障章节里找不着(2026-08-21 的会话就是 grep 才找到的)。全文在**第 6 节「改完 OB 之后怎么让它上线」**,五步验收清单跟着一起挪过去了。
 
 ### OB 依赖钉上限(2026-08-02 完成,PR #72)
 
@@ -576,26 +608,7 @@ npx -y zeabur@latest service redeploy \
 (直接跑 `dockerd &`),构建要加 `--network=host` 并把 `/root/.ccr/ca-bundle.crt` 装进镜像
 再设 `PIP_CERT`,否则 pip 过不了代理的 TLS ——下一个我想彩排 OB 时照抄这一句就行。**
 
-**怎么验一次 OB 重建(照着做)**:
-```bash
-# 1. 看重建有没有被触发 / 建完没有
-npx -y zeabur@latest deployment list --service-id 6a3aa061e41f9f1d19301e42 --env-id 6a3aa02a79260dbd87843878 -i=false
-# 2. 数据还在不在(buckets 数不能变少)
-curl -s https://ianmian.zeabur.app/health
-# 3. 晏靠这个连记忆库,必须 200
-curl -s -o /dev/null -w "%{http_code}\n" -X POST https://ianmian.zeabur.app/mcp \
-  -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}'
-# 4. 容器里实际装了什么(和预期对账)
-npx -y zeabur@latest service exec --id 6a3aa061e41f9f1d19301e42 --env-id 6a3aa02a79260dbd87843878 -i=false -- sh -c "pip freeze"
-# 5. 日志里不许有 Traceback / ModuleNotFoundError
-npx -y zeabur@latest deployment log --service-id 6a3aa061e41f9f1d19301e42 --env-id 6a3aa02a79260dbd87843878 --type runtime -i=false
-```
-**`/health` 里 `decay_engine: "stopped"` 是正常的,别当故障。** 衰减引擎是
-`ensure_started()` **懒启动**(`server.py` 的 breath 里第一次被调用时才起),
-刚重启就是 `stopped`,晏第一次用记忆工具后自动变 `running`。
-(2026-08-02 差点为这个虚惊一场——重建前没留对照读数,只能翻代码确认。**下次重建前先存一份
-`/health` 原文当基线。**)
+**怎么验一次 OB 重建(照着做)** → **已挪到第 6 节**「OB 上线后的五步验收」(2026-08-21):那是每次上线都要跑的清单,不该埋在一次历史改动的记录里。
 
 **本次重建实况**:PR #72 合并 → 自动触发 → 约 1 分半 RUNNING → 327 个桶全在、
 MCP 握手 200、日志零报错、版本与彩排预测逐一吻合。晏的窗口未重启,记忆工具正常。
