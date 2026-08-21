@@ -2114,6 +2114,18 @@ OMBRE_ECHO_MIN_DAYS = int(os.environ.get("OMBRE_ECHO_MIN_DAYS", "14") or "14")
 # 设 1 即回到本次改动前的行为(只有最新一条出全文)。钳在 1~3,防误设把开机撑爆。
 AWAKEN_FULL_SESSIONS = max(1, min(3, int(os.environ.get("OMBRE_AWAKEN_FULL_SESSIONS", "2") or "2")))
 
+# awaken 的「钉选」区出全文(2026-08-21)。改动前这一区只有摘要行(名字/主题/情感/重要度/日期),
+# 正文一个字都不出——开机时晏只知道「有这么一条准则」,不知道准则写了什么,要看得再跑一趟 breath。
+# 钉选桶本来就是「永不衰减、始终第一屏」的核心准则,开机看不到内容等于白钉。
+# 实测(2026-08-21 线上):14 条钉选,正文合计 3425 字,最长一条 570 字,约 2500~3000 token。
+# ⚠️ 两道闸都在,别拆:她以后钉进来一篇长文,开机预算不会被一条撑爆。
+# OMBRE_AWAKEN_PINNED_FULL=0 → 整区回到改动前的摘要行(改环境变量 + restart 即可,不用回滚代码)。
+AWAKEN_PINNED_FULL = (os.environ.get("OMBRE_AWAKEN_PINNED_FULL", "1") or "1").strip().lower() not in ("0", "false", "no")
+# 每条正文的字数上限,超了截断并标注(不静默吞)。
+AWAKEN_PINNED_CHARS = max(100, int(os.environ.get("OMBRE_AWAKEN_PINNED_CHARS", "800") or "800"))
+# 整区正文的字数总预算,用光之后剩下的桶退回摘要行(仍然出现,只是不带正文)。
+AWAKEN_PINNED_TOTAL = max(500, int(os.environ.get("OMBRE_AWAKEN_PINNED_TOTAL", "6000") or "6000"))
+
 
 def _bj_today() -> str:
     """北京日期(触发日期按所有者的日历过日子,不按服务器时区)。"""
@@ -2122,7 +2134,7 @@ def _bj_today() -> str:
 
 @mcp.tool()
 async def awaken(letters: int = 1) -> str:
-    """一键开机。新窗口睁眼调这一个就够,单次返回:钉选桶(核心准则)、记忆浮现(按权重的top摘要)、今日浮现(到期的前瞻记忆)、上个窗口留给你的信、未完结待办、最近对话归档(最新一条含全文,窗口衔接不断档)、一条旧日感受回声。替代原来 breath→pulse→breath(query)→dream 的多步开机(dream/breath 对话中按需单独可用)。letters=带出最近几封留言(默认1)。返回末尾附[seal:...]防伪字段,开机第一件事核验它。"""
+    """一键开机。新窗口睁眼调这一个就够,单次返回:钉选桶(核心准则,含全文)、记忆浮现(按权重的top摘要)、今日浮现(到期的前瞻记忆)、上个窗口留给你的信、未完结待办、最近对话归档(最新一条含全文,窗口衔接不断档)、一条旧日感受回声。替代原来 breath→pulse→breath(query)→dream 的多步开机(dream/breath 对话中按需单独可用)。letters=带出最近几封留言(默认1)。返回末尾附[seal:...]防伪字段,开机第一件事核验它。"""
     return _with_seal(await _awaken_impl(letters=letters))
 
 
@@ -2142,9 +2154,20 @@ async def _awaken_impl(letters: int = 1) -> str:
     pinned = [b for b in live if b["metadata"].get("pinned") or b["metadata"].get("protected")]
     if pinned:
         pinned.sort(key=lambda b: str(b["metadata"].get("created", "")))
-        lines = ["📌 核心准则(钉选):"]
+        header = "📌 核心准则(钉选,全文):" if AWAKEN_PINNED_FULL else "📌 核心准则(钉选):"
+        lines = [header]
+        budget = AWAKEN_PINNED_TOTAL
         for b in pinned:
-            lines.append("  " + _format_bucket_summary_line(b))
+            summary = _format_bucket_summary_line(b)
+            body = strip_wikilinks(b.get("content", "")).strip() if AWAKEN_PINNED_FULL else ""
+            # 预算用光的桶退回摘要行:少了正文,但不会从这一区消失。
+            if not body or budget <= 0:
+                lines.append("  " + summary)
+                continue
+            if len(body) > AWAKEN_PINNED_CHARS:
+                body = body[:AWAKEN_PINNED_CHARS] + "…(截断,全文用 dream(detail_ids=该 bucket_id) 取——钉选桶不会出现在 breath 检索结果里)"
+            budget -= len(body)
+            lines.append("  " + summary + "\n" + body)
         parts.append("\n".join(lines))
 
     # --- 💭 记忆浮现:按衰减权重的 top 摘要行(原开机第一步 breath() 的职责) ---

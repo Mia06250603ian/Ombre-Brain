@@ -15,6 +15,10 @@
 | `OMBRE_MODEL` | 否 | — | `OMBRE_DEHYDRATION_MODEL` 的别名（前者优先） |
 | `OMBRE_EMBEDDING_MODEL` | 否 | `gemini-embedding-001` | 向量嵌入模型名（覆盖 `embedding.model`） |
 | `OMBRE_EMBEDDING_BASE_URL` | 否 | — | 向量嵌入的 API Base URL（覆盖 `embedding.base_url`；留空则复用脱水配置） |
+| `OMBRE_AWAKEN_FULL_SESSIONS` | 否 | `2` | awaken 的「最近对话归档」区出全文的条数（钳在 1~3）。默认 2 = 日记桶 + 原话桶各一条 |
+| `OMBRE_AWAKEN_PINNED_FULL` | 否 | `1` | awaken 的「钉选」区是否出正文全文（2026-08-21）。设 `0` 回到只出摘要行的旧行为——**急救开关**，改值 + restart 即生效 |
+| `OMBRE_AWAKEN_PINNED_CHARS` | 否 | `800` | 钉选区**每条**正文的字数上限，超出截断并标注（下限 100） |
+| `OMBRE_AWAKEN_PINNED_TOTAL` | 否 | `6000` | 钉选区**整区**正文的字数总预算，用光后剩余的桶退回摘要行（仍列出，只是不带正文；下限 500） |
 
 ## 说明
 

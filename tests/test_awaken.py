@@ -175,3 +175,61 @@ class TestAwakenSections:
     async def test_awaken_tool_carries_seal(self, srv):
         boot = await srv.awaken()
         assert boot.rstrip().endswith("[seal:测试暗语]")
+
+
+def _reload_srv(tmp_path, monkeypatch, **env):
+    """和 srv fixture 同一套隔离环境,但可以先设环境变量再 reload。
+    (钉选全文的三个旋钮是 import 时读的,必须在 reload 之前设。)"""
+    bd = str(tmp_path / "buckets2")
+    for d in ["permanent", "dynamic", "archive", "feel"]:
+        os.makedirs(os.path.join(bd, d), exist_ok=True)
+    monkeypatch.setenv("OMBRE_BUCKETS_DIR", bd)
+    monkeypatch.setenv("OMBRE_SEAL_WORD", "测试暗语")
+    monkeypatch.delenv("OMBRE_CONFIG_PATH", raising=False)
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    import utils, server
+    importlib.reload(utils)
+    return importlib.reload(server)
+
+
+class TestAwakenPinnedFullText:
+    """2026-08-21:awaken 的钉选区从「一行摘要」改成「摘要行 + 正文全文」。
+    钉选桶是永不衰减的核心准则,开机看不到内容等于白钉。"""
+
+    @pytest.mark.asyncio
+    async def test_pinned_body_shows_in_awaken(self, srv):
+        pid = await _mk(srv, "陪着她就好,别急着讲道理", name="陪伴与倾听",
+                        bucket_type="permanent", pinned=True)
+        boot = await srv._awaken_impl()
+        assert "核心准则(钉选,全文)" in boot
+        assert pid in boot
+        assert "陪着她就好,别急着讲道理" in boot  # 正文必须在,不是只有标题
+
+    @pytest.mark.asyncio
+    async def test_long_pinned_is_truncated(self, tmp_path, monkeypatch):
+        srv2 = _reload_srv(tmp_path, monkeypatch, OMBRE_AWAKEN_PINNED_CHARS="100")
+        await _mk(srv2, "长" * 500, name="超长准则", bucket_type="permanent", pinned=True)
+        boot = await srv2._awaken_impl()
+        assert "截断" in boot
+        assert boot.count("长") <= 160  # 远小于 500,确实截住了
+
+    @pytest.mark.asyncio
+    async def test_total_budget_falls_back_to_summary(self, tmp_path, monkeypatch):
+        """整区预算用光之后,剩下的桶退回摘要行——少正文,但不许从这一区消失。"""
+        srv2 = _reload_srv(tmp_path, monkeypatch, OMBRE_AWAKEN_PINNED_TOTAL="500")
+        first = await _mk(srv2, "甲" * 600, name="第一条", bucket_type="permanent", pinned=True)
+        second = await _mk(srv2, "乙" * 600, name="第二条", bucket_type="permanent", pinned=True)
+        boot = await srv2._awaken_impl()
+        assert first in boot and second in boot   # 两条都还在
+        assert "乙" not in boot                    # 第二条的正文被预算挡住了
+
+    @pytest.mark.asyncio
+    async def test_switch_off_returns_to_summary_lines(self, tmp_path, monkeypatch):
+        """OMBRE_AWAKEN_PINNED_FULL=0 是急救开关:整区回到改动前的摘要行。"""
+        srv2 = _reload_srv(tmp_path, monkeypatch, OMBRE_AWAKEN_PINNED_FULL="0")
+        pid = await _mk(srv2, "这段正文不该出现在开机里", name="准则甲",
+                        bucket_type="permanent", pinned=True)
+        boot = await srv2._awaken_impl()
+        assert "📌 核心准则(钉选):" in boot and pid in boot
+        assert "这段正文不该出现在开机里" not in boot

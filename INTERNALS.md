@@ -37,7 +37,7 @@
 - resolved 桶全局降权 ×0.3
 
 **一键开机 + 信箱 + 前瞻记忆 + 感受回声（2026-07-18 活物批）**
-- `awaken()`：开机聚合工具，七个区块（钉选摘要行/记忆浮现按衰减权重 top8/今日浮现/信箱/待办/最近 3 条归档——**最新一条含全文以保窗口衔接**/感受回声）+ seal，全部纯本地扫描零 LLM 调用，完整覆盖原 breath→pulse→breath(query)→dream 四步开机
+- `awaken()`：开机聚合工具，七个区块（钉选**含正文全文**（2026-08-21 起；此前只有摘要行）/记忆浮现按衰减权重 top8/今日浮现/信箱/待办/最近 3 条归档——**最新一条含全文以保窗口衔接**/感受回声）+ seal，全部纯本地扫描零 LLM 调用，完整覆盖原 breath→pulse→breath(query)→dream 四步开机
 - **信箱**：`archive_session(letter=...)` 把嘱托写进 `{buckets_dir}/letters.jsonl`（随卷持久，jsonl 追加，历史全留），awaken 带出最新一封（`letters=N` 可多看）
 - **前瞻记忆**：桶元数据新增 `trigger_date` / `trigger_handled`；`hold(trigger_date=…)` 或 `trace(trigger_date=…)` 设置，`trace(trigger_date="done"/"clear")` 处理/移除；awaken 的今日浮现列出到期与过期未处理的（含归档区），北京日历
 - **感受回声**：awaken 从创建超过 `OMBRE_ECHO_MIN_DAYS` 天的 feel 桶随机抽一条附日期，刻意不去重
@@ -92,7 +92,7 @@
 |---|---|---|
 | `breath` | query, max_tokens, domain, valence, arousal, max_results, **importance_min** | 检索/浮现记忆 |
 | `hold` | content, tags, importance, pinned, feel, source_bucket, valence, arousal, **trigger_date** | 存储记忆;trigger_date=YYYY-MM-DD 设前瞻记忆 |
-| `awaken` | letters | **一键开机**(2026-07-18):单次返回钉选/记忆浮现/今日浮现/信箱留言/待办/最近归档(最新含全文)/感受回声,替代原四步开机,末尾附 seal |
+| `awaken` | letters | **一键开机**(2026-07-18):单次返回钉选(含全文,2026-08-21)/记忆浮现/今日浮现/信箱留言/待办/最近归档(最新含全文)/感受回声,替代原四步开机,末尾附 seal |
 | `todos` | （无） | 汇总未完结待办 |
 | `archive_session` | summary, highlights, mood, valence, arousal, **letter** | 归档对话;letter=给下个窗口的留言(信箱) |
 | `grow` | content | 日记拆分归档 |
@@ -210,6 +210,10 @@
 | `OMBRE_DASHBOARD_PASSWORD` | 预设 Dashboard 访问密码；设置后覆盖文件密码，首次访问不弹设置向导 | 否 | `""` |
 | `OMBRE_SEAL_WORD` | 返回通道防伪暗语（2026-07-18）。breath/dream/awaken 返回末尾附 `[seal:<暗语>]`，AI 侧使用说明要求核验；只存环境变量，不进代码/数据库/备份。未设置时输出明显异常提示而非留空 | 否 | `""` |
 | `OMBRE_ECHO_MIN_DAYS` | 感受回声的最小年龄天数：awaken 只从存在超过此天数的 feel 里随机抽一条 | 否 | `14` |
+| `OMBRE_AWAKEN_FULL_SESSIONS` | awaken「最近对话归档」区出全文的条数，钳在 1~3（2026-08-09） | 否 | `2` |
+| `OMBRE_AWAKEN_PINNED_FULL` | awaken「钉选」区是否出正文全文（2026-08-21）。设 `0` 整区回到旧的摘要行行为（急救开关，不用回滚代码） | 否 | `1`（开） |
+| `OMBRE_AWAKEN_PINNED_CHARS` | 钉选区每条正文字数上限，超出截断并标注（下限 100） | 否 | `800` |
+| `OMBRE_AWAKEN_PINNED_TOTAL` | 钉选区整区正文字数总预算，用光后剩余桶退回摘要行（下限 500） | 否 | `6000` |
 
 环境变量优先级：`环境变量 > config.yaml > 硬编码默认值`。所有环境变量在 `utils.py` 中读取并注入 config dict。
 
