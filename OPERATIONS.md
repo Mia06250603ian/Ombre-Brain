@@ -733,20 +733,84 @@ MCP 握手 200、日志零报错、版本与彩排预测逐一吻合。晏的窗
 | `gmail-mcp/` | 文件夹 + `.github/workflows/build-gmail-image.yml` 一起搬,**并在新仓库里把 Actions 打开**。镜像名不变(`ghcr.io/mia06250603ian/gmail-mcp`)的话 Zeabur 不用改 | 🟡 最容易漏 |
 | `browser-hands/` | 只有一份手册,挪进 `Mia06250603ian/browser-hands` 即可 | 🟢 |
 | **根目录(OB)** | **不搬。** 它是本仓库的主人:Zeabur 从 main 拉、`daily-backup.yml`、`tests.yml` 都挂在它身上 | ⚪ |
+| **`.github/workflows/healthcheck.yml`<br>+ `.github/scripts/healthcheck.py`** | **两边都要。** 它一个脚本同时体检 **OB + shim + bridge 三家**(2026-08-21 查出,原第 10 节漏了这条)。**拆成两份**:OB 那份只留 OB 的检查,新仓库那份留 shim/bridge 的。⚠️ 别整个搬走 —— 那样 OB 就没看门狗了;也别原样留下 —— 那样 OB 仓库里还带着 shim 的域名,「公开 OB」这个拆分动机就白费了 | 🟡 **最容易漏的第二名** |
 
 ### 收尾(真正花时间的部分)
 
-1. **改文档里的指路**。2026-08-21 数过:别处提到 `kelivo-shim/` **54 次**、`telegram-bridge/` 16 次、
-   `gmail-mcp/` 5 次、`dwell-bridge/` 4 次、`browser-hands/` 6 次;各服务手册反过来提根目录文档 17 次。
-   **搬之前现场再数一遍**(数字会变):
+1. **改指路 —— 先跑命令现场量,别信写死的数。**
+
+   ⚠️ **本条原文(2026-08-21 早些时候写的)已撤销,别照它估工作量。** 原文是:
+   「别处提到 `kelivo-shim/` **54 次**、`telegram-bridge/` 16 次、`gmail-mcp/` 5 次、
+   `dwell-bridge/` 4 次、`browser-hands/` 6 次;各服务手册反过来提根目录文档 17 次」,
+   配一段 `for d in ...` 的循环。**那个算法把「总提及数」当成了工作量,高估了五倍以上。**
+   错在哪:那些提及里**八成躺在 `OPERATIONS.md` / `TIMELINE.md` / `START-HERE.md` 三份全局手册里**,
+   而这三份**本来就要跟着服务一起搬去新仓库** —— 一起搬,相对路径原地有效,**一个字都不用改**。
+   (同日用原文那个旧算法复量:**108 处**,而原文记的是 85 处 —— 数本身当天就已经过期;
+   但**真正要改的行数六周几乎没动**,见下。这正是规矩 4 说的「别让下一个人拿快照当现状」。)
+
+   **真正要改的,只有「跨界」的两类:** ①留在 OB 这边、却指向搬走的东西;②搬走了、却指回 OB 自己的文档。
+   **这两类必须现场量,别抄下面的数**(规矩 4)。量法:
+
    ```bash
-   for d in kelivo-shim telegram-bridge gmail-mcp dwell-bridge browser-hands; do
-     echo "$d: $(grep -rn "$d/" --include='*.md' . | grep -v "^./$d/" | grep -v '^./.git' | wc -l) 处"
-   done
+   # 在仓库根目录跑。STAY = 留守 OB 的文件;MOVE = 要搬走的目录与文档。
+   # ⚠️ 拆分方案变了就改这两行(尤其 TIMELINE.md 归哪边,见下一条)。
+   STAY="README.md INTERNALS.md ENV_VARS.md BEHAVIOR_SPEC.md CLAUDE_PROMPT.md server.py .github/scripts/healthcheck.py"
+   MOVE="OPERATIONS.md START-HERE.md TIMELINE.md kelivo-shim telegram-bridge gmail-mcp dwell-bridge browser-hands docs"
+   SVC='kelivo-shim|telegram-bridge|gmail-mcp|dwell-bridge|browser-hands|yan-shim|yan-telegram-bridge|yan-gmail|yan-dwell|yan-browser|OPERATIONS\.md|START-HERE\.md|TIMELINE\.md'
+   OBDOC='INTERNALS\.md|BEHAVIOR_SPEC\.md|ENV_VARS\.md'
+
+   echo "── A:留守 OB 的文件 → 指向要搬走的东西 ──"
+   grep -nE "$SVC" $STAY
+   echo "── B:要搬走的文件 → 指回 OB 自己的文档 ──"
+   grep -rnE "$OBDOC" --include='*.md' $MOVE
    ```
-2. **`TIMELINE.md` 怎么办 —— 拆之前必须先跟所有者定。** 它记的是**全系统**的历史
+
+   **2026-08-21 实测:A=8 行、B=12 行(已扣自指),合计 20 行。**
+   (A 的 8 行:`README.md:11`、`INTERNALS.md:222`、`server.py:2112`、
+   `.github/scripts/healthcheck.py` 5 处。B 的 12 行:`OPERATIONS.md` 6、`START-HERE.md` 2、
+   `TIMELINE.md` 3、`kelivo-shim/DEPLOY-LOG.md` 1。)
+
+   **这个数会变,以命令当场跑出来的为准 —— 本节自己就是活例子:**
+   写这节时先量到 **19 行**,写完往 `TIMELINE.md` 补了一条档案、那条档案里引用了 `INTERNALS.md`,
+   **当场变成 20 行**。**一次普通的写文档就能让它 +1。所以永远别抄这个数,跑命令。**
+
+   ⚠️ **自检时必然遇到的一个假象:本节自己会被命令数进去。** 上面那段命令文本和实测记录里
+   就写着 `INTERNALS.md` 等文件名,所以 B 的结果里会混进几行 `OPERATIONS.md:` ——
+   **凡是行号落在第 10 节(本节)范围内的,都是自指,不是真指路,一律扣掉。**
+   2026-08-21 写完本节后照命令跑:**B 原始 14 行,其中 3 行是本节自指,扣掉后 11 行**,与上面记的数吻合。
+   要自动扣掉,在 B 那条后面接一段:
+
+   ```bash
+   S10=$(grep -n '^## 10\.' OPERATIONS.md | cut -d: -f1)   # 第 10 节起始行
+   grep -rnE "$OBDOC" --include='*.md' $MOVE \
+     | awk -F: -v s="$S10" '!($1=="OPERATIONS.md" && $2>=s)'
+   ```
+
+   **⚠️ 这条命令的两个已知上限,别当它万能:**
+   - **只抓写了文件名/域名的指路。** 有人写「见根目录的运维手册」而没写 `OPERATIONS.md`,**它抓不到**。
+     (2026-08-21 手工复查过一遍,当时没有这种写法;以后拆之前值得再手工扫一眼。)
+   - **只回答「要改几行字」,不回答「拆要花多久」。** 建仓库、搬 workflow、开 Actions、
+     **四个服务各部署验收一遍** —— 那才是半天里的大头,和本数无关,也不会因为拖久了变贵。
+
+   **六周趋势(2026-08-21 用 `git rev-list --before` 逐周回查):总提及 13 → 46(涨 3.5 倍),
+   但跨界行数 4 → 5(六周只多 1 行)。** 结论:**这件事不是滴答作响的炸弹,拖着不会变贵**;
+   唯一会让它变贵的是**新增服务**(每加一个约多 2~3 行)和**下一条那个归属决定**。
+
+2. **`TIMELINE.md` 归哪边 —— 拆分前的头号问题,必须先跟所有者定,它一个人就能让工作量翻三倍。**
+   **(2026-08-21 量过:跟着搬 → 合计 20 行;留在 OB → `TIMELINE.md` 那 34 处对服务目录的引用当场全部变成跨界,合计约 54 行,而且它还在以每周 5~8 条的速度长 —— 这是本仓库唯一在长的耦合。)** 它记的是**全系统**的历史
    (shim 部署 / OB 改动 / bridge 功能混在同一条时间线上)。**抄一份到每个新仓库是错的**
-   (重复的文档必烂,见第 9 节规矩 1);**建议留在本仓库,新仓库只留一行指路。**
+   (重复的文档必烂,见第 9 节规矩 1)。
+
+   **两个要求正面打架,所以这条至今没定,别当它已有结论:**
+   - **留在 OB**(原文的建议):不重复、不烂,但 `TIMELINE.md` 里全是 shim 的服务 ID、
+     域名、部署细节 —— **「公开 OB」这个拆分动机当场作废**,而那正是最可能触发拆分的理由。
+   - **跟着搬走**:动机保住了、工作量最小(2026-08-21 实测 20 行),但 OB 那边的历史只剩一行指路,
+     翻 OB 自己的旧事得跑去另一个仓库。
+   - (第三条路:**按主题劈成两份**。没人试过,劈的时候一定会有「一条记录同时讲两边」的,
+     成本没量过,**别在没量之前把它当省事的选项**。)
+
+   ⚠️ **上面那条 `STAY/MOVE` 命令默认 `TIMELINE.md` 是搬走的。所有者要是定成留下,
+   把它从 `MOVE` 挪到 `STAY` 再跑一次** —— 数会从 20 跳到 50 上下。
 3. **新仓库要重新接**:Claude 的 GitHub 访问权限、必要的 CI、健康检查。
 4. **搬完逐条验**:每个服务各部署一次并跑它自己的验收(shim 走《部署检查单》,
    OB 走 `OPERATIONS.md` 第 6 节的五步验收),别只看 `/health`。
@@ -755,5 +819,6 @@ MCP 握手 200、日志零报错、版本与彩排预测逐一吻合。晏的窗
 
 - **技术上没在咬人**:代码零跨目录依赖;07-30 收窄监控路径之后,
   改 shim / 文档**不会误触发 OB 重建**(08-21 又验证一次:**合了两个纯文档 PR(#102 / #103),OB 一次都没重建**——线上跑的仍是当天手动 redeploy 的那份)。
-- **拆完只换来「看着整齐」**,却要重接线、改上百条指路,**风险主要是漏**。
+- **拆完只换来「看着整齐」**,却要重接线、逐个服务重新部署验收,**风险主要是漏**。
+  (⚠️ 本行原文写「改上百条指路」,**已撤销** —— 那是把总提及数当工作量,实际是 20 行(2026-08-21 实测),见上面收尾第 1 条。)
 - 所有者真正的痛点是「打开仓库不知道里面有什么」—— 那个由**本文这张地图**解决,成本几乎为零。
