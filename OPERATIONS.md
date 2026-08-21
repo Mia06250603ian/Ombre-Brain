@@ -21,7 +21,8 @@
 ## 开场指令(佳佳直接复制这段发给新会话)
 
 ```
-先读仓库根目录的 OPERATIONS.md,读到第 4 节为止就可以开工;
+先读仓库根目录的 START-HERE.md(很短,讲清这仓库里躺着五个服务、各看各的手册),
+再读 OPERATIONS.md,读到第 4 节为止就可以开工;
 第 5 节起是速查和故障表,按症状对号再看。历史流水不用开场读——
 功能时间线在 TIMELINE.md、shim 的历次部署记录在 kelivo-shim/DEPLOY-LOG.md,
 需要查某段历史时再翻。
@@ -158,7 +159,10 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
 
 ## 3. GitHub 仓库
 
-- **Mia06250603ian/Ombre-Brain**(本仓库,Gitea 备份见 README):
+- **Mia06250603ian/Ombre-Brain**(本仓库,Gitea 备份见 README)。
+  **根目录 `START-HERE.md` 是这个仓库的门口地图**(2026-08-21 新增):五个目录分别是什么、
+  各自的手册在哪、三条铁规矩、以及**为什么不叫 `CLAUDE.md`**(那名字是晏的人设占着的)。
+  新会话开工前先读它。
   - 根目录 = OB 记忆库本体(Python/FastMCP)。文档:`README.md`(用法)、`INTERNALS.md`(内部机制)、`ENV_VARS.md`、`BEHAVIOR_SPEC.md`。
   - `kelivo-shim/` = shim 源码 + **`MAINTENANCE.md`(shim 一切细节的唯一可信手册)**。
   - `telegram-bridge/` = 桥源码 + **`MAINTENANCE.md`(桥的手册)** + `stickers/` 表情包
