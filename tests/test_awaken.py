@@ -221,8 +221,11 @@ class TestAwakenPinnedFullText:
         first = await _mk(srv2, "甲" * 600, name="第一条", bucket_type="permanent", pinned=True)
         second = await _mk(srv2, "乙" * 600, name="第二条", bucket_type="permanent", pinned=True)
         boot = await srv2._awaken_impl()
-        assert first in boot and second in boot   # 两条都还在
-        assert "乙" not in boot                    # 第二条的正文被预算挡住了
+        assert first in boot and second in boot   # 两条都还在(退回摘要行也仍然列出)
+        # ⚠️ 别断言「被挡住的是哪一条」:两个桶在同一秒创建,created 相同,
+        # 排序不确定 —— 那样写有 50% 概率假失败(2026-08-21 实测栽过)。
+        # 预算 500 < 单条 600,所以只可能有一条出全文,另一条必被挡。
+        assert ("甲" in boot) != ("乙" in boot)
 
     @pytest.mark.asyncio
     async def test_switch_off_returns_to_summary_lines(self, tmp_path, monkeypatch):
