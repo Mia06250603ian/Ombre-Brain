@@ -86,7 +86,9 @@ browser-hands 容器(Zeabur)
    **改不了尺寸** → 设置静默失效 → 画面按原始大小铺开,手机上只能看到左上角一块,双指缩放也没用
    (缩的是网页,不是那块画布)。
    **修法(不用改代码)**:直接开
-   `/vnc/vnc.html?path=vnc/websockify&resize=scale&autoconnect=1&token=<TOKEN>`;
+   `/vnc/vnc.html?path=vnc/websockify&resize=scale&autoconnect=1&token=<TOKEN>`
+   ——⚠️ **2026-08-21 更正:这条链接单独用是打不开的(黑屏),见踩坑 8**。正确入口是 `/vnc?token=<TOKEN>`,
+   它把 token 换成 cookie 之后网页/JS/画面三层才都过得去;缩放改在侧边栏 ⚙️ → Scaling Mode → Local Scaling;
    或在 noVNC 侧边栏 **齿轮 → Scaling Mode → Local Scaling**(设置存在浏览器本地,一次就够)。
    **建议把这条做成默认**(源码 `src/server.js` 第 309 行 `resize=remote` → `resize=scale`),
    需要重新构建镜像 + 重新部署;**尚未做**。

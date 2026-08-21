@@ -48,7 +48,7 @@
    **但「踩坑」那节必须全文读完,一条别跳**(真事故换来的,只扫加粗标题不算读过)。
    没写目录的(gmail / dwell / browser)照旧全文读完 —— 它们本来只有 1 万 token 上下。
 3. **改 OB** → `INTERNALS.md`;**动 shim 前** → 必读它的《部署检查单》。
-4. **历史开场不用读**:`TIMELINE.md`(按日期搜)、`kelivo-shim/DEPLOY-LOG.md`(33 条,第 2~34 次,按「第 N 次」搜;
+4. **历史开场不用读**:`TIMELINE.md`(按日期搜)、`kelivo-shim/DEPLOY-LOG.md`(34 条,第 2~35 次,按「第 N 次」搜;
    第一次记在 TIMELINE 07-12)。
 
 ## 三条铁规矩(违反过,都出过事)
