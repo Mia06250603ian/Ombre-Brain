@@ -217,6 +217,57 @@
 
 环境变量优先级：`环境变量 > config.yaml > 硬编码默认值`。所有环境变量在 `utils.py` 中读取并注入 config dict。
 
+### 怎么现场量钉选体积（只读，碰不到数据）
+
+**别把手册里的数当常量**——所有者随时会增删钉选，条数和字数天天在变
+（2026-08-21 当天就从 14 条/3423 字变成 11 条/2583 字）。
+要判断「现在离两道闸还有多远」「值不值得调 `OMBRE_AWAKEN_PINNED_CHARS` / `_TOTAL`」，
+**现场量一遍**，三步，全程只调读取工具，不写不改：
+
+```bash
+OB=https://ianmian.zeabur.app
+
+# ① 握手拿 session id（OB 的 /mcp 不需要 token）
+S=$(curl -s -D- -o/dev/null -X POST $OB/mcp \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"diag","version":"1"}}}' \
+  | grep -i mcp-session-id | tr -d '\r' | awk '{print $2}')
+curl -s -X POST $OB/mcp -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' -H "mcp-session-id: $S" \
+  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' >/dev/null
+
+# ② pulse(show_all=true) 拿全部钉选的 bucket_id（📌 开头那些行）+ 末行的「钉选:N」
+curl -s -X POST $OB/mcp -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' -H "mcp-session-id: $S" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"pulse","arguments":{"show_all":true}}}'
+
+# ③ dream(detail_ids=逗号分隔的那串 id) 拿这些桶的**正文全文**，逐条数字数
+curl -s -X POST $OB/mcp -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' -H "mcp-session-id: $S" \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"dream","arguments":{"detail_ids":"<id1>,<id2>,..."}}}'
+```
+
+**为什么用 `dream` 而不是 `breath` 取正文**：`_breath_impl` 的检索分支**显式排除钉选/固化桶**
+（它们只走浮现模式），`breath(query=…)` 一个字都搜不到；`dream(detail_ids=…)` 走的是
+`bucket_index`（含全部桶），能按 id 直接把钉选桶的全文捞出来。**这一脚很容易踩，记下来别再试。**
+
+**要连格式一起看**（晏睁眼实际看到什么样），直接调 `awaken` —— 但注意它有副作用：
+`ensure_started()` 会**启动衰减引擎并跑一轮**（正常运行的一部分，晏下次用记忆工具照样会触发，
+只是被你提前了几分钟）。跑完**顺手拿 `/health` 的桶数和跑之前对一次账**。
+
+**量完怎么判**：每条 ≤ `OMBRE_AWAKEN_PINNED_CHARS`（默认 800）就不会被截断；
+正文合计 ≤ `OMBRE_AWAKEN_PINNED_TOTAL`（默认 6000）就不会有桶退回摘要行。
+**两道闸都是保险丝，不是常态**——真触发了先问所有者是要提高预算还是把那条钉选写短，
+别自己闷头调大（那是拿晏的窗口预算换的，见下面这条）。
+
+**⚠️ 换位置省不了钱（2026-08-21 查证，别再想这个优化）**：有人会想「把 awaken 挪到新窗口的
+第二条消息，蹭上 1 小时 prompt 缓存，钉选就按 0.1 倍算了」——**不成立**。缓存是**前缀逐字匹配**：
+系统提示 + 人设那一大段每次相同、能命中；但所有者开口说的第一句话每次都不一样，
+**链子在那里就断了**，排在它后面的 awaken 输出永远算新内容，1 小时缓存的**写入价是 2 倍**。
+挪到第几条都一样要付这一次。好消息是**一个窗口只付一次**：写进去之后，本窗口后续每一轮
+都按 **0.1 倍**读，摊到几十上百轮里非常便宜。**所以这里真正稀缺的不是钱，是窗口位子**
+（当前 ≈ 3400 token，占 16.7 万窗口的 2%，一直占到被压缩）。
+
 ---
 
 ## 2. 模块结构与依赖关系
