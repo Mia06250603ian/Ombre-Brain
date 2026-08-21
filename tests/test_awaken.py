@@ -36,6 +36,24 @@ async def srv(tmp_path, monkeypatch):
     return server
 
 
+def _stamp_created(srv, bucket_id: str, iso: str) -> None:
+    """把桶的 created 改成指定时间戳(**只给测试用**)。
+
+    为什么需要它:`bucket_mgr.update()` 白名单里没有 `created`(那是身份字段,
+    正常流程不许改)。而 awaken 的「最近对话归档」是**按 created 排序**取最近两条,
+    测试里连着建三个桶会落在同一秒 —— created 相同,排序就不确定,
+    测试会 50% 概率假失败(2026-08-21 实测栽过两条)。
+    所以测试自己把时间戳错开,让「谁更新」变成确定的事实。
+    """
+    import frontmatter
+    fp = srv.bucket_mgr._find_bucket_file(bucket_id)
+    assert fp, f"找不到桶文件: {bucket_id}"
+    post = frontmatter.load(fp)
+    post["created"] = iso
+    with open(fp, "w", encoding="utf-8") as f:
+        f.write(frontmatter.dumps(post))
+
+
 async def _mk(srv, content, **kw):
     return await srv.bucket_mgr.create(
         content=content,
@@ -134,17 +152,38 @@ class TestAwakenSections:
     @pytest.mark.asyncio
     async def test_two_latest_archives_both_full(self, srv):
         """2026-08-09:窗口末尾会存两个桶——日记(转述)+ 原话(逐字)。
-        两条都必须出全文,只出一条的话日记会退成标题,他得再跑一趟 dream 才看得到。"""
-        await srv.archive_session(summary="第一个桶:今天的日记正文")
-        await srv.archive_session(summary="第二个桶:原话一字不差的正文")
-        await srv.archive_session(summary="更早那个桶:只该有标题")
+        两条都必须出全文,只出一条的话日记会退成标题,他得再跑一趟 dream 才看得到。
+
+        2026-08-21 修:本测试此前长期是红的(而且 CI 不跑本文件,所以没人发现)。
+        根因不是功能坏了,是三个归档桶在同一秒创建、`created` 相同 ——
+        awaken 按 created 排序取最近两条,时间戳打平时顺序由文件系统返回序决定,
+        断言「哪两条出全文」就成了掷骰子。改法:用 `_stamp_created` 把三条的时间戳
+        显式错开,让「谁更新」是确定事实,再断言最近两条出全文、更早那条只留标题。"""
+        old_one = await srv.archive_session(summary="上个窗口的旧归档:只该有标题")
+        diary = await srv.archive_session(summary="日记桶:今天的日记正文")
+        verbatim = await srv.archive_session(summary="原话桶:一字不差的正文")
+
+        # archive_session 返回的是一段说明文字,桶 id 得从库里捞
+        sessions = await srv.bucket_mgr.list_all(include_archive=False)
+        by_body = {}
+        for b in sessions:
+            for key in ("旧归档", "日记桶", "原话桶"):
+                if key in b.get("content", ""):
+                    by_body[key] = b["id"]
+        assert len(by_body) == 3, f"应当建出三个归档桶,实际 {by_body}"
+
+        # 时间戳显式错开:旧归档最早,日记次之,原话最新
+        _stamp_created(srv, by_body["旧归档"], "2026-08-19T10:00:00+08:00")
+        _stamp_created(srv, by_body["日记桶"], "2026-08-20T22:00:00+08:00")
+        _stamp_created(srv, by_body["原话桶"], "2026-08-20T23:59:00+08:00")
+
         boot = await srv._awaken_impl()
-        # 最近两条都带全文
+        # 最近两条(日记 + 原话)都带全文
         assert boot.count("(全文)") == 2
-        assert "第二个桶:原话一字不差的正文" in boot
-        assert "第一个桶:今天的日记正文" in boot
-        # 第三条只留标题,正文不该出现
-        assert "更早那个桶:只该有标题" not in boot
+        assert "原话桶:一字不差的正文" in boot
+        assert "日记桶:今天的日记正文" in boot
+        # 更早那条只留标题,正文不该出现
+        assert "旧归档:只该有标题" not in boot
 
     @pytest.mark.asyncio
     async def test_surfacing_section_lists_dynamic_buckets(self, srv):
