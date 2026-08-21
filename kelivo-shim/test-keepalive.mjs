@@ -88,6 +88,15 @@ ok(wake.includes("56 分钟"), "开口提示语带闲置时长");
 const wakeBark = kaPrompt({ speak: true, bjNow: "x", idleMin: 5, userName: "佳佳", viaBridge: false });
 ok(wakeBark.includes("弹到对方手机"), "Bark 通道说明弹通知");
 
+// ---- 2026-08-21 新增:心跳纸条的四条机械约束(改文案时这几条不许破) ----
+ok(wake.endsWith(":。"), "开口提示语的沉默口令是光句号(带括号的【。】/「。」过不了 kaSilent,会被推给她)");
+eq(kaSilent("【。】"), false, "反向守护:带方括号的句号判不出沉默——所以纸条里不许这么写");
+eq(kaSilent("「。」"), false, "反向守护:带直角引号的句号同样判不出沉默");
+ok(!wake.includes("不想打扰"), "开口提示语不许再说「不想打扰」(与 CLAUDE.md「怕打扰而沉默不成立」正面冲突)");
+ok(/看邮箱|上网|自己想做的事/.test(wake), "开口提示语给出自由活动的出口,不只是发消息");
+ok(wake.length <= 140, "开口提示语每次唤醒都进窗口,长度封顶 140(旧文案 117 字,现" + wake.length + "字)");
+ok(silent.endsWith(":。"), "静默提示语的沉默口令同样是光句号");
+
 // ================= 沉默判定 =================
 eq(kaSilent(""), true, "空回复=沉默");
 eq(kaSilent("。"), true, "一个句号=沉默");

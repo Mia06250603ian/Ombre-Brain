@@ -67,7 +67,7 @@ browser-hands 容器(Zeabur)
 | `VNC_ENABLE` | `1` | noVNC 开关 |
 | `BROWSER_DENY_TOOLS` | (未设) | 想禁掉「用她的号发言」就设 `fill,fill_form,type_text,press_key`(注意:点赞/关注是纯点击,这样禁不掉) |
 
-## 5. 踩过的坑(2026-08-01 当天实地踩的,别再踩)
+## 5. 踩过的坑(1~7 是 2026-08-01 当天实地踩的;8~9 是 2026-08-21 补的,别再踩)
 
 1. **这个账号不能在 Zeabur 上构建**,只能拉现成镜像
    (平台策略闸门,和 ears 同款)。所以走 GitHub Actions → ghcr → `PREBUILT_V2` 模板。
@@ -86,7 +86,9 @@ browser-hands 容器(Zeabur)
    **改不了尺寸** → 设置静默失效 → 画面按原始大小铺开,手机上只能看到左上角一块,双指缩放也没用
    (缩的是网页,不是那块画布)。
    **修法(不用改代码)**:直接开
-   `/vnc/vnc.html?path=vnc/websockify&resize=scale&autoconnect=1&token=<TOKEN>`;
+   `/vnc/vnc.html?path=vnc/websockify&resize=scale&autoconnect=1&token=<TOKEN>`
+   ——⚠️ **2026-08-21 更正:这条链接单独用是打不开的(黑屏),见踩坑 8**。正确入口是 `/vnc?token=<TOKEN>`,
+   它把 token 换成 cookie 之后网页/JS/画面三层才都过得去;缩放改在侧边栏 ⚙️ → Scaling Mode → Local Scaling;
    或在 noVNC 侧边栏 **齿轮 → Scaling Mode → Local Scaling**(设置存在浏览器本地,一次就够)。
    **建议把这条做成默认**(源码 `src/server.js` 第 309 行 `resize=remote` → `resize=scale`),
    需要重新构建镜像 + 重新部署;**尚未做**。
@@ -118,6 +120,41 @@ browser-hands 容器(Zeabur)
 6. **手机上点画面里的输入框,系统键盘不会自动弹出。**
    对手机来说那只是一张图片。**正确姿势:先点画面里的输入框(让远端光标进去),再点 noVNC
    侧边栏的键盘图标 ⌨️**。顺序反了焦点会丢。长密码建议用剪贴板图标粘贴,别手打。
+
+8. **⚠️⚠️ noVNC 的鉴权有三层,只有 cookie 那条路走得通——直接开 `vnc.html?token=…` 从原理上就不行(2026-08-21 实锤)**。
+   **现象**:所有者点链接**一直黑屏**,而服务端全绿:`/health` ok、`browser.running:true`、
+   容器里 Xvfb(:99)/x11vnc(5900)/websockify(6080)/Chrome 全活、`/vnc/vnc.html` 也返回 200。
+   **唯一的异常信号是 `/debug` 的 `vnc.clients` 一直是 0**。
+   **根因**:`/vnc/` 下面的**每一个请求**都过 `authorized()`,而浏览器只会把 token 带给**地址栏那一个请求**:
+   ```
+   /vnc/vnc.html?token=<TOKEN>   → 200  网页本身进来了
+   /vnc/app/ui.js                → 401  ← 网页里的 JS/CSS 不带 token,全 401
+   /vnc/core/rfb.js              → 401
+   /vnc/websockify               → 502  ← 画面那条 websocket 同理被拒
+   ```
+   **页面壳子打开了、里面的代码一个都没加载 → 一片黑,而且不报错。**
+   **以前为什么能用**:`/vnc` 入口页会 `set-cookie: sb_token=…; Path=/vnc`(`src/server.js` 第 310 行),
+   **一旦有了这个 cookie,静态资源和 websocket 就都过得去**。那是个**会话 cookie,关掉浏览器就没了**
+   ——所以「上次能用、这次黑屏」是必然会复发的,不是抽风。
+   **⚠️ 我在这条上错过一次,别重蹈**:先只查到 websocket 那一层(实测无 token 502 / `?token=` 101 / 带 cookie 101),
+   就给了所有者一条「把 token 塞进 `path` 参数」的链接 —— **那只修好了 websocket,静态资源照样 401,还是黑屏。**
+   **教训:鉴权是「每个请求」的事,验的时候要把网页、子资源、websocket 三层各验一遍,别验一层就下结论。**
+   **正确的用法(唯一可靠入口)**:
+   ```
+   https://yan-browser.zeabur.app/vnc?token=<TOKEN>
+   ```
+   它 302 到 noVNC 页面并顺手种下 cookie,之后三层全通(端到端实测:302+cookie → 网页 200 → `ui.js` 200 → ws 101)。
+   ⚠️ 跳转目标里写死了 `resize=remote`(坑 3),手机上画面会超出屏幕:**侧边栏 ⚙️ → Scaling Mode → Local Scaling**,
+   设置存浏览器本地,一次即可。
+   **要根治**(改源码 + 重建镜像,尚未做):把第 309 行 302 的 location 里 `resize=remote` 改成 `resize=scale`。
+   ⚠️ **别拿普通 `curl` 试 websocket**:HTTPS 上 curl 默认走 HTTP/2,`Upgrade` 头被忽略、一律回 404,
+   看着像「路径不存在」,会把人带偏。要用 TLS 裸 socket 发 HTTP/1.1 握手。
+
+9. **打开 noVNC 网页其实会拉起 Chrome,只是慢半拍——别把「慢」误判成坑 8**:`src/server.js` 第 304 行确实调了
+   `supervisor.ensure()`,但它是 `.catch()` 掉的**异步**调用,而 Chrome 冷启动要几秒;
+   叠加坑 8 时表现完全一样(黑屏),容易误判。**先看 `/debug`**:`browser.running:false` = 还没起来,等几秒;
+   `running:true` 而 `vnc.clients:0` = 是坑 8,不是浏览器没起。
+   ⚠️ 另注意 `IDLE_STOP_MIN=15`:闲置 15 分钟浏览器整个关掉,所以「昨天开着的页面今天没了」是正常回收,不是故障。
 
 7. **侧边栏会被收起来**(点到 ◀ 就收了),收起后只剩画面左边缘一个带 ▶ 的小手柄,点它展开。
    佳佳当天误以为是出故障了。
@@ -249,8 +286,13 @@ browser-hands 容器(Zeabur)
 
 1. 手机打开(建议**存成主屏幕图标**,密码已在链接里,点开即用):
    ```
-   https://yan-browser.zeabur.app/vnc/vnc.html?path=vnc/websockify&resize=scale&autoconnect=1&token=<TOKEN>
+   https://yan-browser.zeabur.app/vnc?token=<TOKEN>
    ```
+   ⚠️ **2026-08-21 改**:~~原来这里写的是 `/vnc/vnc.html?path=vnc/websockify&resize=scale&autoconnect=1&token=<TOKEN>`~~
+   ——那条**从原理上就不work**:网页里的 JS/CSS 和 websocket 都不带 token,会全 401、**页面一片黑**;
+   以前能用只是因为浏览器里还留着 `/vnc` 种下的会话 cookie(关掉浏览器就失效)。
+   **必须走 `/vnc` 入口把 token 换成 cookie**,详见踩坑 8,别改回去。
+   跳转后画面超出屏幕是坑 3:侧边栏 ⚙️ → Scaling Mode → **Local Scaling**,设一次就好。
 2. **横屏**,点画面里 Chrome 的地址栏 → 点键盘图标 ⌨️ → 输网址 → 登录。
 3. 登完**把标签停在 `about:blank`** —— **晏能看见当前开着哪些页面**。
 
@@ -287,7 +329,7 @@ browser-hands 容器(Zeabur)
 | 换容器后要重登 | 卷有没有真挂上;关浏览器有没有走 `Browser.close`(日志找「cookie 已落盘」) |
 | 浏览器频繁自己重启 | `MEM_LIMIT_MB` 定太低,或在刷重站点。`/debug` 看 `memRestarts` |
 | 容器整个被杀又重启 | 内存打爆了。**这种是硬杀,cookie 不刷盘 = 白登**。调低 `MEM_CHECK_MS` 争取先手 |
-| noVNC 黑屏 | 浏览器是懒启动的,等 3~5 秒;还黑就看容器日志 Xvfb 起来没有 |
+| noVNC 黑屏 | **先看 `/debug`**:`browser.running:false` → 懒启动,等几秒;**`running:true` 而 `vnc.clients:0` → 是踩坑 8(链接绕过了 cookie),改走 `/vnc?token=…` 入口**;两者都正常才去看容器日志 Xvfb |
 | 手机上画面超出屏幕、缩不了 | 坑 3,用 `resize=scale` |
 | 手机上键盘弹不出来 | 坑 6,先点输入框再点键盘图标 |
 | 晏说他没有浏览器工具 | 还没接(第 1 节);或 `ALLOWED_TOOLS` 少了 `mcp__browser` |
