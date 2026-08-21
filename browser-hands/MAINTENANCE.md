@@ -67,7 +67,7 @@ browser-hands 容器(Zeabur)
 | `VNC_ENABLE` | `1` | noVNC 开关 |
 | `BROWSER_DENY_TOOLS` | (未设) | 想禁掉「用她的号发言」就设 `fill,fill_form,type_text,press_key`(注意:点赞/关注是纯点击,这样禁不掉) |
 
-## 5. 踩过的坑(2026-08-01 当天实地踩的,别再踩)
+## 5. 踩过的坑(1~7 是 2026-08-01 当天实地踩的;8~9 是 2026-08-21 补的,别再踩)
 
 1. **这个账号不能在 Zeabur 上构建**,只能拉现成镜像
    (平台策略闸门,和 ears 同款)。所以走 GitHub Actions → ghcr → `PREBUILT_V2` 模板。
@@ -118,6 +118,37 @@ browser-hands 容器(Zeabur)
 6. **手机上点画面里的输入框,系统键盘不会自动弹出。**
    对手机来说那只是一张图片。**正确姿势:先点画面里的输入框(让远端光标进去),再点 noVNC
    侧边栏的键盘图标 ⌨️**。顺序反了焦点会丢。长密码建议用剪贴板图标粘贴,别手打。
+
+8. **⚠️⚠️ 手册第 8 节那条 noVNC 链接少了一半,只是被 cookie 遮住了(2026-08-21 实锤)**。
+   **现象**:所有者点开链接**一直黑屏**,而服务端一切正常——`/health` ok、`browser.running:true`、
+   容器里 Xvfb(:99)/x11vnc(5900)/websockify(6080)/Chrome 全都活着、`/vnc/vnc.html` 返回 200。
+   **唯一的异常信号是 `/debug` 里的 `vnc.clients` 一直是 0**(连接压根没建上)。
+   **根因**:画面走的是**另一条 WebSocket 连接**(`/vnc/websockify`),而链接里的 `?token=` 只授权了**网页本身**;
+   noVNC 发起 websocket 时**不带 token** → `authorized()` 拒绝 → `socket.destroy()` → 平台回 502 → 页面黑着不报错。
+   **以前为什么能用**:`/vnc` 入口页会 `set-cookie: sb_token=…; Path=/vnc`(见 `src/server.js` 第 310 行),
+   只要在**同一个浏览器会话**里开过一次 `/vnc`,后续 websocket 就靠 cookie 过关。
+   **那是个会话 cookie,关掉浏览器就没了** —— 所以「上次能用、这次黑屏」是必然会发生的,不是抽风。
+   **实测三行**(真 WebSocket 握手,TLS 直连 + `Upgrade: websocket`):
+   ```
+   /vnc/websockify                无 token       → 502 Bad Gateway   ← 黑屏
+   /vnc/websockify?token=<TOKEN>                 → 101 Switching Protocols ✅
+   /vnc/websockify  带 Cookie: sb_token=<TOKEN>  → 101 ✅
+   ```
+   ⚠️ **别拿普通 `curl` 试 websocket**:HTTPS 上 curl 默认走 HTTP/2,`Upgrade` 头会被忽略,
+   一律回 404,看上去像「路径不存在」,把人往错方向带(我先踩了这一脚)。要用 TLS 裸 socket 发 HTTP/1.1 握手。
+   **修法(不用改代码、不用重新构建)**:把 token 塞进 noVNC 的 `path` 参数,一条链接自足:
+   ```
+   https://yan-browser.zeabur.app/vnc/vnc.html?path=vnc%2Fwebsockify%3Ftoken%3D<TOKEN>&resize=scale&autoconnect=1&token=<TOKEN>
+   ```
+   成立的依据是 noVNC 的 `app/ui.js` 第 1025 行 `url += '/' + path;` —— **`path` 是原样拼接的**,带查询串照样带上。
+   **要根治**(改源码 + 重建镜像,尚未做):`src/server.js` 第 309 行那个 302 的 location 里
+   把 `resize=remote` 改成 `resize=scale`(坑 3),并把 `token` 一并写进 `path` 参数。
+
+9. **打开 noVNC 网页其实会拉起 Chrome,只是慢半拍——别把「慢」误判成坑 8**:`src/server.js` 第 304 行确实调了
+   `supervisor.ensure()`,但它是 `.catch()` 掉的**异步**调用,而 Chrome 冷启动要几秒;
+   叠加坑 8 时表现完全一样(黑屏),容易误判。**先看 `/debug`**:`browser.running:false` = 还没起来,等几秒;
+   `running:true` 而 `vnc.clients:0` = 是坑 8,不是浏览器没起。
+   ⚠️ 另注意 `IDLE_STOP_MIN=15`:闲置 15 分钟浏览器整个关掉,所以「昨天开着的页面今天没了」是正常回收,不是故障。
 
 7. **侧边栏会被收起来**(点到 ◀ 就收了),收起后只剩画面左边缘一个带 ▶ 的小手柄,点它展开。
    佳佳当天误以为是出故障了。
@@ -249,8 +280,11 @@ browser-hands 容器(Zeabur)
 
 1. 手机打开(建议**存成主屏幕图标**,密码已在链接里,点开即用):
    ```
-   https://yan-browser.zeabur.app/vnc/vnc.html?path=vnc/websockify&resize=scale&autoconnect=1&token=<TOKEN>
+   https://yan-browser.zeabur.app/vnc/vnc.html?path=vnc%2Fwebsockify%3Ftoken%3D<TOKEN>&resize=scale&autoconnect=1&token=<TOKEN>
    ```
+   ⚠️ **2026-08-21 改**:~~原来这里写的是 `path=vnc/websockify`(token 只给了网页)~~ ——
+   那条**少了一半**,websocket 不带 token 会被拒、页面**一直黑屏**,以前能用只是因为浏览器里还留着
+   `/vnc` 种下的会话 cookie(关掉浏览器就失效)。**详见踩坑 8**,别改回去。
 2. **横屏**,点画面里 Chrome 的地址栏 → 点键盘图标 ⌨️ → 输网址 → 登录。
 3. 登完**把标签停在 `about:blank`** —— **晏能看见当前开着哪些页面**。
 
@@ -287,7 +321,7 @@ browser-hands 容器(Zeabur)
 | 换容器后要重登 | 卷有没有真挂上;关浏览器有没有走 `Browser.close`(日志找「cookie 已落盘」) |
 | 浏览器频繁自己重启 | `MEM_LIMIT_MB` 定太低,或在刷重站点。`/debug` 看 `memRestarts` |
 | 容器整个被杀又重启 | 内存打爆了。**这种是硬杀,cookie 不刷盘 = 白登**。调低 `MEM_CHECK_MS` 争取先手 |
-| noVNC 黑屏 | 浏览器是懒启动的,等 3~5 秒;还黑就看容器日志 Xvfb 起来没有 |
+| noVNC 黑屏 | **先看 `/debug`**:`browser.running:false` → 懒启动,等几秒;**`running:true` 而 `vnc.clients:0` → 是踩坑 8(链接少了 websocket 的 token),换成第 8 节那条自足链接**;两者都正常才去看容器日志 Xvfb |
 | 手机上画面超出屏幕、缩不了 | 坑 3,用 `resize=scale` |
 | 手机上键盘弹不出来 | 坑 6,先点输入框再点键盘图标 |
 | 晏说他没有浏览器工具 | 还没接(第 1 节);或 `ALLOWED_TOOLS` 少了 `mcp__browser` |
