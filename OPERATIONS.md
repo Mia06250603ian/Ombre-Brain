@@ -713,3 +713,43 @@ MCP 握手 200、日志零报错、版本与彩排预测逐一吻合。晏的窗
 
 **拿不准就往「多写一句」的方向偏**——省 token 的优先级永远低于别让下一个人干错活。
 
+## 10. 万一以后不得不拆:照这个做(2026-08-21 现场量过,**动手前再核一遍数字**)
+
+**先说结论:半天的活,技术风险很低,风险全在「漏」。**
+**最可能触发拆分的理由**:所有者想把 OB 分享/公开出去 —— 那时运维手册里的服务 ID、
+域名、部署细节不能跟着一起泄露。
+
+### 每个服务要干什么
+
+| 服务 | 搬走要做什么 | 难度 |
+|---|---|---|
+| `kelivo-shim/` | 文件夹剪到新仓库。**Zeabur 一个字都不用改** —— 它走 `zeabur deploy <目录>`,不看 git | 🟢 |
+| `telegram-bridge/` | 同上,**外加**把 `.github/workflows/test-bridge.yml` 一起搬(它只监听 `telegram-bridge/**`) | 🟢 |
+| `dwell-bridge/` | 同上,Zeabur 不用动 | 🟢 |
+| `gmail-mcp/` | 文件夹 + `.github/workflows/build-gmail-image.yml` 一起搬,**并在新仓库里把 Actions 打开**。镜像名不变(`ghcr.io/mia06250603ian/gmail-mcp`)的话 Zeabur 不用改 | 🟡 最容易漏 |
+| `browser-hands/` | 只有一份手册,挪进 `Mia06250603ian/browser-hands` 即可 | 🟢 |
+| **根目录(OB)** | **不搬。** 它是本仓库的主人:Zeabur 从 main 拉、`daily-backup.yml`、`tests.yml` 都挂在它身上 | ⚪ |
+
+### 收尾(真正花时间的部分)
+
+1. **改文档里的指路**。2026-08-21 数过:别处提到 `kelivo-shim/` **54 次**、`telegram-bridge/` 16 次、
+   `gmail-mcp/` 5 次、`dwell-bridge/` 4 次、`browser-hands/` 6 次;各服务手册反过来提根目录文档 17 次。
+   **搬之前现场再数一遍**(数字会变):
+   ```bash
+   for d in kelivo-shim telegram-bridge gmail-mcp dwell-bridge browser-hands; do
+     echo "$d: $(grep -rn "$d/" --include='*.md' . | grep -v "^./$d/" | grep -v '^./.git' | wc -l) 处"
+   done
+   ```
+2. **`TIMELINE.md` 怎么办 —— 拆之前必须先跟所有者定。** 它记的是**全系统**的历史
+   (shim 部署 / OB 改动 / bridge 功能混在同一条时间线上)。**抄一份到每个新仓库是错的**
+   (重复的文档必烂,见第 9 节规矩 1);**建议留在本仓库,新仓库只留一行指路。**
+3. **新仓库要重新接**:Claude 的 GitHub 访问权限、必要的 CI、健康检查。
+4. **搬完逐条验**:每个服务各部署一次并跑它自己的验收(shim 走《部署检查单》,
+   OB 走 `OPERATIONS.md` 第 6 节的五步验收),别只看 `/health`。
+
+### 为什么现在不拆(2026-08-21 所有者拍板)
+
+- **技术上没在咬人**:代码零跨目录依赖;07-30 收窄监控路径之后,
+  改 shim / 文档**不会误触发 OB 重建**(08-21 又验证一次:**合了两个纯文档 PR(#102 / #103),OB 一次都没重建**——线上跑的仍是当天手动 redeploy 的那份)。
+- **拆完只换来「看着整齐」**,却要重接线、改上百条指路,**风险主要是漏**。
+- 所有者真正的痛点是「打开仓库不知道里面有什么」—— 那个由**本文这张地图**解决,成本几乎为零。
