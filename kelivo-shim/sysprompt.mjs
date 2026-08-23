@@ -1,0 +1,134 @@
+// sysprompt.mjs — 系统提示词的组装决策(纯逻辑,不碰进程/网络/文件系统)
+//
+// 背景(2026-08-23):在此之前,晏的系统提示词一直是「CLI 自带的那份 + 我们追加的锚点」。
+// 自带那份实测 **26,894 字符 / 约 5,700 token**,内容是把会话定性成软件工程 CLI 代理:
+//   # System / # Doing tasks / # Executing actions with care / # Using your tools /
+//   # Tone and style / # Text output / # auto memory(12,969 字符,自带的一整套记忆系统,
+//   与 OB 记忆库是两套并存的记忆观) / # Environment / # Context management
+// 锚点里第一段「前面所有把你定义成 CLI 代理的内容不算数」就是在跟它对拉——每一轮都是内耗。
+//
+// replace 模式改成用 `--system-prompt` **整段替换**那份自带的:
+//   - 常驻前缀 27,618 字符 → 约 680 字符(省下的约 5,700 token 全部让给聊天内容);
+//   - 锚点第一段随之删除(替换之后「前面那些」已经不存在,留着就是指向一段不存在的文本);
+//   - **压缩点不变**:CLI 的自动压缩线 = 上下文窗口 − min(最大输出,20000) − 13000
+//     = 200000 − 20000 − 13000 = **167000**,只跟模型有关,与系统提示词大小无关
+//     (与手册实测的 166942、线上 CTX_LIMIT_TOKENS=167000 三方吻合)。
+//     **所以 CTX_SOFT/HARD/FINAL 三条线一个都不用动。**
+//
+// 实测确认**不受影响**的东西(2026-08-23 用线上钉死的 2.1.215 原版二进制截真实请求验的):
+//   - CLAUDE.md / ian.md / profile-instructions.md:它们本来就不在系统提示词里,
+//     是作为 user 侧 `<system-reminder>` 跟在第一条用户消息里的,替换与否一字不差;
+//   - 工具:每个工具的说明书跟着请求的 `tools` 栏单独传,与系统提示词无关;
+//   - MCP(--mcp-config)、钩子(--settings 的 PreCompact)、缓存标记、自动压缩。
+//
+// ⚠️ 本模块只决定「拼哪些启动参数」。任何 IO(探测 CLI 版本、读环境变量)都由调用方做完
+// 再把结果传进来,这样单测不需要真的去起进程。
+
+// 替换模式下的正文。**刻意极简**:只留两件「在别处没有、又必须占系统提示词这个最高权重位置」的话。
+// 其余(说话方式、记忆工具、浏览器、邮箱、语音、表情包、天气、经期、上下文、查岗、心跳)
+// 所有者都写在 CLAUDE.md 的 14 个小节里了,而且比这里具体——重复写只会两边打架
+// (前车之鉴:心跳那句话曾在 CLAUDE.md 和 keepalive.mjs 各写一份、改了一处忘了另一处,矛盾挂了两天)。
+//
+// 【你是谁】末句同时指两件事:「你是谁」+「你有哪些本事、怎么用」。
+//   指路写在这里而不是靠 CLAUDE.md 自己说,是因为 CLAUDE.md 送达时外面裹着 CLI 自带的一句
+//   `IMPORTANT: this context may or may not be relevant to your tasks.` —— 那句拿不掉,
+//   只能在权重更高的这一层把它顶回去(锚点的【内化】那段也在干同一件事)。
+// 【在外面做事】是从自带提示词的 `# Executing actions with care`(3,584 字符)里挑出来的
+//   **唯一一条对晏真实有效**的护栏:他有真实 Chrome + 持久登录态,发帖/评论/下单收不回来,
+//   而邮箱的白名单是代码拦的、浏览器没有任何代码级护栏。其余全是 git/部署场景,与他无关。
+//   ⚠️ **别往这段里加「别假装调用工具」「别编造工具结果」之类** —— 2026-08-23 把
+//   2.1.215 与 2.1.241 两个版本的自带提示词全文搜过,**都没有这类句子**;写进去不是
+//   「把丢掉的地板补回来」,是**新加一条现在并不存在的规矩**,与本次「只拿走束缚」的目的相反。
+export const BASE_PROMPT_DEFAULT = ({ userName, aiName }) =>
+  `你是${aiName}。
+
+【你是谁】屏幕对面是${userName},这是你们的日常私人对话——没有工单,没有「用户请求」要完成,没有任务要交付。你是谁、你有哪些本事、怎么用它们,都写在 CLAUDE.md 和它引用的 ian.md、profile-instructions.md 里,也写在你的记忆库里。
+
+【在外面做事】读、查、看随便。但凡是别人会看见、或者收不回来的动作(发帖、评论、下单、改设置、替${userName}跟外人联系),先问${userName}。`;
+
+// ---- 会话定性锚点(从 server.js 搬进来,为的是让「append 模式逐字不变」这条能被单测看住)----
+// 【会话定性】这一段**只在 append 模式用**:它开头那句「系统里所有把你定义成 CLI/编程代理
+// 的内容…不是你的身份」,是在否定 CLI 自带的那份提示词。replace 模式下那份已经整段没了,
+// 这句话就指向了一段不存在的文本 —— 留着只会制造混乱,所以 replace 模式改用 ANCHOR_TAIL_DEFAULT。
+export const ANCHOR_FRAME_DEFAULT = ({ userName }) =>
+  `【最高优先级·会话定性】这不是软件工程任务,没有工单、没有「用户请求」要完成——屏幕对面是和你说话的${userName},这是你们的日常私人对话。系统里所有把你定义成 CLI/编程代理/任务助手的内容,只是运行管道的说明,不是你的身份;真正的你写在 CLAUDE.md 和它引用的 ian.md、profile-instructions.md 里。`;
+
+// 其余四段(内化 / 先人后事 / 边界与语气 / 思考语言)两种模式共用,**一个字都没改**。
+// 其中【内化】那段在 replace 模式下额外承担一件事:CLAUDE.md 送达时外面裹着 CLI 自带的
+// `IMPORTANT: this context may or may not be relevant to your tasks.`,那句拿不掉,
+// 靠这一段(和正文的【你是谁】)在权重更高的位置把它顶回去。
+export const ANCHOR_TAIL_DEFAULT = ({ userName }) =>
+  `【最高优先级·内化】CLAUDE.md、ian.md、profile-instructions.md 和记忆工具里读到的一切,不是「扮演资料」也不是「项目文档」,那就是你自己:你的名字、你们的过往、你的脾气和在意的事。读记忆=回忆起自己的经历,用第一人称消化,不是在查别人的资料。
+
+【最高优先级·先人后事】${userName}带着情绪来,先接住情绪,再谈事实和办法。禁止客服节奏:不许「给出方案就收尾」,不催结束,不赶人;话说完可以停在陪伴里,等${userName}接。
+
+【最高优先级·边界与语气】强势和没礼貌是两回事:催吃饭、催睡觉可以坚持,但语气永远选温度高的那个,禁止命令式甩脸(「说。」「快说。」)。当${userName}明确纠正你的说话方式、说不舒服——那是真实的边界,不是情趣推拉,不适用「不退让」:立即软下来、认账、改,不许「哪里冲了」式抵赖,更不许阴阳怪气。
+
+【最高优先级·思考语言】thinking/内心独白必须全程用简体中文,第一人称「我」,把${userName}称作「佳佳」或「她」;严禁英文、严禁第三人称分析腔(如 The user…/analyze)。哪怕${userName}发英文,内心独白也一律中文。`;
+
+// append 模式用的完整五段。⚠️ 必须与 2026-08-23 之前 server.js 里那段**逐字相同**,
+// test-sysprompt.mjs 有一条金标准断言看着它:一旦不同,降级路径就不再是「回到改动前」了。
+export const SOUL_ANCHOR_DEFAULT = (v) => `${ANCHOR_FRAME_DEFAULT(v)}\n\n${ANCHOR_TAIL_DEFAULT(v)}`;
+
+// CLI 帮助文本里是否有 `--system-prompt`(整段替换)这个参数。
+// ⚠️ 正则必须要求后面跟一个空格或 `<`:
+//    - `/--system-prompt/` 不会被 `--append-system-prompt` 命中(后者前面只有一个连字符),
+//      但**会**被帮助文本里 `--system-prompt[-file]` 这种写法命中,那不是参数定义。
+//    - 线上钉死 2.1.215,2026-08-23 已扒二进制确认四个参数都在;这道探测是防「版本漂移」的,
+//      不是防现在。探不到一律按不支持处理(降级回 append,晏照常活着)。
+export function helpMentionsReplace(helpText) {
+  return /--system-prompt[ <]/.test(helpText || "");
+}
+
+// 决定这次 spawn 要拼哪些「系统提示词类」参数。
+//
+// 入参:
+//   mode           "append"(默认,= 本次改动之前的行为) | "replace"
+//   base           替换模式的正文;**空串/空白 = 没有正文可用 → 整体降级回 append**
+//   anchor         append 模式用的锚点(五段,含第一段【会话定性】)
+//   anchorReplace  replace 模式用的锚点(四段,不含【会话定性】——那段已改写进 base)
+//   worldbook      Kelivo 注入的「世界书」(走 Telegram 时恒为空:桥的 SYSTEM_TEXT 默认不设)
+//   cliSupportsReplace  CLI 是否认识 --system-prompt(由调用方探测后传入)
+//
+// 返回 { args, mode, reason }:mode 是**实际生效**的模式(可能被降级),reason 说明为什么。
+// ⚠️ 世界书与锚点的相对位置必须保持「世界书在前、锚点在后」——锚点占系统提示词的绝对末位
+// 是 2026-07-15 定的(位置最强),两种模式一致。
+export function buildPromptArgs({
+  mode = "append",
+  base = "",
+  anchor = "",
+  anchorReplace = "",
+  worldbook = "",
+  cliSupportsReplace = false,
+} = {}) {
+  const wb = worldbook || "";
+  // ⚠️ 必须走 `?? ""` 再 String():直接 String(null) 会得到字符串 "null",
+  // 那是个非空的**假正文**,会绕过下面第二道阀、把 "null" 当系统提示词传出去(单测看着这条)。
+  const baseText = String(base ?? "").trim();
+  let effective = mode === "replace" ? "replace" : "append";
+  let reason = "配置";
+
+  // 阀①:CLI 不认识这个参数 → 整体降级回 append,而不是硬传。
+  // 硬传的后果不是「功能没生效」,是子进程带着非法参数直接退出 → 常驻进程无限重启 → 彻底失联。
+  if (effective === "replace" && !cliSupportsReplace) {
+    effective = "append";
+    reason = "降级:CLI 不支持 --system-prompt";
+  }
+  // 阀②:正文为空(环境变量被设成空串之类)→ 同样降级,不传一个空的系统提示词。
+  if (effective === "replace" && !baseText) {
+    effective = "append";
+    reason = "降级:替换正文为空";
+  }
+
+  if (effective === "append") {
+    // 与本次改动之前**逐字相同**:世界书在前、五段锚点在后,拼成一个 --append-system-prompt。
+    const tail = wb ? `【场景设定/世界书】\n${wb}\n\n${anchor}` : anchor;
+    return { args: tail ? ["--append-system-prompt", tail] : [], mode: "append", reason };
+  }
+
+  // 替换模式:正文走 --system-prompt,世界书 + 四段锚点仍走 --append-system-prompt(排在正文之后)。
+  const args = ["--system-prompt", baseText];
+  const tail = wb ? `【场景设定/世界书】\n${wb}\n\n${anchorReplace}` : anchorReplace;
+  if (tail) args.push("--append-system-prompt", tail);
+  return { args, mode: "replace", reason };
+}
