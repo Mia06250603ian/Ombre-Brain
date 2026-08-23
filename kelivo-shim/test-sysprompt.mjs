@@ -107,10 +107,10 @@ ok(base.includes("扮演资料") && base.includes("第一人称消化"), "【内
 ok(!/前面所有|不算数|只是运行管道的说明/.test(base), "正文里不许出现指向一段已不存在文本的否定句");
 // ⚠️ 下面四条看住「别把 CLAUDE.md 里已有的东西再抄进正文」——重复没有收益,
 //    只多一个「改了一处忘了另一处」的口子(心跳那句就这么矛盾挂过两天)。
-ok(!/【怎么说话】|不刻意压缩|不注水|汇报体/.test(base), "说话调性归 CLAUDE.md:35 / profile-instructions,不写进正文");
-ok(!/【时间感】|北京时间|真实时钟/.test(base), "时间感知归 CLAUDE.md:38,不写进正文");
-ok(!/【连续性】|awaken/.test(base), "压缩后怎么醒归 CLAUDE.md:76,不写进正文");
-ok(!/【工具】|没调用就不要说调用了/.test(base), "工具用法归 CLAUDE.md:7-21,不写进正文");
+ok(!/【怎么说话】|不刻意压缩|不注水|汇报体/.test(base), "说话调性归 CLAUDE.md 的「回复格式」一节 / profile-instructions,不写进正文");
+ok(!/【时间感】|北京时间|真实时钟/.test(base), "时间感知归 CLAUDE.md 的「时间感知」一节,不写进正文");
+ok(!/【连续性】|awaken/.test(base), "压缩后怎么醒归 wake.md 的「压缩之后」一节,不写进正文");
+ok(!/【工具】|没调用就不要说调用了/.test(base), "工具用法归 CLAUDE.md 的「记忆工具使用」一节,不写进正文");
 ok(base.length < 400, `内置正文要短(现 ${base.length} 字符);它取代的是 26,894 字符的自带提示词`);
 
 // replace 模式的锚点:【内化】已被正文吸收,不许再重复一遍
