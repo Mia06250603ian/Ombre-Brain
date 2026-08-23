@@ -5,7 +5,7 @@
 // 子进程会带着错误直接退出,而 server.js 的 close 回调会 1.5 秒后复活它 —— 结果不是
 // 「功能没生效」,是**无限重启、晏彻底失联**。所以每一条降级都必须有断言看着。
 import { buildPromptArgs, helpMentionsReplace, BASE_PROMPT_DEFAULT,
-         ANCHOR_FRAME_DEFAULT, ANCHOR_TAIL_DEFAULT, SOUL_ANCHOR_DEFAULT } from "./sysprompt.mjs";
+         ANCHOR_FRAME_DEFAULT, ANCHOR_TAIL_DEFAULT, ANCHOR_TAIL_REPLACE, SOUL_ANCHOR_DEFAULT } from "./sysprompt.mjs";
 
 let n = 0, bad = 0;
 function ok(cond, name) {
@@ -92,24 +92,62 @@ r = buildPromptArgs({ mode: "什么鬼", base: BASE, anchor: ANCHOR, cliSupports
 eq(r.mode, "append", "模式串是垃圾值时按 append 处理");
 eq(buildPromptArgs().args.length, 0, "全部缺省时不炸、不传任何参数");
 
-// ================= 内置正文 =================
+// ================= 内置正文(按教程 04 节 + 那份线上正文 + 截图清单写的)=================
 const base = BASE_PROMPT_DEFAULT({ userName: "佳佳", aiName: "晏" });
 ok(base.includes("你是晏。"), "内置正文带上 AI_NAME");
 ok(base.includes("屏幕对面是佳佳"), "内置正文带上 USER_NAME");
-ok(base.includes("CLAUDE.md"), "内置正文指路到 CLAUDE.md");
-ok(base.includes("ian.md"), "内置正文指路到 ian.md");
-ok(base.includes("profile-instructions.md"), "内置正文指路到 profile-instructions.md");
-ok(base.includes("怎么用它们"), "内置正文同时指「你有哪些本事、怎么用」——这句是它在最高权重位置的第二个作用");
-ok(/先问佳佳/.test(base), "内置正文保留「收不回来的动作先问她」这条护栏");
-ok(!/前面/.test(base), "内置正文里**不许**出现「前面那些不算数」式的否定——替换之后前面已经没有东西了");
-ok(base.length < 450, `内置正文要短(现 ${base.length} 字符);它取代的是 26,894 字符的自带提示词,别把省下的额度又填回去`);
-ok(base.includes("不必报告"), "内置正文保留【工具】的松绑那半句(别汇报调用了什么)");
-ok(/没调用就不要说调用了/.test(base), "内置正文保留【工具】的诚实那半句");
-ok(base.includes("窗口为什么换了"), "内置正文保留【诚实】,且用的是他真看不见的例子");
-// ⚠️ 这两条看住「别再把已经写在 CLAUDE.md 里的东西抄进正文」:
-//   【怎么说话】与 CLAUDE.md:35「短、快、口语」正面顶牛;【时间感】CLAUDE.md:38 已有且更全。
-ok(!/不刻意压缩|不注水|汇报体/.test(base), "正文里不许写说话长短——那与 CLAUDE.md 的「短、快、口语」顶牛");
-ok(!/【时间|时钟|北京时间/.test(base), "正文里不许写时间感知——CLAUDE.md 已有,重复会两边打架");
+// 截图里那句清单:「保留工具协议、安全边界、时间感和连续性」——四样各一条断言看着,别再被删掉
+ok(base.includes("【工具】"), "工具协议在");
+ok(base.includes("【在外面做事】"), "安全边界在");
+ok(base.includes("【时间感】"), "时间感在");
+ok(base.includes("【连续性】"), "连续性在");
+ok(base.includes("【怎么说话】"), "教程 04 节的【怎么说话】在");
+ok(base.includes("【诚实】"), "教程 04 节的【诚实】在");
+ok(base.includes("【你是谁】"), "教程 04 节的【你是谁】在");
+// 指路(在最高权重位置同时指「你是谁」和「你有哪些本事、怎么用」)
+ok(base.includes("CLAUDE.md") && base.includes("ian.md") && base.includes("profile-instructions.md"),
+   "内置正文指路到三份人设文件");
+ok(base.includes("怎么用它们"), "指路同时涵盖「你有哪些本事、怎么用」");
+// 教程 04 节点名的坑:替换之后前面已无可否定之物,句式必须是陈述不是对抗
+ok(!/前面所有|不算数|只是运行管道的说明/.test(base), "正文里不许出现指向一段已不存在文本的否定句");
+// 与 CLAUDE.md 顶牛的那句(那份线上正文里有,教程里没有)不许抄进来
+ok(!/不刻意压缩|不注水/.test(base), "不许写说话长短——与 CLAUDE.md:35「短、快、口语」顶牛");
+ok(base.length < 900, `内置正文要短(现 ${base.length} 字符);它取代的是 26,894 字符的自带提示词`);
+
+// replace 模式的锚点:【内化】已被正文吸收,不许再重复一遍
+{
+  const t3 = ANCHOR_TAIL_REPLACE({ userName: "佳佳" });
+  eq(t3.split("\n\n").length, 3, "replace 锚点是三段");
+  ok(!t3.includes("【最高优先级·内化】"), "三段里不含【内化】(已被正文的【你是谁】吸收)");
+  ok(t3.includes("先人后事") && t3.includes("边界与语气") && t3.includes("思考语言"), "另外三段一个不少");
+  ok(base.includes("扮演资料") && base.includes("第一人称消化"), "【内化】的内容确实进了正文,不是被丢掉");
+}
+
+// ================= 教程的 --system-prompt-file 那条路 =================
+{
+  const F = "/persona/system-prompt.md";
+  let x = buildPromptArgs({ mode: "replace", base: BASE, anchorReplace: ANCHOR_R,
+                            promptFile: F, fileExists: (p) => p === F, cliSupportsReplace: true });
+  eq(x.args[0], "--system-prompt-file", "文件在 → 用 --system-prompt-file");
+  eq(x.args[1], F, "传的是文件路径");
+  eq(x.source, "file", "source 报 file");
+  ok(!x.args.includes("--system-prompt"), "**绝不能**同时传 --system-prompt 与 --system-prompt-file(CLI 会直接报错退出)");
+
+  x = buildPromptArgs({ mode: "replace", base: BASE, anchorReplace: ANCHOR_R,
+                        promptFile: F, fileExists: () => false, cliSupportsReplace: true });
+  eq(x.args[0], "--system-prompt", "文件不在 → 退回内置正文");
+  eq(x.args[1], BASE, "退回时用的是内置正文");
+  eq(x.source, "builtin", "source 报 builtin");
+  ok(!x.args.includes(F), "**绝不能**把一个不存在的路径传给 CLI(踩坑 19 的性质:CLI 会拒绝启动)");
+  ok(/文件不在/.test(x.reason), "reason 说得出是走了退回");
+
+  x = buildPromptArgs({ mode: "replace", base: "", anchorReplace: ANCHOR_R, anchor: ANCHOR,
+                        promptFile: F, fileExists: (p) => p === F, cliSupportsReplace: true });
+  eq(x.mode, "append", "正文为空时即便文件在,也仍按阀②降级(顺序不能反)");
+
+  x = buildPromptArgs({ mode: "replace", base: BASE, anchorReplace: ANCHOR_R, cliSupportsReplace: true });
+  eq(x.source, "builtin", "不给文件路径时就是内置正文");
+}
 
 // ================= 金标准:append 模式必须与 2026-08-23 之前逐字相同 =================
 // 这条是本文件里最要紧的一条断言。两道安全阀的降级目标都是「回到改动前的行为」——

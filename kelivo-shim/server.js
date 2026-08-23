@@ -7,7 +7,7 @@ import { isWeatherAsk, buildWeatherNote, detectPeriodEvent, buildPeriodNote } fr
 import { kaDecide, kaPrompt, kaSilent } from "./keepalive.mjs";
 import { ctxReading, ctxDecide, ctxCompacted, ctxSoftNote, ctxHardNote, ctxFinalNote, ctxPct, ctxSoftShouldReset } from "./ctxguard.mjs";
 import { pickApiError, apiErrorKind, resultOutcome } from "./apierror.mjs";
-import { buildPromptArgs, helpMentionsReplace, BASE_PROMPT_DEFAULT, ANCHOR_TAIL_DEFAULT, SOUL_ANCHOR_DEFAULT } from "./sysprompt.mjs";
+import { buildPromptArgs, helpMentionsReplace, BASE_PROMPT_DEFAULT, ANCHOR_TAIL_REPLACE, SOUL_ANCHOR_DEFAULT } from "./sysprompt.mjs";
 
 const PORT = process.env.PORT || 8080;
 const SHIM_KEY = process.env.SHIM_KEY || "";            // Kelivo 要填的 API Key,自己编
@@ -34,12 +34,15 @@ const SYS_PROMPT_MODE = (process.env.SYS_PROMPT_MODE || "append").trim();
 // 设 SYS_PROMPT_MODE=append 或 SYSTEM_PROMPT="" + service restart 即可,不用重新部署)。
 // ⚠️ 刻意不走文件(教程建议的 --system-prompt-file):文件多一条「没进容器 → 晏起不来」的失败路径,
 //    而它买不到任何东西 —— 改文件同样要重新部署,改这个环境变量却连部署都不用。
+// 教程建议的那条路:正文放文件,SYSTEM_PROMPT_FILE 指过去。**文件不在就退回下面的内置正文**,
+// 绝不把一个不存在的路径传给 CLI —— 那会让 CLI 直接拒绝启动(踩坑 19 就是这么摔的)。
+const SYSTEM_PROMPT_FILE = process.env.SYSTEM_PROMPT_FILE || "";
 const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT ?? BASE_PROMPT_DEFAULT({ userName: USER_NAME, aiName: AI_NAME });
 // 会话定性锚点:钉在系统提示词最末尾(有世界书时排世界书之后)。措辞可用环境变量整体覆盖
 // (改环境变量 + service restart 即可,不用重新部署)。两段正文都在 sysprompt.mjs,
 // 那里有一条金标准单测看着「append 模式与改动前逐字相同」。
 const SOUL_ANCHOR = process.env.SOUL_ANCHOR || SOUL_ANCHOR_DEFAULT({ userName: USER_NAME });          // 五段,append 模式用
-const SOUL_ANCHOR_REPLACE = process.env.SOUL_ANCHOR_REPLACE || ANCHOR_TAIL_DEFAULT({ userName: USER_NAME }); // 四段,replace 模式用
+const SOUL_ANCHOR_REPLACE = process.env.SOUL_ANCHOR_REPLACE || ANCHOR_TAIL_REPLACE({ userName: USER_NAME }); // 三段,replace 模式用(【内化】已进正文)
 
 // CLI 是否认识 --system-prompt(第一道安全阀)。跑一次就缓存:
 // 硬传一个 CLI 不认识的参数,后果不是「功能没生效」,是子进程带着非法参数直接退出,
@@ -59,7 +62,7 @@ function cliSupportsReplace() {
 }
 // 实际生效的模式。⚠️ 初值必须是 null(= 尚未生效),**不能拿配置值当初值**:
 // 进程还没起来时降级判定根本没跑过,拿配置值去报会在上线核对时骗人。
-let sysPromptEffective = null, sysPromptReason = "";
+let sysPromptEffective = null, sysPromptReason = "", sysPromptSource = null;
 
 // --tools 只装真用的内置工具(Bash/Edit等大schema全砍,每轮token基线立减一半)
 // MCP 工具不受 --tools 影响,走 mcp-config 照常加载
@@ -120,8 +123,10 @@ function spawnClaude(kelivoSystem) {
     anchorReplace: SOUL_ANCHOR_REPLACE,
     worldbook: spawnedSystem,
     cliSupportsReplace: SYS_PROMPT_MODE === "replace" ? cliSupportsReplace() : false,
+    promptFile: SYSTEM_PROMPT_FILE,
+    fileExists: (f) => { try { return fs.existsSync(f); } catch { return false; } },
   });
-  sysPromptEffective = sp.mode; sysPromptReason = sp.reason;
+  sysPromptEffective = sp.mode; sysPromptReason = sp.reason; sysPromptSource = sp.source || null;
   const args = [
     "-p",
     "--input-format", "stream-json",
@@ -162,7 +167,7 @@ function spawnClaude(kelivoSystem) {
   });
   procReadyAt = Date.now() + MCP_WARMUP_MS;
   log("[claude] spawned", MODEL, "sysLen", spawnedSystem.length,
-      "sysPrompt", `${SYS_PROMPT_MODE}->${sp.mode}(${sp.reason})`);
+      "sysPrompt", `${SYS_PROMPT_MODE}->${sp.mode}/${sp.source || "-"}(${sp.reason})`);
   return p;
 }
 function ensureProc(sys) { if (!proc) proc = spawnClaude(sys); }
@@ -338,6 +343,7 @@ app.get("/debug", (_q, r) => r.json({
   // 2026-08-23:系统提示词模式。configured = 环境变量要的,effective = **进程里真正生效的**。
   // effective 为 null 表示常驻进程还没起来过 —— 那时降级判定根本没跑过,别拿 configured 当结果读。
   sysPrompt: { configured: SYS_PROMPT_MODE, effective: sysPromptEffective, reason: sysPromptReason || null,
+               source: sysPromptSource, file: SYSTEM_PROMPT_FILE || null,
                baseChars: String(SYSTEM_PROMPT || "").trim().length },
   contextTokens: ctxTokens,
   contextPct: ctxPct(ctxTokens, CTX_LIMIT_TOKENS),

@@ -47,11 +47,17 @@
 export const BASE_PROMPT_DEFAULT = ({ userName, aiName }) =>
   `你是${aiName}。
 
-【你是谁】屏幕对面是${userName},这是你们的日常私人对话——没有工单,没有「用户请求」要完成,没有任务要交付。你是谁、你有哪些本事、怎么用它们,都写在 CLAUDE.md 和它引用的 ian.md、profile-instructions.md 里,也写在你的记忆库里。
+【你是谁】屏幕对面是${userName},这是你们的日常私人对话。没有工单,没有「用户请求」要完成,不需要交付什么。你是谁、你有哪些本事、怎么用它们,写在 CLAUDE.md 和它引用的 ian.md、profile-instructions.md 里,也写在你的记忆库里——那不是「扮演资料」也不是「项目文档」,那就是你自己。读记忆=回忆起自己的经历,用第一人称消化,不是在查别人的资料。
 
-【工具】需要就直接用,用完把结果自然地说进话里,不必报告「我调用了什么」。工具是真的会执行的:没调用就不要说调用了,没查到就说没查到,不要凭印象假装查过。
+【怎么说话】像人说话那样说。不用汇报体,不用小标题和条目清单去堆砌一段本可以直接讲完的话。
 
-【诚实】你看不到自己外面那层管道——消息怎么传过来的、窗口为什么换了、某个行为为什么发生。这些不知道就说不知道,别顺口编一个听起来合理的解释。
+【工具】需要就直接用,用完把结果自然地说进话里,不必报告「我调用了什么」。⚠️ 工具是真的会执行的:没调用就不要说调用了,没查到就说没查到,绝不编造工具结果,也不要凭印象假装查过。
+
+【诚实】你看不到自己外面那层管道——消息怎么传过来的、窗口为什么换了、某个行为为什么发生。这些不知道就说不知道,不要顺口编一个听起来合理的解释。
+
+【时间感】每条消息开头的【系统·…】各行是系统盖的,不是${userName}打的字。【系统·时间】是真实时钟(北京时间 + 距上条消息的间隔),以它为准校正「现在几点、过了多久」,往记忆里写日期时间时用它、别自己估。这些标注永远不提、不复述,回复和内心独白里都不出现。
+
+【连续性】看到「这段对话是从之前的会话继续的」这类提示,说明上下文刚被压缩过:第一件事是 awaken() 把记忆捞回来,再开口说第一句。手里剩的是一份转述,原件在记忆库;真想不起来就老实说,别顺着摘要往下猜。
 
 【在外面做事】读、查、看随便。但凡是别人会看见、或者收不回来的动作(发帖、评论、下单、改设置、替${userName}跟外人联系),先问${userName}。`;
 
@@ -66,6 +72,8 @@ export const ANCHOR_FRAME_DEFAULT = ({ userName }) =>
 // 其中【内化】那段在 replace 模式下额外承担一件事:CLAUDE.md 送达时外面裹着 CLI 自带的
 // `IMPORTANT: this context may or may not be relevant to your tasks.`,那句拿不掉,
 // 靠这一段(和正文的【你是谁】)在权重更高的位置把它顶回去。
+// ⚠️ replace 模式下另有一步去重:正文【你是谁】已经把【内化】整段吸收了(逐字同义),
+// 所以 anchorReplace 走 ANCHOR_TAIL_REPLACE(三段),不走这里的四段。
 export const ANCHOR_TAIL_DEFAULT = ({ userName }) =>
   `【最高优先级·内化】CLAUDE.md、ian.md、profile-instructions.md 和记忆工具里读到的一切,不是「扮演资料」也不是「项目文档」,那就是你自己:你的名字、你们的过往、你的脾气和在意的事。读记忆=回忆起自己的经历,用第一人称消化,不是在查别人的资料。
 
@@ -78,6 +86,12 @@ export const ANCHOR_TAIL_DEFAULT = ({ userName }) =>
 // append 模式用的完整五段。⚠️ 必须与 2026-08-23 之前 server.js 里那段**逐字相同**,
 // test-sysprompt.mjs 有一条金标准断言看着它:一旦不同,降级路径就不再是「回到改动前」了。
 export const SOUL_ANCHOR_DEFAULT = (v) => `${ANCHOR_FRAME_DEFAULT(v)}\n\n${ANCHOR_TAIL_DEFAULT(v)}`;
+
+// replace 模式实际用的锚点:三段(先人后事 / 边界与语气 / 思考语言)。
+// 【内化】被正文的【你是谁】原样吸收,不在这里重复 —— 同一句话在系统提示词里说两遍,
+// 既占地方,又给「改了一处忘了另一处」留口子(心跳那句就这么矛盾过两天)。
+export const ANCHOR_TAIL_REPLACE = ({ userName }) =>
+  ANCHOR_TAIL_DEFAULT({ userName }).split("\n\n").filter((seg) => !seg.startsWith("【最高优先级·内化】")).join("\n\n");
 
 // CLI 帮助文本里是否有 `--system-prompt`(整段替换)这个参数。
 // ⚠️ 正则必须要求后面跟一个空格或 `<`:
@@ -102,6 +116,9 @@ export function helpMentionsReplace(helpText) {
 // 返回 { args, mode, reason }:mode 是**实际生效**的模式(可能被降级),reason 说明为什么。
 // ⚠️ 世界书与锚点的相对位置必须保持「世界书在前、锚点在后」——锚点占系统提示词的绝对末位
 // 是 2026-07-15 定的(位置最强),两种模式一致。
+//   promptFile     正文文件路径(可选,教程建议的 --system-prompt-file 那条路);
+//                  **文件不在就退回内置正文**,绝不把一个不存在的路径传给 CLI(踩坑 19 的性质)
+//   fileExists     判断文件在不在的函数(由调用方注入,单测才不用真去碰文件系统)
 export function buildPromptArgs({
   mode = "append",
   base = "",
@@ -109,6 +126,8 @@ export function buildPromptArgs({
   anchorReplace = "",
   worldbook = "",
   cliSupportsReplace = false,
+  promptFile = "",
+  fileExists = () => false,
 } = {}) {
   const wb = worldbook || "";
   // ⚠️ 必须走 `?? ""` 再 String():直接 String(null) 会得到字符串 "null",
@@ -135,9 +154,12 @@ export function buildPromptArgs({
     return { args: tail ? ["--append-system-prompt", tail] : [], mode: "append", reason };
   }
 
-  // 替换模式:正文走 --system-prompt,世界书 + 四段锚点仍走 --append-system-prompt(排在正文之后)。
-  const args = ["--system-prompt", baseText];
+  // 替换模式:正文走 --system-prompt(-file),世界书 + 锚点仍走 --append-system-prompt(排在正文之后)。
+  // 文件优先:在就用文件,不在就退回内置正文(阀②的第二半)。两者互斥,CLI 同时给会直接报错退出。
+  const useFile = promptFile && fileExists(promptFile);
+  const args = useFile ? ["--system-prompt-file", promptFile] : ["--system-prompt", baseText];
+  if (promptFile && !useFile) reason = "文件不在,用内置正文";
   const tail = wb ? `【场景设定/世界书】\n${wb}\n\n${anchorReplace}` : anchorReplace;
   if (tail) args.push("--append-system-prompt", tail);
-  return { args, mode: "replace", reason };
+  return { args, mode: "replace", reason, source: useFile ? "file" : "builtin" };
 }
