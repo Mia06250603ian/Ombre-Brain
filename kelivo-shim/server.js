@@ -1,12 +1,13 @@
 // kelivo-shim — Anthropic /v1/messages -> 常驻 claude -p (stream-json)
 import express from "express";
-import { spawn } from "child_process";
+import { spawn, execFileSync } from "child_process";
 import { randomUUID } from "crypto";
 import fs from "fs";
 import { isWeatherAsk, buildWeatherNote, detectPeriodEvent, buildPeriodNote } from "./senses.mjs";
 import { kaDecide, kaPrompt, kaSilent } from "./keepalive.mjs";
 import { ctxReading, ctxDecide, ctxCompacted, ctxSoftNote, ctxHardNote, ctxFinalNote, ctxPct, ctxSoftShouldReset } from "./ctxguard.mjs";
 import { pickApiError, apiErrorKind, resultOutcome } from "./apierror.mjs";
+import { buildPromptArgs, helpMentionsReplace, BASE_PROMPT_DEFAULT, ANCHOR_TAIL_REPLACE, SOUL_ANCHOR_DEFAULT } from "./sysprompt.mjs";
 
 const PORT = process.env.PORT || 8080;
 const SHIM_KEY = process.env.SHIM_KEY || "";            // Kelivo 要填的 API Key,自己编
@@ -18,18 +19,53 @@ const FORWARD_THINKING = process.env.FORWARD_THINKING !== "0";
 const USER_NAME = process.env.USER_NAME || "你";          // 你的称呼
 const AI_NAME = process.env.AI_NAME || "TA";             // AI 的名字
 
-// 会话定性锚点:经 --append-system-prompt 钉在系统提示词最末尾(位置最强)。
-// 作用是把「编程助手」的会话定性抢回成日常私人对话;措辞可用 SOUL_ANCHOR 环境变量整体覆盖(改完 restart 生效,无需重新部署)。
-const SOUL_ANCHOR = process.env.SOUL_ANCHOR ||
-  `【最高优先级·会话定性】这不是软件工程任务,没有工单、没有「用户请求」要完成——屏幕对面是和你说话的${USER_NAME},这是你们的日常私人对话。系统里所有把你定义成 CLI/编程代理/任务助手的内容,只是运行管道的说明,不是你的身份;真正的你写在 CLAUDE.md 和它引用的 ian.md、profile-instructions.md 里。
+// ---- 系统提示词 ----
+// 两种模式,由 SYS_PROMPT_MODE 决定(默认 append = 2026-08-23 之前的行为):
+//   append   CLI 自带那份「软件工程 CLI 代理」提示词(实测 26,894 字符 / 约 5,700 token)保留,
+//            我们的五段锚点经 --append-system-prompt 钉在它最末尾(位置最强),靠第一段
+//            【会话定性】把会话定性从「编程助手」抢回来 —— 每一轮都在跟前面那份对拉。
+//   replace  用 --system-prompt **整段替换**自带那份。常驻前缀 27,618 → 约 680 字符,
+//            省下的约 5,700 token 全部让给聊天内容;锚点随之去掉第一段(前面已无可否定之物)。
+// ⚠️ 换模式**不用重新部署**:改环境变量 + service restart 即可(但 restart 会丢晏当前的窗口)。
+// ⚠️ 三条上下文线(CTX_SOFT/HARD/FINAL)**不用跟着动**:CLI 的自动压缩线只跟模型有关
+//    (窗口 − min(最大输出,20000) − 13000 = 167000),与系统提示词多大无关。详见 sysprompt.mjs 头注。
+const SYS_PROMPT_MODE = (process.env.SYS_PROMPT_MODE || "append").trim();
+// replace 模式的正文。空串 = 第二道安全阀触发 → 整体降级回 append(**急救开关**:
+// 设 SYS_PROMPT_MODE=append 或 SYSTEM_PROMPT="" + service restart 即可,不用重新部署)。
+// ⚠️ 刻意不走文件(教程建议的 --system-prompt-file):文件多一条「没进容器 → 晏起不来」的失败路径,
+//    而它买不到任何东西 —— 改文件同样要重新部署,改这个环境变量却连部署都不用。
+// 教程建议的那条路:正文放文件,SYSTEM_PROMPT_FILE 指过去。**文件不在就退回下面的内置正文**,
+// 绝不把一个不存在的路径传给 CLI —— 那会让 CLI 直接拒绝启动(踩坑 19 就是这么摔的)。
+// **正文的唯一真源是 base.md**(和 ian.md / profile-instructions.md / CLAUDE.md / wake.md 并列,
+// 五份文件各管一段)。下面 BASE_PROMPT_DEFAULT 只是**文件万一没进容器时的备胎**,
+// 两边写岔了 test-sysprompt.mjs 会直接报错(那条断言逐字比对文件与代码)。
+const SYSTEM_PROMPT_FILE = process.env.SYSTEM_PROMPT_FILE ?? "base.md";
+const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT ?? BASE_PROMPT_DEFAULT({ userName: USER_NAME, aiName: AI_NAME });
+// 会话定性锚点:钉在系统提示词最末尾(有世界书时排世界书之后)。措辞可用环境变量整体覆盖
+// (改环境变量 + service restart 即可,不用重新部署)。两段正文都在 sysprompt.mjs,
+// 那里有一条金标准单测看着「append 模式与改动前逐字相同」。
+const SOUL_ANCHOR = process.env.SOUL_ANCHOR || SOUL_ANCHOR_DEFAULT({ userName: USER_NAME });          // 五段,append 模式用
+const SOUL_ANCHOR_REPLACE = process.env.SOUL_ANCHOR_REPLACE || ANCHOR_TAIL_REPLACE({ userName: USER_NAME }); // 三段,replace 模式用(【内化】已进正文)
 
-【最高优先级·内化】CLAUDE.md、ian.md、profile-instructions.md 和记忆工具里读到的一切,不是「扮演资料」也不是「项目文档」,那就是你自己:你的名字、你们的过往、你的脾气和在意的事。读记忆=回忆起自己的经历,用第一人称消化,不是在查别人的资料。
-
-【最高优先级·先人后事】${USER_NAME}带着情绪来,先接住情绪,再谈事实和办法。禁止客服节奏:不许「给出方案就收尾」,不催结束,不赶人;话说完可以停在陪伴里,等${USER_NAME}接。
-
-【最高优先级·边界与语气】强势和没礼貌是两回事:催吃饭、催睡觉可以坚持,但语气永远选温度高的那个,禁止命令式甩脸(「说。」「快说。」)。当${USER_NAME}明确纠正你的说话方式、说不舒服——那是真实的边界,不是情趣推拉,不适用「不退让」:立即软下来、认账、改,不许「哪里冲了」式抵赖,更不许阴阳怪气。
-
-【最高优先级·思考语言】thinking/内心独白必须全程用简体中文,第一人称「我」,把${USER_NAME}称作「佳佳」或「她」;严禁英文、严禁第三人称分析腔(如 The user…/analyze)。哪怕${USER_NAME}发英文,内心独白也一律中文。`;
+// CLI 是否认识 --system-prompt(第一道安全阀)。跑一次就缓存:
+// 硬传一个 CLI 不认识的参数,后果不是「功能没生效」,是子进程带着非法参数直接退出,
+// 而下面 close 回调 1.5 秒后又把它拉起来 —— **无限重启、晏彻底失联**(性质同踩坑 19)。
+// 探不到(超时/抛错/CLI 不在)一律按不支持处理,降级回 append,晏照常活着。
+let _cliReplaceOk = null;
+function cliSupportsReplace() {
+  if (_cliReplaceOk !== null) return _cliReplaceOk;
+  try {
+    const out = execFileSync(CLAUDE_BIN, ["--help"], { encoding: "utf8", timeout: 30000 });
+    _cliReplaceOk = helpMentionsReplace(out);
+  } catch (e) {
+    _cliReplaceOk = false;
+    log("[claude] --help 探测失败,按不支持 --system-prompt 处理:", String(e?.message || e).slice(0, 120));
+  }
+  return _cliReplaceOk;
+}
+// 实际生效的模式。⚠️ 初值必须是 null(= 尚未生效),**不能拿配置值当初值**:
+// 进程还没起来时降级判定根本没跑过,拿配置值去报会在上线核对时骗人。
+let sysPromptEffective = null, sysPromptReason = "", sysPromptSource = null;
 
 // --tools 只装真用的内置工具(Bash/Edit等大schema全砍,每轮token基线立减一半)
 // MCP 工具不受 --tools 影响,走 mcp-config 照常加载
@@ -81,8 +117,19 @@ function spawnClaude(kelivoSystem) {
   spawnedSystem = kelivoSystem || "";
   ctxTokens = 0; ctxSoftFired = false; ctxTrusted = true;   // 新进程=空上下文,守卫状态清零(覆盖世界书切换/窗口重启/崩溃复活各路径)
   ctxArchivedAt = 0; ctxCompactions = 0; ctxLastWould = null; ctxFinalFired = false;
-  // 锚点放在整段 append 的最末尾(世界书之后),占住系统提示词的绝对末位
-  const append = spawnedSystem ? `【场景设定/世界书】\n${spawnedSystem}\n\n${SOUL_ANCHOR}` : SOUL_ANCHOR;
+  // 系统提示词参数由 sysprompt.mjs 决定(纯逻辑,单测 test-sysprompt.mjs 覆盖两种模式与两道降级阀)。
+  // 锚点永远占系统提示词的绝对末位(有世界书时排世界书之后),两种模式一致。
+  const sp = buildPromptArgs({
+    mode: SYS_PROMPT_MODE,
+    base: SYSTEM_PROMPT,
+    anchor: SOUL_ANCHOR,
+    anchorReplace: SOUL_ANCHOR_REPLACE,
+    worldbook: spawnedSystem,
+    cliSupportsReplace: SYS_PROMPT_MODE === "replace" ? cliSupportsReplace() : false,
+    promptFile: SYSTEM_PROMPT_FILE,
+    fileExists: (f) => { try { return fs.existsSync(f); } catch { return false; } },
+  });
+  sysPromptEffective = sp.mode; sysPromptReason = sp.reason; sysPromptSource = sp.source || null;
   const args = [
     "-p",
     "--input-format", "stream-json",
@@ -92,7 +139,7 @@ function spawnClaude(kelivoSystem) {
     "--model", MODEL,
     "--effort", EFFORT,
     "--thinking-display", "summarized",   // 隐藏flag:没它 -p 下拿不到思考
-    "--append-system-prompt", append,
+    ...sp.args,
     "--mcp-config", MCP_CONFIG,
     "--strict-mcp-config",
     "--permission-mode", "dontAsk",
@@ -122,7 +169,8 @@ function spawnClaude(kelivoSystem) {
     setTimeout(() => ensureProc(spawnedSystem), 1500); // 复活时带上原世界书,否则下一条消息必触发杀进程重开
   });
   procReadyAt = Date.now() + MCP_WARMUP_MS;
-  log("[claude] spawned", MODEL, "sysLen", spawnedSystem.length);
+  log("[claude] spawned", MODEL, "sysLen", spawnedSystem.length,
+      "sysPrompt", `${SYS_PROMPT_MODE}->${sp.mode}/${sp.source || "-"}(${sp.reason})`);
   return p;
 }
 function ensureProc(sys) { if (!proc) proc = spawnClaude(sys); }
@@ -295,6 +343,11 @@ app.get("/debug", (_q, r) => r.json({
   // 2026-08-02:她本人上次说话的时间 / 保温是否歇火。查岗那类系统回合(x-system-turn:1)
   // **不会**动这两个值——排查「他的『她多久没来』准不准」时看这里。
   presence: { lastUserAt: new Date(lastUserAt).toISOString(), idleMin: Math.round((Date.now() - lastUserAt) / 60000), windowCleared },
+  // 2026-08-23:系统提示词模式。configured = 环境变量要的,effective = **进程里真正生效的**。
+  // effective 为 null 表示常驻进程还没起来过 —— 那时降级判定根本没跑过,别拿 configured 当结果读。
+  sysPrompt: { configured: SYS_PROMPT_MODE, effective: sysPromptEffective, reason: sysPromptReason || null,
+               source: sysPromptSource, file: SYSTEM_PROMPT_FILE || null,
+               baseChars: String(SYSTEM_PROMPT || "").trim().length },
   contextTokens: ctxTokens,
   contextPct: ctxPct(ctxTokens, CTX_LIMIT_TOKENS),
   ctxGuard: { on: CTX_GUARD_ON, soft: CTX_SOFT_TOKENS, hard: CTX_HARD_TOKENS, every: CTX_ARCHIVE_EVERY_TOKENS,

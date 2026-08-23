@@ -5,6 +5,8 @@
 #   bash e2e-run.sh                    # 用 package.json 里钉死的 CLI 版本测(常规回归)
 #   E2E_CLI_VERSION=2.1.220 bash e2e-run.sh   # 试装候选新版本测(升级前验证,见手册「CLI 升级指南」)
 #
+#   SYS_PROMPT_MODE=replace bash e2e-run.sh   # 在「整段替换系统提示词」模式下跑同一套断言
+#
 # 全绿输出 "E2E ALL PASS";任何一条断言失败退出码非 0 并打印差异。
 # 临时文件和 CLI 二进制缓存都在 /tmp,不会混进部署目录。
 set -u
@@ -35,10 +37,10 @@ WORK="${TMPDIR:-/tmp}/kelivo-shim-e2e-work"
 rm -rf "$WORK" && mkdir -p "$WORK" && cd "$WORK"
 # ⚠️ server.js 每 import 一个新模块,这行就得跟着加——漏了的话 e2e 里的 shim 直接
 # ERR_MODULE_NOT_FOUND 起不来,现象是所有 curl 报「connect refused」(2026-08-11 实翻过一次)。
-cp "$SHIM_DIR"/server.js "$SHIM_DIR"/ctxguard.mjs "$SHIM_DIR"/senses.mjs "$SHIM_DIR"/keepalive.mjs "$SHIM_DIR"/apierror.mjs .
+cp "$SHIM_DIR"/server.js "$SHIM_DIR"/ctxguard.mjs "$SHIM_DIR"/senses.mjs "$SHIM_DIR"/keepalive.mjs "$SHIM_DIR"/apierror.mjs "$SHIM_DIR"/sysprompt.mjs .
 # PreCompact 钩子的两件(2026-08-09):settings 里的 command 写的是容器绝对路径 /src/…,
 # e2e 在 /tmp 跑,所以拷进来后把路径改写成本次工作目录的。
-cp "$SHIM_DIR"/shim-settings.json "$SHIM_DIR"/precompact-note.txt .
+cp "$SHIM_DIR"/shim-settings.json "$SHIM_DIR"/precompact-note.txt "$SHIM_DIR"/base.md .
 sed -i "s#/src/precompact-note.txt#$WORK/precompact-note.txt#" shim-settings.json
 ln -s "$DEPS/node_modules" node_modules
 echo '{ "mcpServers": {} }' > mcp-empty.json
@@ -50,6 +52,7 @@ FPID=$!
 env -i HOME="$WORK" PATH="$PATH" \
   PORT=8500 CLAUDE_BIN="$BIN" \
   ANTHROPIC_BASE_URL=http://127.0.0.1:8501 ANTHROPIC_AUTH_TOKEN=fake \
+  SYS_PROMPT_MODE="${SYS_PROMPT_MODE:-append}" \
   MCP_CONFIG=mcp-empty.json MCP_WARMUP_MS=300 KA_ON=0 TIME_HINT=0 \
   BUILTIN_TOOLS=Read ALLOWED_TOOLS=Read \
   CTX_SOFT_TOKENS=30000 CTX_HARD_TOKENS=60000 CTX_ARCHIVE_EVERY_TOKENS=20000 \

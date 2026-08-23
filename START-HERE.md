@@ -31,7 +31,7 @@
 | 目录 | 是什么 | 源码在这儿? | 它的手册 |
 |---|---|---|---|
 | **根目录** | **OB 记忆库**(Python/FastMCP)。**本仓库的主人**:Zeabur 从 main 拉、每日备份和 CI 都挂在它身上 | ✅ | `INTERNALS.md`(内部机制)、`README.md`(对外的安装说明)、`ENV_VARS.md`、`BEHAVIOR_SPEC.md` |
-| `kelivo-shim/` | **晏的本体**:维护一个常驻 `claude -p` 进程,人设/记忆工具/上下文守卫都在这。⚠️ 目录里的 `CLAUDE.md` **是晏的,不是给你的**(见上一节) | ✅ | `kelivo-shim/MAINTENANCE.md`(**开头有目录,按目录取用**) |
+| `kelivo-shim/` | **晏的本体**:维护一个常驻 `claude -p` 进程,人设/记忆工具/上下文守卫都在这。⚠️ 目录里的 `CLAUDE.md`、`base.md`、`wake.md` **都是晏的,不是给你的**(见上一节;2026-08-23 起晏一共五份文件,划分见该目录手册的《本目录刻意缺的三个文件》一节开头) | ✅ | `kelivo-shim/MAINTENANCE.md`(**开头有目录,按目录取用**) |
 | `telegram-bridge/` | Telegram ⇄ shim 的桥(去抖/语音/贴纸/推送/查岗) | ✅ | `telegram-bridge/MAINTENANCE.md`(同上,有目录) |
 | `gmail-mcp/` | 晏的邮箱(读信/搜信/写草稿,发信白名单制) | ✅ | `gmail-mcp/MAINTENANCE.md` |
 | `dwell-bridge/` | 自建网页 ⇄ shim 的转接层 | ✅ | `dwell-bridge/MAINTENANCE.md` |

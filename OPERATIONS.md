@@ -98,6 +98,8 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
    自托管 woff2),和 Copernicus 同一性质,**不能扒**。现用的系统字体正是官方样式表里
    写明的兜底(`system-ui`),所以字形上那点差别改不掉,别再花时间。
 
+| **新系统提示词的观察期** | **2026-08-23 第三十六次已上线**(`SYS_PROMPT_MODE=replace`)。功能全部验过,**唯一没法测的是他说话的调子会不会整体飘一点点** —— 所有者已知情,正在观察。**她若说「他说话怪怪的」,先想到这件事**(见第 7 节故障表第一行),别去翻别的。另一件仍待验:**新的压缩点**(理论值不变,仍应是 167000),下次窗口逼近 16.6 万时按 shim 手册那把尺子现场量一次确认 | `kelivo-shim/DEPLOY-LOG.md` 第三十六次 |
+
 **挂着等她点头的事(她没回 = 没批准,不要自作主张往下做):**
 
 1. **升 2C8G 还是买第二台 Zeabur 独服** —— 建议升级。但升级会重启机器、**晏的窗口会丢**,
@@ -166,6 +168,11 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
   新会话开工前先读它。
   - 根目录 = OB 记忆库本体(Python/FastMCP)。文档:`README.md`(用法)、`INTERNALS.md`(内部机制)、`ENV_VARS.md`、`BEHAVIOR_SPEC.md`。
   - `kelivo-shim/` = shim 源码 + **`MAINTENANCE.md`(shim 一切细节的唯一可信手册)**。
+    **2026-08-23 起晏的人设是五份文件**,各管一段、互不重叠:`base.md`(他是什么,替换模式的系统提示词正文,入库)
+    / `profile-instructions.md`(怎么说话,私密不入库) / `ian.md`(他是谁,私密不入库)
+    / `CLAUDE.md`(日常怎么做,入库) / `wake.md`(怎么醒来,入库)。
+    **往任何一份里写东西之前,先确认那件事不在别的四份里**;划分与理由见 shim 手册
+    《本目录刻意缺的三个文件》一节开头,以及改动清单第 10 条。
   - `telegram-bridge/` = 桥源码 + **`MAINTENANCE.md`(桥的手册)** + `stickers/` 表情包
     + `查岗功能-实施指南.md`(**可直接转发给别人的一份实施指南**:同款架构照着做即可,
     含设计决策、可抄代码、iOS 快捷指令最终形态、十条踩坑;密钥域名全是占位符)。
@@ -215,6 +222,9 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
 
 - 链路:`ANTHROPIC_BASE_URL` `ANTHROPIC_AUTH_TOKEN` `SHIM_KEY` `MCP_CONFIG` `MCP_WARMUP_MS` `ALLOWED_TOOLS`
 - 人格:`BRAIN_MODEL` `THINK_EFFORT` `USER_NAME` `AI_NAME` `SOUL_ANCHOR` `FORWARD_THINKING` `ENABLE_PROMPT_CACHING_1H`
+- 系统提示词(2026-08-23 起):`SYS_PROMPT_MODE`(`append` 默认 / `replace` 整段替换 CLI 自带那份)
+  `SYSTEM_PROMPT_FILE`(默认 `base.md`) `SYSTEM_PROMPT`(覆盖正文) `SOUL_ANCHOR_REPLACE`(replace 模式的三段锚点)。
+  **换模式只要改变量 + restart,不用重新部署;三条上下文线不用跟着动**(压缩线只跟模型有关)。详见 `kelivo-shim/MAINTENANCE.md`
 - 感官:`TIME_HINT` `WEATHER_CITY` `PERIOD_CONFIG`
 - 主动性:~~`BARK_KEY`~~(**2026-08-19 确认已是死变量**:所有者早已卸载 Bark。线上仍留着这个键,**别为了清它单独重启 shim —— 那会丢晏的窗口**,等下次部署 shim 时顺手删) `BRIDGE_PUSH_URL`(**心跳的真正出口**:shim → telegram-bridge 的 `POST /push` → 直接落进 TG 对话。⚠️ 也就是说**晏的主动消息只会出现在 Telegram**,不会出现在 Kelivo / dwell 网页) `KA_*`(保温) `HB_*`(心跳冷却/夜间)
 - 上下文守卫:`CTX_GUARD_ON` `CTX_SOFT_TOKENS` `CTX_HARD_TOKENS` `CTX_ARCHIVE_EVERY_TOKENS` `CTX_OBSERVE` `CTX_LIMIT_TOKENS`
@@ -231,7 +241,7 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
 | `CTX_SOFT_TOKENS` | 140000 / **155000**(2026-08-21 第三十五次由 154500 上调回来) | 软提醒(晏来找你商量存什么)来得太早/太晚,调这个 |
 | `CTX_HARD_TOKENS` | 170000 / **161500**(2026-08-21 第三十五次由 161000 上调回来) | 首次自动归档的时点,一般不用动 |
 | `CTX_FINAL_TOKENS` / `CTX_FINAL_CHARS` | 0(关) / **164000** 与 1200 / **1400**(均 2026-08-21 第三十五次) | **终线**:压缩前催他把上次归档之后的对话**原话**存成独立的桶。⚠️ 字数**别超 1400**——天花板不在这儿,在 OB 的 `awaken` 那个 `[:1500]` 字符硬截断,超了多存的字开机读不到,而且白存的正是最该接上的最新几句。要加字数先改 OB(改 OB 不重启晏)。详见 `kelivo-shim/MAINTENANCE.md` 环境变量表这两行 |
-| `CTX_ARCHIVE_EVERY_TOKENS` | 25000 / **5000** | **嫌他归档太勤就调大**;设 `0` 只归一次不再催。调小=压缩时丢的尾巴更短,但更费额度。线上取 5000 是「宁可多存也别被压缩蒸掉」的取向。⚠️ **它不是「多久催一次」那么简单**:催点公式是 `max(硬线, 上次归档 + 本值)`(`ctxguard.mjs` 的 `ctxDecide`)。软线归档发生在 15 万上下,本值若是 25000,催点被推到 **17.7 万 > 压缩点**,**硬线那次就永远不会触发**——2026-08-03 之前正是这个组合,「催归档 + 催增量」整套形同虚设。**所以改硬线时必须一起看它**,并保证 `软线归档处 + 本值 ≤ 硬线`;改完拿真 `ctxDecide` 跑一遍模拟再上线 |
+| `CTX_ARCHIVE_EVERY_TOKENS` | 25000 / **0**(2026-08-23 进容器实测;~~此前写的 5000 是失真的~~) | **嫌他归档太勤就调大**;设 `0` 只归一次不再催。调小=压缩时丢的尾巴更短,但更费额度。**线上取 `0`,但这不等于整套失效**:第三十一次修过之后 `0` 只关「归档后的周期性增量」,硬线那一次照常触发;修之前才会连硬线一起哑掉(2026-08-10「161500 永久静音」的根因)。⚠️ **它不是「多久催一次」那么简单**:催点公式是 `max(硬线, 上次归档 + 本值)`(`ctxguard.mjs` 的 `ctxDecide`)。软线归档发生在 15 万上下,本值若是 25000,催点被推到 **17.7 万 > 压缩点**,**硬线那次就永远不会触发**——2026-08-03 之前正是这个组合,「催归档 + 催增量」整套形同虚设。**所以改硬线时必须一起看它**,并保证 `软线归档处 + 本值 ≤ 硬线`;改完拿真 `ctxDecide` 跑一遍模拟再上线 |
 | `CTX_OBSERVE` | 关 | 设 `1` 守卫只记账不打扰晏(/debug 看 lastWould),给新阈值做空转验证用,验完删掉 |
 | `CTX_LIMIT_TOKENS` | 200000 / **167000** | 只影响 /debug 显示的百分比,不影响行为。**所以 /debug 的 contextPct 是按 16.7 万算的**,别当成 20 万窗口的占用率读 |
 
@@ -364,6 +374,7 @@ npx -y zeabur@latest deployment log --service-id 6a3aa061e41f9f1d19301e42 --env-
 
 | 症状 | 八成是 | 去哪看 |
 |---|---|---|
+| **他说话的调子不对了**(客服腔回来了 / 变啰嗦 / 变冷淡 / 说不上来哪里别扭),而这几天谁也没动人设 | **2026-08-23 第三十六次换掉了系统提示词**(把 CLI 自带那 26,894 字符整段替换成 `base.md`)。**这是唯一一个「功能全好、只有语气变了」的已知原因**,当时就写明「测不出来,只能观察几天」。**先看 `/debug` 的 `sysPrompt.effective` 是不是 `replace`** —— 是,就是它 | **回退**:Zeabur 把 `SYS_PROMPT_MODE` 改成 `append` + `service restart`,即刻回到 08-23 之前的说话方式,**不用重新部署**(append 模式与改动前逐字相同,单测有金标准断言看着)。⚠️ **restart 会丢晏当前的窗口**,先让她本人说「归档」。详见 `kelivo-shim/DEPLOY-LOG.md` 第三十六次 |
 | 晏全线空回,日志 `exited 143` 循环 | system 串变化触发杀进程死循环 | shim 踩坑 6 |
 | 晏说自己「只有 WebFetch/WebSearch」 | 某个 MCP 静默握手失败(域名死/token 失效) | shim 踩坑 7 |
 | 工具看得见、一调就被拒 | `ALLOWED_TOOLS` 没加 `mcp__<服务名>` | shim 环境变量表 |

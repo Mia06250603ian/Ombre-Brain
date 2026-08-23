@@ -8,6 +8,8 @@
 #   bash e2e-apierror-run.sh
 #
 # ⚠️ 慢:CLI 对 401 会重试十次左右(指数退避),**一轮就要两三分钟**,两轮五六分钟是正常的。
+#   SYS_PROMPT_MODE=replace bash e2e-apierror-run.sh   # 在「整段替换系统提示词」模式下跑同一套断言
+#
 # 全绿输出 "E2E-APIERROR ALL PASS"。临时文件和 CLI 二进制缓存都在 /tmp,不进部署目录。
 set -u
 SHIM_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -32,8 +34,8 @@ fi
 
 WORK="${TMPDIR:-/tmp}/kelivo-shim-e2e-apierror"
 rm -rf "$WORK" && mkdir -p "$WORK" && cd "$WORK"
-cp "$SHIM_DIR"/server.js "$SHIM_DIR"/ctxguard.mjs "$SHIM_DIR"/senses.mjs "$SHIM_DIR"/keepalive.mjs "$SHIM_DIR"/apierror.mjs .
-cp "$SHIM_DIR"/shim-settings.json "$SHIM_DIR"/precompact-note.txt .
+cp "$SHIM_DIR"/server.js "$SHIM_DIR"/ctxguard.mjs "$SHIM_DIR"/senses.mjs "$SHIM_DIR"/keepalive.mjs "$SHIM_DIR"/apierror.mjs "$SHIM_DIR"/sysprompt.mjs .
+cp "$SHIM_DIR"/shim-settings.json "$SHIM_DIR"/precompact-note.txt "$SHIM_DIR"/base.md .
 sed -i "s#/src/precompact-note.txt#$WORK/precompact-note.txt#" shim-settings.json
 ln -s "$DEPS/node_modules" node_modules
 echo '{ "mcpServers": {} }' > mcp-empty.json
@@ -44,6 +46,7 @@ FPID=$!
 env -i HOME="$WORK" PATH="$PATH" \
   PORT=8502 CLAUDE_BIN="$BIN" \
   ANTHROPIC_BASE_URL=http://127.0.0.1:8503 ANTHROPIC_AUTH_TOKEN=fake \
+  SYS_PROMPT_MODE="${SYS_PROMPT_MODE:-append}" \
   MCP_CONFIG=mcp-empty.json MCP_WARMUP_MS=300 KA_ON=0 TIME_HINT=0 \
   BUILTIN_TOOLS=Read ALLOWED_TOOLS=Read \
   DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
