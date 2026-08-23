@@ -5,6 +5,8 @@
 #   bash e2e-run.sh                    # 用 package.json 里钉死的 CLI 版本测(常规回归)
 #   E2E_CLI_VERSION=2.1.220 bash e2e-run.sh   # 试装候选新版本测(升级前验证,见手册「CLI 升级指南」)
 #
+#   SYS_PROMPT_MODE=replace bash e2e-run.sh   # 在「整段替换系统提示词」模式下跑同一套断言
+#
 # 全绿输出 "E2E ALL PASS";任何一条断言失败退出码非 0 并打印差异。
 # 临时文件和 CLI 二进制缓存都在 /tmp,不会混进部署目录。
 set -u
@@ -50,6 +52,7 @@ FPID=$!
 env -i HOME="$WORK" PATH="$PATH" \
   PORT=8500 CLAUDE_BIN="$BIN" \
   ANTHROPIC_BASE_URL=http://127.0.0.1:8501 ANTHROPIC_AUTH_TOKEN=fake \
+  SYS_PROMPT_MODE="${SYS_PROMPT_MODE:-append}" \
   MCP_CONFIG=mcp-empty.json MCP_WARMUP_MS=300 KA_ON=0 TIME_HINT=0 \
   BUILTIN_TOOLS=Read ALLOWED_TOOLS=Read \
   CTX_SOFT_TOKENS=30000 CTX_HARD_TOKENS=60000 CTX_ARCHIVE_EVERY_TOKENS=20000 \
