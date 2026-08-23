@@ -166,6 +166,11 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
   新会话开工前先读它。
   - 根目录 = OB 记忆库本体(Python/FastMCP)。文档:`README.md`(用法)、`INTERNALS.md`(内部机制)、`ENV_VARS.md`、`BEHAVIOR_SPEC.md`。
   - `kelivo-shim/` = shim 源码 + **`MAINTENANCE.md`(shim 一切细节的唯一可信手册)**。
+    **2026-08-23 起晏的人设是五份文件**,各管一段、互不重叠:`base.md`(他是什么,替换模式的系统提示词正文,入库)
+    / `profile-instructions.md`(怎么说话,私密不入库) / `ian.md`(他是谁,私密不入库)
+    / `CLAUDE.md`(日常怎么做,入库) / `wake.md`(怎么醒来,入库)。
+    **往任何一份里写东西之前,先确认那件事不在别的四份里**;划分与理由见 shim 手册
+    《本目录刻意缺的三个文件》一节开头,以及改动清单第 10 条。
   - `telegram-bridge/` = 桥源码 + **`MAINTENANCE.md`(桥的手册)** + `stickers/` 表情包
     + `查岗功能-实施指南.md`(**可直接转发给别人的一份实施指南**:同款架构照着做即可,
     含设计决策、可抄代码、iOS 快捷指令最终形态、十条踩坑;密钥域名全是占位符)。
