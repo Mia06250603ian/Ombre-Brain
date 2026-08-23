@@ -92,27 +92,25 @@ r = buildPromptArgs({ mode: "什么鬼", base: BASE, anchor: ANCHOR, cliSupports
 eq(r.mode, "append", "模式串是垃圾值时按 append 处理");
 eq(buildPromptArgs().args.length, 0, "全部缺省时不炸、不传任何参数");
 
-// ================= 内置正文(按教程 04 节 + 那份线上正文 + 截图清单写的)=================
+// ================= 内置正文(2026-08-23 定稿:BASE 只管身份,不重复别处已有的)=================
 const base = BASE_PROMPT_DEFAULT({ userName: "佳佳", aiName: "晏" });
 ok(base.includes("你是晏。"), "内置正文带上 AI_NAME");
 ok(base.includes("屏幕对面是佳佳"), "内置正文带上 USER_NAME");
-// 截图里那句清单:「保留工具协议、安全边界、时间感和连续性」——四样各一条断言看着,别再被删掉
-ok(base.includes("【工具】"), "工具协议在");
-ok(base.includes("【在外面做事】"), "安全边界在");
-ok(base.includes("【时间感】"), "时间感在");
-ok(base.includes("【连续性】"), "连续性在");
-ok(base.includes("【怎么说话】"), "教程 04 节的【怎么说话】在");
-ok(base.includes("【诚实】"), "教程 04 节的【诚实】在");
-ok(base.includes("【你是谁】"), "教程 04 节的【你是谁】在");
-// 指路(在最高权重位置同时指「你是谁」和「你有哪些本事、怎么用」)
+ok(base.includes("【你是谁】"), "身份锚点在");
+ok(base.includes("【诚实】") && base.includes("窗口为什么换了"), "【诚实】在,且用的是他真看不见的例子");
+ok(base.includes("【在外面做事】") && /先问佳佳/.test(base), "安全边界在");
 ok(base.includes("CLAUDE.md") && base.includes("ian.md") && base.includes("profile-instructions.md"),
    "内置正文指路到三份人设文件");
 ok(base.includes("怎么用它们"), "指路同时涵盖「你有哪些本事、怎么用」");
-// 教程 04 节点名的坑:替换之后前面已无可否定之物,句式必须是陈述不是对抗
+ok(base.includes("扮演资料") && base.includes("第一人称消化"), "【内化】的内容确实进了正文,不是被丢掉");
 ok(!/前面所有|不算数|只是运行管道的说明/.test(base), "正文里不许出现指向一段已不存在文本的否定句");
-// 与 CLAUDE.md 顶牛的那句(那份线上正文里有,教程里没有)不许抄进来
-ok(!/不刻意压缩|不注水/.test(base), "不许写说话长短——与 CLAUDE.md:35「短、快、口语」顶牛");
-ok(base.length < 900, `内置正文要短(现 ${base.length} 字符);它取代的是 26,894 字符的自带提示词`);
+// ⚠️ 下面四条看住「别把 CLAUDE.md 里已有的东西再抄进正文」——重复没有收益,
+//    只多一个「改了一处忘了另一处」的口子(心跳那句就这么矛盾挂过两天)。
+ok(!/【怎么说话】|不刻意压缩|不注水|汇报体/.test(base), "说话调性归 CLAUDE.md:35 / profile-instructions,不写进正文");
+ok(!/【时间感】|北京时间|真实时钟/.test(base), "时间感知归 CLAUDE.md:38,不写进正文");
+ok(!/【连续性】|awaken/.test(base), "压缩后怎么醒归 CLAUDE.md:76,不写进正文");
+ok(!/【工具】|没调用就不要说调用了/.test(base), "工具用法归 CLAUDE.md:7-21,不写进正文");
+ok(base.length < 400, `内置正文要短(现 ${base.length} 字符);它取代的是 26,894 字符的自带提示词`);
 
 // replace 模式的锚点:【内化】已被正文吸收,不许再重复一遍
 {
