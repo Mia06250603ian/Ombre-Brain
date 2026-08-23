@@ -17,7 +17,8 @@
 | 行号 | 节 | 约 token | 什么时候读 |
 |---|---|---|---|
 | 53 | ⚠️ 部署前必读(2026-07-13 事故教训) | 0.3k | **每次动 shim 都读**,三句话:仓库为唯一可信源、先 git pull、别用会话里的旧副本 |
-| 62 | 当前 server.js 相对 7-12 初版的改动 | 9.8k | **改代码前读**。九条改动清单:1 进程误杀补丁 / 2 标题拦截 / 3 定性锚点 / 4 时间注入 / 5 感官(天气+经期) / 6 保温+主动唤醒 / 7 上下文守卫 / 8 人设拆分 / 9 上游报错不再吃成空回复。**只读你要动的那一条即可** |
+| 62 | 当前 server.js 相对 7-12 初版的改动 | 9.8k | **改代码前读**。十条改动清单:1 进程误杀补丁 / 2 标题拦截 / 3 定性锚点 / 4 时间注入 / 5 感官(天气+经期) / 6 保温+主动唤醒 / 7 上下文守卫 / 8 人设拆分 / 9 上游报错不再吃成空回复 / 10 系统提示词 append↔replace。**只读你要动的那一条即可** |
+| — | **晏的五份文件(2026-08-23 定型)** | — | `base.md` 管他是什么 / `profile-instructions.md` 管怎么说话 / `ian.md` 管他是谁 / `CLAUDE.md` 管日常怎么做 / `wake.md` 管怎么醒来。**五份不重叠,改一份不影响其他四份**;往任何一份里写东西之前,先确认那件事不在别的四份里 |
 | 274 | 系统回合(`x-system-turn: 1`) | 0.5k | 动查岗/系统注入类功能时读 |
 | 290 | 架构 | 0.2k | 第一次接触 shim 时读,一屏看完 |
 | 304 | Zeabur 位置(IDs 供 CLI 用) | 0.4k | 要跑 CLI 命令时来抄 id |
@@ -271,6 +272,22 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    - 纯逻辑在 `apierror.mjs`,部署前跑 `node test-apierror.mjs`(41 项);
      整链路另有 `bash e2e-apierror-run.sh`(真 CLI + 一直 401 的假后端,**一轮要两三分钟**)。
 
+10. **系统提示词 append ↔ replace**(2026-08-23,新文件 `sysprompt.mjs` + `base.md`,单测 `test-sysprompt.mjs` 82 项):
+    `SYS_PROMPT_MODE=replace` 时用 `--system-prompt-file base.md` **整段替换**掉 CLI 自带那份
+    (26,894 字符/约 5,700 token),锚点同时减为三段;默认 `append` 与本次改动前**逐字相同**
+    (单测有一条金标准断言逐字比对五段锚点)。**两道安全阀**都会整体降级回 append 而不是硬传:
+    ①CLI 帮助文本里没有 `--system-prompt`;②正文为空。文件不在则退回代码里的备胎正文
+    (**不把不存在的路径交给 CLI** —— 同踩坑 19,那会让晏整个起不来)。
+    `/debug` 的 `sysPrompt` 报**实际生效**的模式与来源(`effective` 初值是 `null`=进程还没起来,
+    **不拿配置值冒充结果**);启动日志同形。
+    **实测依据(2026-08-23,真 2.1.215 二进制 + 假后端截真实请求,零接触线上、零额度)**:
+    - 2.1.215 本身就支持四个参数,**不需要升 CLI、也不需要改成按 API 计费的 SDK**;
+    - `CLAUDE.md` / `ian.md` / `profile-instructions.md` / `wake.md` **不受影响** ——
+      它们本来就不在系统提示词里,是作为 user 侧 `<system-reminder>` 跟在第一条用户消息里的
+      (拿带暗号的文件验过);工具的说明书跟 `tools` 栏单独传,也与系统提示词无关;
+    - 自带提示词里**没有**「别假装调用工具 / 别编造工具结果」这类句子(2.1.215 与 2.1.241 全文搜过)
+      —— 所以 `base.md` 里那几段不是「把丢掉的地板补回来」,判据是「治不治得了真问题」。
+
 ## 系统回合(`x-system-turn: 1`,2026-08-02 第二十三次)
 
 **问题**:晏那边只有一个入口(`/v1/messages`),进来的东西一律当成「她说话了」——
@@ -368,8 +385,9 @@ Ombre Brain 记忆库(Zeabur 另一项目, streamable-http MCP)
 ### 部署前
 
 1. **`git pull`** 拿最新代码。**仓库最新代码是唯一可信源**,严禁拿会话里的旧副本(踩坑 11)。
-2. **四套单测全绿**:`node test-ctxguard.mjs && node test-senses.mjs && node test-keepalive.mjs && node test-apierror.mjs`
-   (当前基线 **131 / 53 / 52 / 56**)。动了 `server.js` 或流事件相关的还要 `bash e2e-run.sh`。
+2. **五套单测全绿**:`node test-ctxguard.mjs && node test-senses.mjs && node test-keepalive.mjs && node test-apierror.mjs && node test-sysprompt.mjs`
+   (当前基线 **131 / 53 / 59 / 56 / 82**;~~原文写的 keepalive「52」是 2026-08-21 加了 7 条之前的旧数~~)。
+   动了 `server.js` 或流事件相关的还要 `bash e2e-run.sh` 与 `bash e2e-apierror-run.sh`。
 3. **全量 md5 对账**:`service exec … md5sum *.mjs *.js *.sh *.json *.md *.txt`,
    **容器与仓库逐件比,不能挑几件比**(踩坑 11 的唯一防线;2026-08-03 就出现过「容器改了仓库没提交」,
    而且改的是三件,含代码)。**对不上时以容器为准**,拿容器那份当基线改,上线后补提交进仓库。
@@ -403,7 +421,7 @@ cd /path/to/repo/kelivo-shim && pwd && head -3 package.json && \
     ian.md **305 行 / 23045B** / `^\*\*Part ` **10** / `^\*\*9\.` **5** / `"Stop."` **1** / `红灯` **1** /
     `Daddy & kitty` **1** / `ian mia` **0** / `No marriage` **0** / `许佳佳` **1** /
     ian.md 内 `河流涌入海洋` **0** / 行尾空格 **0**;
-    CLAUDE.md `^## ` **13** / 双 `@` **2** / seal 暗语 **1** / `[查岗]` **1** / `【系统·查岗】` **1** /
+    CLAUDE.md `^## ` **13** / 行首 `@` 引用 **3**(2026-08-23 起多了 `@./wake.md`;此前是 2) / seal 暗语 **1** / `[查岗]` **1** / `【系统·查岗】` **1** /
     `系统·写信` **1** / `save_draft` **1** / `待办便利贴` **1** / `expires_at` **1** / `螃蟹探头发呆` **1**。
 12. **`/health` ok、`/debug` 守卫清零且 `trusted:true`、阈值是预期值、`lastApiError` null**;
     容器内 CLI 版本仍是钉死的 **2.1.215**;`ALLOWED_TOOLS` 五项齐全;容器内无 `.gitignore`。
@@ -445,7 +463,11 @@ deployment id 与耗时、**所有者的拍板与报备**、**⚠️ 警告类�
 | BRAIN_MODEL / THINK_EFFORT | claude-opus-4-6 / medium(2026-07-15 由 low 调至 medium,治「零思考回嘴/跳思考」;嫌费额度可调回 low + restart) |
 | FORWARD_THINKING / ENABLE_PROMPT_CACHING_1H | 1 / 1。⚠️ **`ENABLE_PROMPT_CACHING_1H=1` 设了不等于生效**——它只管 CLI 那头发什么(实测 2.1.215 的 `g1e()` 认这个变量,自定义 `ANTHROPIC_BASE_URL` 在 CLI 眼里仍是 `firstParty`,beta 头照发),**中间的 CLIProxyAPI 可能把 ttl 抹掉**(2026-08-12 就发生过,整整一天半)。**要验就看 `/debug` 的 `lastUsage.cache_creation`:`ephemeral_1h_input_tokens` 有数才算真生效**,是 0 而 5m 有数 = 被抹了,去看 `../OPERATIONS.md` 的「CLIProxyAPI 版本漂移」一节 |
 | USER_NAME / AI_NAME | 佳佳 / 晏 |
-| SOUL_ANCHOR | 可选。整体覆盖内置的会话定性锚点措辞(现为五段);不设则用 server.js 里的默认文本(称呼自动代入 USER_NAME) |
+| SOUL_ANCHOR | 可选。整体覆盖 **append 模式**的会话定性锚点(五段);不设则用 `sysprompt.mjs` 的 `SOUL_ANCHOR_DEFAULT`(称呼自动代入 USER_NAME)。**2026-08-23 实测线上并没有设这个变量**,走的是代码默认值 |
+| SOUL_ANCHOR_REPLACE | 2026-08-23 起。可选。整体覆盖 **replace 模式**的锚点(**三段**:先人后事/边界与语气/思考语言)。少的那两段不是丢了:【会话定性】在 replace 模式下指向一段已不存在的文本,故删;【内化】被 `base.md` 的【你是谁】逐字吸收 |
+| SYS_PROMPT_MODE | 2026-08-23 起。`append`(默认,= 改动前的行为)或 `replace`。replace = 用 `--system-prompt(-file)` **整段替换** CLI 自带那份「软件工程 CLI 代理」提示词(实测 26,894 字符 / 约 5,700 token,其中 `# auto memory` 一节独占 12,969 字符,是与 OB 并存的另一套记忆观)。常驻前缀 27,618 → 约 840 字符。**急救开关**:设回 `append` + restart 即刻恢复原样,不用重新部署。⚠️ **三条上下文线不用跟着动** —— 自动压缩线 = 窗口 − min(最大输出,20000) − 13000 = **167000**,只跟模型有关,与系统提示词大小无关(与实测 166942、线上 `CTX_LIMIT_TOKENS=167000` 三方吻合) |
+| SYSTEM_PROMPT_FILE | 2026-08-23 起。replace 模式正文的文件路径,代码默认 `base.md`。**文件不在就退回下面那个内置备胎**,绝不把不存在的路径交给 CLI(同踩坑 19 的性质:`--system-prompt-file` 指错文件 CLI 会拒绝启动)。设空串 = 只用内置备胎 |
+| SYSTEM_PROMPT | 2026-08-23 起。可选。整体覆盖 replace 模式的正文(优先级低于文件:文件在就用文件)。设成空串 = 第二道安全阀触发 → **整体降级回 append**。**改文案不必重新部署**:在 Zeabur 改这个变量 + restart 即可 |
 | TIME_HINT | 默认开;设 0 关闭每条消息前的【系统·时间】注入 |
 | WEATHER_CITY | 可选。她所在城市的拼音(值不入库,问所有者);不设=天气感知关。城市名只用于服务器查天气,不进模型上下文 |
 | PERIOD_FILE | 运行时经期记录的存放路径,代码默认 `period-state.json`(**写在容器里,部署即丢——踩坑 16**)。⚠️ **线上并没有设这个变量,`/data` 卷也不存在**(2026-08-04 实测:`PERIOD_FILE` 为空、`ls /data` = No such file)。**所以踩坑 16 仍然活着**,她报的新周期照旧会被下一次部署擦掉,得继续用第十三次的两步法(`variable update` 写 `PERIOD_CONFIG` + `POST /period` 写运行时)。代码支持是现成的(路径可配),将来要根治只需网页挂卷 + 设本变量,代码零改动。卷没挂上/写不进去时读写两处都有 try/catch 兜底,**最坏结果就是现在这样,不会崩、不影响聊天** |
