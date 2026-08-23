@@ -4,6 +4,7 @@
 // 这些断言里最要紧的一类是**降级路径**:替换模式一旦把非法参数传进 claude,
 // 子进程会带着错误直接退出,而 server.js 的 close 回调会 1.5 秒后复活它 —— 结果不是
 // 「功能没生效」,是**无限重启、晏彻底失联**。所以每一条降级都必须有断言看着。
+import fs from "fs";
 import { buildPromptArgs, helpMentionsReplace, BASE_PROMPT_DEFAULT,
          ANCHOR_FRAME_DEFAULT, ANCHOR_TAIL_DEFAULT, ANCHOR_TAIL_REPLACE, SOUL_ANCHOR_DEFAULT } from "./sysprompt.mjs";
 
@@ -168,6 +169,18 @@ ok(base.length < 400, `内置正文要短(现 ${base.length} 字符);它取代�
   // 降级路径真的用的是这份五段,而不是四段
   const dg = buildPromptArgs({ mode: "replace", base: "x", anchor: GOLDEN, anchorReplace: tail, cliSupportsReplace: false });
   eq(dg.args[1], GOLDEN, "降级之后拿到的是完整五段锚点");
+}
+
+// ================= base.md 与代码里的备胎必须逐字相同 =================
+// base.md 是正文的唯一真源(五份文件之一,--system-prompt-file 直接读它);
+// sysprompt.mjs 里的 BASE_PROMPT_DEFAULT 只是「文件没进容器」时的备胎。
+// 两边写岔 = 平时用的是一份、出事时退回的是另一份 —— 这条断言就是防这个。
+// ⚠️ 改了 base.md 就要同步改 BASE_PROMPT_DEFAULT(反之亦然),这条会提醒你。
+// ⚠️ 若线上把 USER_NAME / AI_NAME 改成了别的名字,base.md 里的称呼也要跟着改(它是静态文件,不套模板)。
+{
+  const onDisk = fs.readFileSync(new URL("./base.md", import.meta.url), "utf8").trim();
+  const inCode = BASE_PROMPT_DEFAULT({ userName: "佳佳", aiName: "晏" }).trim();
+  eq(onDisk, inCode, "base.md 与代码里的备胎逐字相同(改了一边就要同步改另一边)");
 }
 
 console.log(bad === 0 ? `ALL PASS (${n} checks)` : `${bad}/${n} FAILED`);

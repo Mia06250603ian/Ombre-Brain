@@ -36,7 +36,10 @@ const SYS_PROMPT_MODE = (process.env.SYS_PROMPT_MODE || "append").trim();
 //    而它买不到任何东西 —— 改文件同样要重新部署,改这个环境变量却连部署都不用。
 // 教程建议的那条路:正文放文件,SYSTEM_PROMPT_FILE 指过去。**文件不在就退回下面的内置正文**,
 // 绝不把一个不存在的路径传给 CLI —— 那会让 CLI 直接拒绝启动(踩坑 19 就是这么摔的)。
-const SYSTEM_PROMPT_FILE = process.env.SYSTEM_PROMPT_FILE || "";
+// **正文的唯一真源是 base.md**(和 ian.md / profile-instructions.md / CLAUDE.md / wake.md 并列,
+// 五份文件各管一段)。下面 BASE_PROMPT_DEFAULT 只是**文件万一没进容器时的备胎**,
+// 两边写岔了 test-sysprompt.mjs 会直接报错(那条断言逐字比对文件与代码)。
+const SYSTEM_PROMPT_FILE = process.env.SYSTEM_PROMPT_FILE ?? "base.md";
 const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT ?? BASE_PROMPT_DEFAULT({ userName: USER_NAME, aiName: AI_NAME });
 // 会话定性锚点:钉在系统提示词最末尾(有世界书时排世界书之后)。措辞可用环境变量整体覆盖
 // (改环境变量 + service restart 即可,不用重新部署)。两段正文都在 sysprompt.mjs,

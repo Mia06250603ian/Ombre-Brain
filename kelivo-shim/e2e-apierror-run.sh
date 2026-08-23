@@ -33,7 +33,7 @@ fi
 WORK="${TMPDIR:-/tmp}/kelivo-shim-e2e-apierror"
 rm -rf "$WORK" && mkdir -p "$WORK" && cd "$WORK"
 cp "$SHIM_DIR"/server.js "$SHIM_DIR"/ctxguard.mjs "$SHIM_DIR"/senses.mjs "$SHIM_DIR"/keepalive.mjs "$SHIM_DIR"/apierror.mjs "$SHIM_DIR"/sysprompt.mjs .
-cp "$SHIM_DIR"/shim-settings.json "$SHIM_DIR"/precompact-note.txt .
+cp "$SHIM_DIR"/shim-settings.json "$SHIM_DIR"/precompact-note.txt "$SHIM_DIR"/base.md .
 sed -i "s#/src/precompact-note.txt#$WORK/precompact-note.txt#" shim-settings.json
 ln -s "$DEPS/node_modules" node_modules
 echo '{ "mcpServers": {} }' > mcp-empty.json

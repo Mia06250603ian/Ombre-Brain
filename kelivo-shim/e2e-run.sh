@@ -38,7 +38,7 @@ rm -rf "$WORK" && mkdir -p "$WORK" && cd "$WORK"
 cp "$SHIM_DIR"/server.js "$SHIM_DIR"/ctxguard.mjs "$SHIM_DIR"/senses.mjs "$SHIM_DIR"/keepalive.mjs "$SHIM_DIR"/apierror.mjs "$SHIM_DIR"/sysprompt.mjs .
 # PreCompact 钩子的两件(2026-08-09):settings 里的 command 写的是容器绝对路径 /src/…,
 # e2e 在 /tmp 跑,所以拷进来后把路径改写成本次工作目录的。
-cp "$SHIM_DIR"/shim-settings.json "$SHIM_DIR"/precompact-note.txt .
+cp "$SHIM_DIR"/shim-settings.json "$SHIM_DIR"/precompact-note.txt "$SHIM_DIR"/base.md .
 sed -i "s#/src/precompact-note.txt#$WORK/precompact-note.txt#" shim-settings.json
 ln -s "$DEPS/node_modules" node_modules
 echo '{ "mcpServers": {} }' > mcp-empty.json
