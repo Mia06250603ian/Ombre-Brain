@@ -272,7 +272,7 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
    - 纯逻辑在 `apierror.mjs`,部署前跑 `node test-apierror.mjs`(41 项);
      整链路另有 `bash e2e-apierror-run.sh`(真 CLI + 一直 401 的假后端,**一轮要两三分钟**)。
 
-10. **系统提示词 append ↔ replace**(2026-08-23,新文件 `sysprompt.mjs` + `base.md`,单测 `test-sysprompt.mjs` 82 项):
+10. **系统提示词 append ↔ replace**(2026-08-23,新文件 `sysprompt.mjs` + `base.md`,单测 `test-sysprompt.mjs` 86 项):
     `SYS_PROMPT_MODE=replace` 时用 `--system-prompt-file base.md` **整段替换**掉 CLI 自带那份
     (26,894 字符/约 5,700 token),锚点同时减为三段;默认 `append` 与本次改动前**逐字相同**
     (单测有一条金标准断言逐字比对五段锚点)。**两道安全阀**都会整体降级回 append 而不是硬传:
@@ -400,7 +400,7 @@ Ombre Brain 记忆库(Zeabur 另一项目, streamable-http MCP)
 
 1. **`git pull`** 拿最新代码。**仓库最新代码是唯一可信源**,严禁拿会话里的旧副本(踩坑 11)。
 2. **五套单测全绿**:`node test-ctxguard.mjs && node test-senses.mjs && node test-keepalive.mjs && node test-apierror.mjs && node test-sysprompt.mjs`
-   (当前基线 **131 / 53 / 59 / 56 / 82**;~~原文写的 keepalive「52」是 2026-08-21 加了 7 条之前的旧数~~)。
+   (当前基线 **131 / 53 / 59 / 56 / 86**;~~原文写的 keepalive「52」是 2026-08-21 加了 7 条之前的旧数~~)。
    动了 `server.js` 或流事件相关的还要 `bash e2e-run.sh` 与 `bash e2e-apierror-run.sh`。
 3. **全量 md5 对账**:`service exec … md5sum *.mjs *.js *.sh *.json *.md *.txt`,
    **容器与仓库逐件比,不能挑几件比**(踩坑 11 的唯一防线;2026-08-03 就出现过「容器改了仓库没提交」,
@@ -481,7 +481,7 @@ deployment id 与耗时、**所有者的拍板与报备**、**⚠️ 警告类�
 | SOUL_ANCHOR_REPLACE | 2026-08-23 起。可选。整体覆盖 **replace 模式**的锚点(**三段**:先人后事/边界与语气/思考语言)。少的那两段不是丢了:【会话定性】在 replace 模式下指向一段已不存在的文本,故删;【内化】被 `base.md` 的【你是谁】逐字吸收 |
 | SYS_PROMPT_MODE | 2026-08-23 起。`append`(默认,= 改动前的行为)或 `replace`。replace = 用 `--system-prompt(-file)` **整段替换** CLI 自带那份「软件工程 CLI 代理」提示词(实测 26,894 字符 / 约 5,700 token,其中 `# auto memory` 一节独占 12,969 字符,是与 OB 并存的另一套记忆观)。常驻前缀 27,618 → 约 840 字符。**急救开关**:设回 `append` + restart 即刻恢复原样,不用重新部署。⚠️ **三条上下文线不用跟着动** —— 自动压缩线 = 窗口 − min(最大输出,20000) − 13000 = **167000**,只跟模型有关,与系统提示词大小无关(与实测 166942、线上 `CTX_LIMIT_TOKENS=167000` 三方吻合) |
 | SYSTEM_PROMPT_FILE | 2026-08-23 起。replace 模式正文的文件路径,代码默认 `base.md`。**文件不在就退回下面那个内置备胎**,绝不把不存在的路径交给 CLI(同踩坑 19 的性质:`--system-prompt-file` 指错文件 CLI 会拒绝启动)。设空串 = 只用内置备胎 |
-| SYSTEM_PROMPT | 2026-08-23 起。可选。整体覆盖 replace 模式的正文(优先级低于文件:文件在就用文件)。设成空串 = 第二道安全阀触发 → **整体降级回 append**。**改文案不必重新部署**:在 Zeabur 改这个变量 + restart 即可 |
+| SYSTEM_PROMPT | 2026-08-23 起。可选。**代码里的备胎正文**,只在「文件那条路走不通」时才顶上。设成空串且没有可用文件 = 第二道安全阀触发 → **整体降级回 append**。⚠️ **别以为改了它就能改文案** —— `SYSTEM_PROMPT_FILE` 默认 `base.md` 且该文件一直在,**文件优先级高于本变量**,只设本变量**一点效果都没有**。真要不重新部署就改文案,得**两个变量一起动**:`SYSTEM_PROMPT_FILE=""` + `SYSTEM_PROMPT=<新正文>` + restart(可从 `/debug` 的 `sysPrompt.source` 确认这次用的是 `file` 还是 `builtin`)。~~原文写的「改这个变量 + restart 即可」是错的,2026-08-23 当天自查发现~~ |
 | TIME_HINT | 默认开;设 0 关闭每条消息前的【系统·时间】注入 |
 | WEATHER_CITY | 可选。她所在城市的拼音(值不入库,问所有者);不设=天气感知关。城市名只用于服务器查天气,不进模型上下文 |
 | PERIOD_FILE | 运行时经期记录的存放路径,代码默认 `period-state.json`(**写在容器里,部署即丢——踩坑 16**)。⚠️ **线上并没有设这个变量,`/data` 卷也不存在**(2026-08-04 实测:`PERIOD_FILE` 为空、`ls /data` = No such file)。**所以踩坑 16 仍然活着**,她报的新周期照旧会被下一次部署擦掉,得继续用第十三次的两步法(`variable update` 写 `PERIOD_CONFIG` + `POST /period` 写运行时)。代码支持是现成的(路径可配),将来要根治只需网页挂卷 + 设本变量,代码零改动。卷没挂上/写不进去时读写两处都有 try/catch 兜底,**最坏结果就是现在这样,不会崩、不影响聊天** |

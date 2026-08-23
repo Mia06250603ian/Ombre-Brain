@@ -183,5 +183,20 @@ ok(base.length < 400, `内置正文要短(现 ${base.length} 字符);它取代�
   eq(onDisk, inCode, "base.md 与代码里的备胎逐字相同(改了一边就要同步改另一边)");
 }
 
+// ⚠️ 文档里写着的一个陷阱,钉在这里免得改代码时把优先级改反、文档悄悄变成假的:
+// `SYSTEM_PROMPT_FILE` 默认 `base.md` 且该文件一直在,**文件优先级高于 SYSTEM_PROMPT**,
+// 所以「只改 SYSTEM_PROMPT 环境变量」一点效果都没有;要不重新部署就改文案,必须两个一起动。
+{
+  const F = "/persona/system-prompt.md";
+  let x = buildPromptArgs({ mode: "replace", base: "【新文案】", anchorReplace: ANCHOR_R,
+                            promptFile: F, fileExists: (p) => p === F, cliSupportsReplace: true });
+  ok(!x.args.includes("【新文案】"), "只改 SYSTEM_PROMPT 而文件还在时,新正文**不**生效(文件优先)");
+  eq(x.source, "file", "此时 source 报 file,给排查留下证据");
+  x = buildPromptArgs({ mode: "replace", base: "【新文案】", anchorReplace: ANCHOR_R,
+                        promptFile: "", fileExists: () => true, cliSupportsReplace: true });
+  eq(x.args[1], "【新文案】", "同时清空 SYSTEM_PROMPT_FILE 之后,新正文才生效");
+  eq(x.source, "builtin", "此时 source 报 builtin");
+}
+
 console.log(bad === 0 ? `ALL PASS (${n} checks)` : `${bad}/${n} FAILED`);
 process.exit(bad === 0 ? 0 : 1);
