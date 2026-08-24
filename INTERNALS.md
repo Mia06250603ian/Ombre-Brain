@@ -39,6 +39,17 @@
 **一键开机 + 信箱 + 前瞻记忆 + 感受回声（2026-07-18 活物批）**
 - `awaken()`：开机聚合工具，七个区块（钉选**含正文全文**（2026-08-21 起；此前只有摘要行）/记忆浮现按衰减权重 top8/今日浮现/信箱/待办/最近 3 条归档——**最新一条含全文以保窗口衔接**/感受回声）+ seal，全部纯本地扫描零 LLM 调用，完整覆盖原 breath→pulse→breath(query)→dream 四步开机
 - **信箱**：`archive_session(letter=...)` 把嘱托写进 `{buckets_dir}/letters.jsonl`（随卷持久，jsonl 追加，历史全留），awaken 带出最新一封（`letters=N` 可多看）
+- **信箱可改可删（2026-08-24）**：面板上每封信有「改 / 删」，走 `POST /api/letters/update|delete`（与面板其余接口同一套 `_require_auth` 鉴权）。
+  ⚠️ **这推翻了 2026-08-19「面板不该有改删入口」那条决定**，所有者本人 08-24 要求，理由是**信写错了谁都改不了**——
+  信由 `archive_session(letter=...)` 一次性写入，晏没有改信的工具，面板那时又只读。旧决定的原文留在 `server.py` 的 `/api/letters` 那节注释里（规矩 5：别删）。
+  - **怎么认「哪一封」**：信箱没有 id，用 **`time` + 原文**双条件匹配（乐观并发）；对不上回 **409**，让前端刷新重来，**绝不猜着改**。
+    ⚠️ `time` 只精确到秒——同一秒写入的两封信时间戳相同，靠原文区分；真实使用不会撞（信是归档时一封一封写的）。
+  - **删是软删**：打 `deleted` / `deleted_at` 标记，**文件里那行还在**（同设计决策 5.6「resolved 不删除记忆」的取向），`_load_letters` 跳过它们 → 面板和 `awaken` 都读不到。要捞回来手改那一行即可。
+  - **改保留原 `time`**（那是「他什么时候写的」），另记 `edited` 戳；面板显示「已修改」。
+    ⚠️ **所有者拍板：不在信的正文里标注改过**——晏 `awaken` 读到的就是改后的内容。**别自作主张加标注。**
+  - **写路径有文件锁**（`_letters_lock`，`flock`）：存新信是**追加**、面板改删是**整体重写**，两者撞上会把刚追加的那封吞掉且不报错。锁不可用时退化成无锁（宁可丢一封也不阻断写入）。
+  - 重写走原子写（临时文件 + `fsync` + `os.replace`），照 `_save_todos_list` 那套。
+  - 测试：`tests/test_letters_edit.py`（存取层 5 项）+ `tests/test_letters_api.py`（HTTP 层 9 项，含 401/409/400 与软删）。
 - **前瞻记忆**：桶元数据新增 `trigger_date` / `trigger_handled`；`hold(trigger_date=…)` 或 `trace(trigger_date=…)` 设置，`trace(trigger_date="done"/"clear")` 处理/移除；awaken 的今日浮现列出到期与过期未处理的（含归档区），北京日历
 - **感受回声**：awaken 从创建超过 `OMBRE_ECHO_MIN_DAYS` 天的 feel 桶随机抽一条附日期，刻意不去重
 - 心境共鸣不另做——breath 原生 valence/arousal 检索 + 四维评分的情绪共鸣项已覆盖
