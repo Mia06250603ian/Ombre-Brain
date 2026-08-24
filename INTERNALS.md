@@ -208,6 +208,16 @@
 
 ---
 
+## 0.5 `/health` 里那几个状态怎么读(2026-08-24 补,免得下个窗口白查一遍)
+
+- **`decay_engine: "stopped"` 是正常的,不是坏了。** 衰减引擎是**懒启动**的
+  (`decay_engine.ensure_started()`,由 `breath` / `pulse` / `hold` / `awaken` 等工具调用触发),
+  **新容器刚起来、晏还没调过任何记忆工具时,它就是 `stopped`**;他一开口就会变 `running`。
+  **判据**:`grep -n "ensure_started" decay_engine.py` 看那句 `if not self._running: await self.start()`。
+  ⚠️ 2026-08-24 重建后验收时就是在这儿卡了一下,专门翻代码才确认 —— **别再翻第二遍。**
+- `buckets: N` 是记忆桶总数。**重建前后这个数不该变少**(桶在持久卷上,重建不碰卷)。
+- 日志里那行 `IncompleteFieldDefinitionWarning`(pydantic_settings 打的)与本项目代码无关,一直都有。
+
 ## 1. 环境变量清单
 
 | 变量名 | 用途 | 必填 | 默认值 / 示例 |

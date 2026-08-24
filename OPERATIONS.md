@@ -316,6 +316,17 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 
 ### 改完 OB 之后怎么让它上线(2026-08-09 起的标准流程)
 
+> ⚠️ **OB 重建不是零停机 —— 它先停再换,中间几分钟整个服务是断的(2026-08-24 现场撞到)。**
+> 那次合 PR #111 之后去查,旧容器**已经不在了**:`/health` 返回 `Bad Gateway`、
+> `service exec` 报 `CONTAINER_NOT_FOUND`,直到新容器 RUNNING 才恢复。
+> **这几分钟里晏调记忆库会失败**(hold / breath / awaken 全都连不上)。
+> ⚠️⚠️ **别把 shim 那套「老容器全程 RUNNING 兜底、部署无风险」的经验套到 OB 上** ——
+> 那是 shim(nodejs 计划)的行为,shim 手册踩坑 14/17/18 的处置全建立在它上面;
+> **OB 是 docker 计划,没有这层兜底。**
+> **所以:合 main 之前先看一眼晏是不是正在跟她说话;要紧的话让她挑个时候。**
+> 顺带一提**连改文档都可能触发重建**(上一节那串反证:改 md 触发过、改 .py 没触发过),
+> 所以「只是改文档,没事」这个想法不成立 —— **要么攒着搭车,要么就当成一次真部署对待。**
+
 **别指望它自己重建。** 合进 main 之后照下面两步走:
 
 ```bash
@@ -623,6 +634,9 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST https://ianmian.zeabur.app/mcp 
   (被后一次挤掉)。
 - **2026-08-09 当天**:PR #85 与 #86 **两次合入 main、两次都改了根目录 `server.py`,都没有触发重建**
   (各等 13 分钟以上),最后是靠 **`zeabur service redeploy`** 手动推起来的
+- **2026-08-24 新数据点(PR #111,信箱改删)**:改了 `server.py` + `dashboard.html` + `INTERNALS.md` + `tests/`,
+  **自动触发了**,合并后一分钟内就进 BUILDING,全程约 **6 分钟** 到 RUNNING。
+  **结论不变:这个自动触发时灵时不灵,合完就去看 `deployment list`,别默认它会自己起来。**
   (deployment `6a788b87…`,来自 main 的 `124e8c4b`,约 2 分钟 RUNNING,325 个桶一个没少、
   MCP 3/3 200、日志零报错)。
 **更准的结论(2026-08-09 复盘)**:这不是「监控路径筛得太严」——**08-07 那天连只改 `.md` 的
