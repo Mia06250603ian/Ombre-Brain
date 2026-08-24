@@ -19,7 +19,7 @@ const MODEL = process.env.BRAIN_MODEL || "claude-opus-4-6";
 // ⚠️ 名单里只许放**窗口大小相同**的模型(4.5/4.6/4.8 压缩点都是 167000,见 ../docs/多模型接出方案.md 4.3)——
 // 窗口不同的模型要连三条上下文线一起按模型分,否则会不报警地丢尾巴。
 // ⚠️ Opus 5 现在别放:CLI 2.1.215 不认识它(同文 4.5 节),要先单独立项升 CLI。
-const MODELS = (process.env.BRAIN_MODELS || "").split(",").map((x) => x.trim()).filter(Boolean);
+const MODELS = [...new Set((process.env.BRAIN_MODELS || "").split(",").map((x) => x.trim()).filter(Boolean))];
 if (!MODELS.includes(MODEL)) MODELS.unshift(MODEL);
 const EFFORT = process.env.THINK_EFFORT || "low";        // low省额度 / medium思考更长
 const CLAUDE_BIN = process.env.CLAUDE_BIN || "claude";

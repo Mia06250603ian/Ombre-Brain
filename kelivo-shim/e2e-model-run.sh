@@ -50,7 +50,7 @@ start_shim() {  # $1=阶段名 $2=BRAIN_MODELS 值(空=休眠)
     PORT=8600 CLAUDE_BIN="$BIN" \
     ANTHROPIC_BASE_URL=http://127.0.0.1:8601 ANTHROPIC_AUTH_TOKEN=fake \
     BRAIN_MODEL="$M46" BRAIN_MODELS="$2" \
-    MCP_CONFIG=mcp-empty.json MCP_WARMUP_MS=300 KA_ON=0 TIME_HINT=0 \
+    MCP_CONFIG=mcp-empty.json MCP_WARMUP_MS=300 KA_ON=1 KA_CHECK_MIN=999 TIME_HINT=0 \
     CTX_GUARD_ON=1 CTX_SOFT_TOKENS=30000 CTX_HARD_TOKENS=90000 CTX_ARCHIVE_EVERY_TOKENS=0 \
     BUILTIN_TOOLS=Read ALLOWED_TOOLS=Read \
     DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
@@ -81,6 +81,12 @@ msg "a2 不报模型" ""                  # 两个桥改造后的形态 → 不�
 msg "a3 切到45" "$M45"                # 真切 → 该重开
 msg "a4 不报模型" ""                  # 乒乓球那道锁:不该被拽回 4.6
 msg "a5 名单外" "claude-opus-4-9-nope" # 白名单外 → 沿用当前,不该重开
+# ⚠️ 最要紧的一条:**Kelivo 每条消息都会带上她选中的模型名**,所以「反复报同一个模型」
+# 才是日常最常见的形态。它要是也重开进程,她在 Kelivo 每说一句话就丢一个窗口。
+msg "a6 再报45" "$M45"
+msg "a7 又报45" "$M45"
+# ⚠️ 同样致命的一条:保温/心跳回合每 ~55 分钟来一次,它要是也重开进程,晏每小时丢一个窗口。
+curl -sS -X POST http://127.0.0.1:8600/hb >/dev/null; sleep 2
 curl -sS http://127.0.0.1:8600/debug > "$WORK/debug-A.json"
 curl -sS http://127.0.0.1:8600/health > "$WORK/health-A.json"
 cp "$WORK/models.json" "$WORK/models-A.json"
@@ -90,6 +96,7 @@ stop_shim
 start_shim B ""
 curl -sS http://127.0.0.1:8600/v1/models > "$WORK/models-list-B.json"
 msg "b1 默认" "$M46"
+msg "b1b 再报同一个" "$M46"   # 休眠状态下的日常形态,同样不许重开
 msg "b2 报45" "$M45"                  # 名单里没有它 → 该被无视,不重开
 msg "b3 不报" ""
 curl -sS http://127.0.0.1:8600/health > "$WORK/health-B.json"
@@ -112,17 +119,19 @@ ok(listA.data.length === 2, `A:/v1/models 吐两项(Kelivo 菜单就是从这来
 ok(listA.data[0].id === M46 && listA.data[1].id === M45, "A:/v1/models 的 id 就是名单本身");
 
 const spA = spawns("shim-A.log");
-ok(spA.length === 2, `A:整个阶段只重开一次进程(got ${spA.length} 次 spawn)——不报模型的两条不该触发`);
+ok(spA.length === 2, `A:整个阶段只重开一次进程(got ${spA.length} 次 spawn)——不报模型、报名单外、**反复报同一个模型**都不该触发`);
 ok(spA[0] === M46, `A:第一个进程用 4.6(got ${spA[0]})`);
 ok(spA[1] === M45, `A:切换后的新进程用 4.5(got ${spA[1]})`);
 
 // CLI 真发上去的模型 —— 这是「真的切到了」的硬证据
 const mA = rd("models-A.json");
-ok(mA.length === 5, `A:五条消息五次上游调用(got ${mA.length})`);
+ok(mA.length === 8, `A:七条消息 + 一次心跳 = 八次上游调用(got ${mA.length})`);
 ok(mA[0] === M46 && mA[1] === M46, "A:前两条走 4.6(第二条没报模型 → 沿用当前)");
 ok(mA[2] === M45, `A:切过去之后 CLI 真的发的是 4.5(got ${mA[2]})`);
 ok(mA[3] === M45, "A:**没报模型的下一条仍是 4.5** —— 两个桥拽不回去(乒乓球那道锁)");
 ok(mA[4] === M45, "A:报了名单外的模型被无视,沿用 4.5(白名单)");
+ok(mA[5] === M45 && mA[6] === M45, "A:**反复报同一个模型仍走 4.5**(Kelivo 每条都会报,这是日常形态)");
+ok(mA[7] === M45, "A:**心跳回合沿用当前模型**,不把她切过去的模型顶回 4.6");
 
 // 7.2 ⑤:切模型 = 新进程 = 窗口归零。守卫的记账必须跟着复位,且**不许**把这次
 // 「读数从 6 万暴跌到 1 千」误判成一次静默压缩(误判会让 compactions 虚增、软线提前重臂)。
@@ -143,7 +152,7 @@ ok(listB.data.length === 1 && listB.data[0].id === M46, "B:不设 BRAIN_MODELS �
 const spB = spawns("shim-B.log");
 ok(spB.length === 1, `B:**报任何模型都不重开进程**(got ${spB.length} 次 spawn)——休眠时行为与改动前逐字相同`);
 const mB = rd("models-B.json");
-ok(mB.length === 3 && mB.every((m) => m === M46), `B:三条全走 4.6(got ${mB.join(",")})`);
+ok(mB.length === 4 && mB.every((m) => m === M46), `B:四条全走 4.6(got ${mB.join(",")})`);
 
 if (bad) { console.error(`\n${bad}/${n} 项断言失败(shim-*.log / fake-*.log 在 ${W})`); process.exit(1); }
 console.log(`E2E MODEL ALL PASS (${n} checks)`);
