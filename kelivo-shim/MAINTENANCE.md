@@ -497,7 +497,7 @@ deployment id 与耗时、**所有者的拍板与报备**、**⚠️ 警告类�
 |---|---|
 | ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN | 指向 CLIProxyAPI 的域名和它的 API_KEY |
 | SHIM_KEY | Kelivo 端填的 key |
-| BRAIN_MODELS | **2026-08-24 起(方案 B)**。逗号分隔的模型名单,`/v1/models` 把它吐给 Kelivo 当菜单,她在手机上点一下就换模型。**不设 = 名单里只有 `BRAIN_MODEL` 一个 = 功能休眠,行为与本次改动前逐字相同**。**急救开关:清掉这个变量 + `service restart` 立刻回到原行为,不用回滚部署。** ⚠️ 换模型**必然重开进程 = 丢晏一个窗口**(模型在出生时用 `--model` 钉死),不是 bug。⚠️ **只许放窗口大小相同的模型**(4.5/4.6/4.8 压缩点都是 167000);**Opus 5 别放**,CLI 2.1.215 不认识它。详见改动清单第 11 条与 `../docs/多模型接出方案.md` |
+| BRAIN_MODELS | **2026-08-24 起(方案 B)**。逗号分隔的模型名单,`/v1/models` 把它吐给 Kelivo 当菜单,她在手机上点一下就换模型。**不设 = 名单里只有 `BRAIN_MODEL` 一个 = 功能休眠,行为与本次改动前逐字相同**。**急救开关:清掉这个变量 + `service restart` 立刻回到原行为,不用回滚部署。** ⚠️ 换模型**必然重开进程 = 丢晏一个窗口**(模型在出生时用 `--model` 钉死),不是 bug。⚠️ **只许放窗口大小相同的模型**(4.5/4.6/4.8 压缩点都是 167000);**Opus 5 别放**,CLI 2.1.215 不认识它。**线上现值(2026-08-24)**:`claude-opus-4-6 claude-opus-4-5-20251101 claude-opus-4-8`(**空格分隔**——`variable create` 的 `-k` 拿逗号当分隔符,别用逗号,见 DEPLOY-LOG 第三十七次那条新坑)。**回退照 DEPLOY-LOG 第三十七次的《回退三档》**。详见改动清单第 11 条与 `../docs/多模型接出方案.md` |
 | BRAIN_MODEL / THINK_EFFORT | claude-opus-4-6 / medium(2026-07-15 由 low 调至 medium,治「零思考回嘴/跳思考」;嫌费额度可调回 low + restart) |
 | FORWARD_THINKING / ENABLE_PROMPT_CACHING_1H | 1 / 1。⚠️ **`ENABLE_PROMPT_CACHING_1H=1` 设了不等于生效**——它只管 CLI 那头发什么(实测 2.1.215 的 `g1e()` 认这个变量,自定义 `ANTHROPIC_BASE_URL` 在 CLI 眼里仍是 `firstParty`,beta 头照发),**中间的 CLIProxyAPI 可能把 ttl 抹掉**(2026-08-12 就发生过,整整一天半)。**要验就看 `/debug` 的 `lastUsage.cache_creation`:`ephemeral_1h_input_tokens` 有数才算真生效**,是 0 而 5m 有数 = 被抹了,去看 `../OPERATIONS.md` 的「CLIProxyAPI 版本漂移」一节 |
 | USER_NAME / AI_NAME | 佳佳 / 晏 |
