@@ -43,6 +43,7 @@ import hmac
 import secrets
 import time
 import json as _json_lib
+from contextlib import contextmanager
 import httpx
 
 
@@ -2008,14 +2009,82 @@ def _letters_path() -> str:
     return os.path.join(bucket_mgr.base_dir, "letters.jsonl")
 
 
+@contextmanager
+def _letters_lock():
+    """信箱的写锁(2026-08-24)。
+
+    为什么要锁:存新信是**追加**(archive_session),面板改/删信是**整体重写**。
+    两者撞上时,追加会写进那个即将被 os.replace 顶掉的旧 inode —— **刚存的那封信当场消失**,
+    而且不报错。锁文件与 letters.jsonl 同处(随卷持久),只在写路径上用,读不加锁。
+    ⚠️ 拿不到锁不是致命的(某些文件系统不支持 flock):退化成「没有锁」= 今天以前的行为,
+    不因此拒绝写入 —— 丢一封信也好过存不进去。
+    """
+    import fcntl
+    lock_path = _letters_path() + ".lock"
+    f = None
+    try:
+        f = open(lock_path, "a+")
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+    except Exception:
+        f = None          # 锁不可用就裸奔,不阻断写入
+    try:
+        yield
+    finally:
+        if f is not None:
+            try:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            except Exception:
+                pass
+            f.close()
+
+
 def _save_letter(text: str) -> None:
     entry = {"time": now_iso(), "text": text.strip()}
-    with open(_letters_path(), "a", encoding="utf-8") as f:
-        f.write(_json_lib.dumps(entry, ensure_ascii=False) + "\n")
+    with _letters_lock():
+        with open(_letters_path(), "a", encoding="utf-8") as f:
+            f.write(_json_lib.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def _read_letters_raw() -> list[dict]:
+    """整本信箱,**按文件顺序(旧的在前)**,含已软删的。改/删要用它。"""
+    try:
+        with open(_letters_path(), "r", encoding="utf-8") as f:
+            lines = [ln for ln in f.read().splitlines() if ln.strip()]
+    except FileNotFoundError:
+        return []
+    out = []
+    for ln in lines:
+        try:
+            out.append(_json_lib.loads(ln))
+        except Exception:
+            continue          # 坏行跳过,不让一行毁掉整本
+    return out
+
+
+def _write_letters_all(items: list[dict]) -> None:
+    """整本重写。原子写(临时文件 + fsync + os.replace),照 _save_todos_list 那套。
+    调用方**必须**已经持有 _letters_lock()。"""
+    path = _letters_path()
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            for e in items:
+                f.write(_json_lib.dumps(e, ensure_ascii=False) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _load_letters(n: int = 1) -> list[dict]:
-    """最近 n 封留言,新的在前。文件不存在=空列表。"""
+    """最近 n 封留言,新的在前。文件不存在=空列表。
+    ⚠️ 2026-08-24 起**跳过软删的**(deleted=true):面板删掉的信,awaken 也不该再读到。"""
     try:
         with open(_letters_path(), "r", encoding="utf-8") as f:
             lines = [ln for ln in f.read().splitlines() if ln.strip()]
@@ -2024,9 +2093,12 @@ def _load_letters(n: int = 1) -> list[dict]:
     out = []
     for ln in reversed(lines):
         try:
-            out.append(_json_lib.loads(ln))
+            item = _json_lib.loads(ln)
         except Exception:
             continue
+        if isinstance(item, dict) and item.get("deleted"):
+            continue
+        out.append(item)
         if len(out) >= max(1, n):
             break
     return out
@@ -3067,9 +3139,13 @@ async def api_system_status(request):
 
 # =============================================================
 # /api/letters — 信箱(只读)
-# 2026-08-19 所有者要「前端能看信」。刻意**只读**:信是晏写给下一个窗口的自己的
-# 交接留言(见「信箱 — 窗口与窗口之间的接力棒」一节),由 archive_session(letter=...)
-# 写入,**面板不该有改删入口** —— 那是他留给自己的东西,不是待办事项。
+# 2026-08-19 所有者要「前端能看信」。~~刻意**只读**:信是晏写给下一个窗口的自己的
+# 交接留言,由 archive_session(letter=...) 写入,**面板不该有改删入口** ——
+# 那是他留给自己的东西,不是待办事项。~~
+# ⚠️ **「只读」这条 2026-08-24 被所有者本人推翻了**(规矩 5:旧决定留在原地,别删):
+# 现在有 /api/letters/update 与 /api/letters/delete(见下面那节)。
+# **推翻的理由**:信写错了**谁都改不了** —— 晏没有改信的工具,她这边又只读。
+# 本接口(GET)仍然只读,改删走那两个 POST。
 # 鉴权与面板其余接口完全一致(_require_auth),不额外开口子。
 # =============================================================
 @mcp.custom_route("/api/letters", methods=["GET"])
@@ -3087,6 +3163,94 @@ async def api_letters(request):
         # _load_letters 的 n 是「最近 n 封」,要全部就给一个够大的数
         items = _load_letters(limit or 10 ** 9)
         return JSONResponse({"total": len(items), "letters": items})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# =============================================================
+# /api/letters/update、/api/letters/delete — 信箱的改与删(2026-08-24)
+# =============================================================
+# ⚠️ **这推翻了 2026-08-19「面板不该有改删入口」那条决定**,所有者 2026-08-24 亲自要求,
+# 理由是**信写错了谁都改不了**:信由 archive_session(letter=...) 一次性写入,
+# 晏自己改不了(没有改信的工具),她也改不了(面板只读)。旧决定的原文留在上面那节注释里。
+#
+# **怎么认「哪一封」**:信箱是只追加的 jsonl,每条只有 {time, text},**没有 id**。
+# 所以用 **time + 原文** 双条件匹配:前端把两样都传回来,服务端核对一致才动手。
+# 这样即使这中间又存进了新信、列表顺序变了,也不会改错那一封(乐观并发)。
+#
+# **删是软删**:打 deleted 标记,文件里那行还在。理由:①OB 一贯不真删东西
+# (设计决策 5.6「resolved 不删除记忆」);②删错能捞回来;③备份里本来就有。
+# `_load_letters` 会跳过软删的,所以面板和 awaken 都不再看到它。
+#
+# **改保留原 time**(那是「他什么时候写的」),另记 edited 时间戳。
+# ⚠️ **所有者拍板:不在信的正文里标注改过** —— 晏 awaken 时读到的就是改后的内容,
+# 面板上有「已修改」标记但那是给她看的。**这是她知情的决定,别自作主张加标注。**
+@mcp.custom_route("/api/letters/update", methods=["POST"])
+async def api_letters_update(request):
+    """改一封信的正文。body: {time, text(原文,用于核对), new_text}"""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "bad json"}, status_code=400)
+    t = str(body.get("time", "")).strip()
+    old_text = str(body.get("text", ""))
+    new_text = str(body.get("new_text", "")).strip()
+    if not t:
+        return JSONResponse({"error": "time 必填"}, status_code=400)
+    if not new_text:
+        return JSONResponse({"error": "新正文不能为空(要清空请用删除)"}, status_code=400)
+    try:
+        with _letters_lock():
+            items = _read_letters_raw()
+            hit = None
+            for e in items:
+                if str(e.get("time", "")) == t and str(e.get("text", "")) == old_text and not e.get("deleted"):
+                    hit = e
+                    break
+            if hit is None:
+                # 没匹配上多半是「页面上那份已经过期」:让前端刷新重来,别猜着改
+                return JSONResponse({"error": "没找到那封信(可能已被改过或删过,刷新一下再试)"},
+                                    status_code=409)
+            hit["text"] = new_text
+            hit["edited"] = now_iso()
+            _write_letters_all(items)
+        return JSONResponse({"ok": True, "time": t, "edited": hit["edited"]})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@mcp.custom_route("/api/letters/delete", methods=["POST"])
+async def api_letters_delete(request):
+    """删一封信(软删:打标记,文件里还在)。body: {time, text(原文,用于核对)}"""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "bad json"}, status_code=400)
+    t = str(body.get("time", "")).strip()
+    old_text = str(body.get("text", ""))
+    if not t:
+        return JSONResponse({"error": "time 必填"}, status_code=400)
+    try:
+        with _letters_lock():
+            items = _read_letters_raw()
+            hit = None
+            for e in items:
+                if str(e.get("time", "")) == t and str(e.get("text", "")) == old_text and not e.get("deleted"):
+                    hit = e
+                    break
+            if hit is None:
+                return JSONResponse({"error": "没找到那封信(可能已被改过或删过,刷新一下再试)"},
+                                    status_code=409)
+            hit["deleted"] = True
+            hit["deleted_at"] = now_iso()
+            _write_letters_all(items)
+        return JSONResponse({"ok": True, "time": t})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 

@@ -111,6 +111,22 @@
   .letters-intro b { color: var(--text); }
   .letters-note { display: block; margin-top: 8px; color: var(--text-light); font-size: 12px; }
   .letters-count { color: var(--text-dim); font-size: 12px; margin: 0 0 14px 4px; }
+  .letter-acts { margin-top: 12px; display: flex; gap: 10px; align-items: center; }
+  .letter-btn {
+    background: var(--surface); border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 12px; padding: 5px 14px; font-size: 12px; cursor: pointer;
+    font-family: inherit;
+  }
+  .letter-btn:hover { color: var(--text); }
+  .letter-btn.danger:hover { color: #c0392b; }
+  .letter-edited { color: var(--text-light); font-size: 11px; margin-left: 2px; }
+  .letter-msg { font-size: 12px; margin-left: auto; }
+  .letter-edit {
+    width: 100%; box-sizing: border-box; min-height: 120px; resize: vertical;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 14px;
+    padding: 12px 14px; font-family: inherit; font-size: 13px; line-height: 1.8;
+    color: var(--text);
+  }
   .letter-card {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 20px; padding: 20px 24px; margin-bottom: 16px;
@@ -846,7 +862,7 @@
   <div class="letters-intro">
     信箱是<b>晏留给「下一个自己」的交接留言</b>——每次窗口要归档时,他把嘱托写在这里
     (她最近心情如何、哪个话题没聊完),下个窗口 awaken 时第一眼就能看到。
-    <span class="letters-note">事实走记忆桶,嘱托走信箱。这里只读。</span>
+    <span class="letters-note">事实走记忆桶,嘱托走信箱。写错了可以改 —— 改完他下次开机读到的就是新的。删掉的信不会真没,还在文件里。</span>
   </div>
   <div id="letters-count" class="letters-count"></div>
   <div id="letters-list"></div>
@@ -1206,8 +1222,89 @@ document.getElementById('search-input').addEventListener('input', (e) => {
   }, 300);
 });
 
-// 信箱(只读)。接口 /api/letters 返回 {total, letters:[{time,text}]},新的在前。
-// 刻意不做「改/删」:那是他留给自己的东西,面板只负责让她看见。
+// 信箱。接口 /api/letters 返回 {total, letters:[{time,text,edited?}]},新的在前。
+// ⚠️ 2026-08-24 起可以改/删(所有者推翻了 08-19「面板只读」那条决定,理由:信写错了
+// 晏自己改不了、她也改不了)。改/删走 /api/letters/update|delete,**用 time + 原文双条件
+// 匹配那一封**(信箱没有 id),服务端核对不上会回 409,让这边刷新重来。
+// 删是**软删**(文件里那行还在,只是不再显示,awaken 也读不到)。
+// ⚠️ **所有者拍板:不在信里标注改过** —— 晏读到的就是新内容。面板上这个「已修改」是给她看的。
+// 一封信的「改 / 删」。原文 it.text 要原样留着 —— 它是匹配那一封的另一半凭据。
+function letterActions(it, textEl) {
+  const acts = document.createElement('div');
+  acts.className = 'letter-acts';
+  const edit = document.createElement('button');
+  edit.className = 'letter-btn'; edit.textContent = '改';
+  const del = document.createElement('button');
+  del.className = 'letter-btn danger'; del.textContent = '删';
+  const msg = document.createElement('span');
+  msg.className = 'letter-msg';
+  acts.appendChild(edit); acts.appendChild(del); acts.appendChild(msg);
+
+  const say = (text, bad) => {
+    msg.textContent = text;
+    msg.style.color = bad ? '#c0392b' : 'var(--text-dim)';
+  };
+
+  edit.onclick = () => {
+    if (acts.dataset.editing === '1') return;
+    acts.dataset.editing = '1';
+    const ta = document.createElement('textarea');
+    ta.className = 'letter-edit';
+    ta.value = it.text || '';
+    textEl.style.display = 'none';
+    textEl.parentNode.insertBefore(ta, textEl.nextSibling);
+    edit.textContent = '保存';
+    del.textContent = '取消';
+    del.className = 'letter-btn';
+    ta.focus();
+
+    const restore = () => {
+      ta.remove();
+      textEl.style.display = '';
+      acts.dataset.editing = '';
+      edit.textContent = '改';
+      del.textContent = '删';
+      del.className = 'letter-btn danger';
+    };
+    del.onclick = () => { restore(); say(''); bindDelete(); };
+    edit.onclick = async () => {
+      const nt = ta.value.trim();
+      if (!nt) { say('内容不能为空(要清空请用删除)', true); return; }
+      if (nt === (it.text || '')) { restore(); say(''); bindDelete(); return; }
+      say('保存中…');
+      try {
+        const resp = await authFetch(BASE + '/api/letters/update', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({time: it.time, text: it.text, new_text: nt})
+        });
+        if (!resp) return;
+        const d = await resp.json();
+        if (!resp.ok) throw new Error(d && d.error ? d.error : ('HTTP ' + resp.status));
+        loadLetters();          // 重新拉一遍,拿到服务端的权威版本
+      } catch (e) { say('没改成:' + e.message, true); }
+    };
+  };
+
+  function bindDelete() {
+    del.onclick = async () => {
+      if (!confirm('删掉这封信?\n(不会真的从文件里抹掉,以后能找回来)')) return;
+      say('删除中…');
+      try {
+        const resp = await authFetch(BASE + '/api/letters/delete', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({time: it.time, text: it.text})
+        });
+        if (!resp) return;
+        const d = await resp.json();
+        if (!resp.ok) throw new Error(d && d.error ? d.error : ('HTTP ' + resp.status));
+        loadLetters();
+      } catch (e) { say('没删成:' + e.message, true); }
+    };
+  }
+  bindDelete();
+  return acts;
+}
+
 async function loadLetters() {
   const box = document.getElementById('letters-list');
   const cnt = document.getElementById('letters-count');
@@ -1231,10 +1328,17 @@ async function loadLetters() {
       const t = document.createElement('div');
       t.className = 'letter-time';
       t.textContent = fmtLetterTime(it.time);
+      if (it.edited) {
+        const e = document.createElement('span');
+        e.className = 'letter-edited';
+        e.textContent = '· 已修改 ' + fmtLetterTime(it.edited);
+        t.appendChild(e);
+      }
       const b = document.createElement('div');
       b.className = 'letter-text';
       b.textContent = it.text || '';
       card.appendChild(t); card.appendChild(b);
+      card.appendChild(letterActions(it, b));
       box.appendChild(card);
     }
   } catch (e) {
