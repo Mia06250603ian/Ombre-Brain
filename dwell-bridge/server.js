@@ -275,7 +275,7 @@ async function runTurn(text) {
     const r = await fetch(`${SHIM_URL}/v1/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": SHIM_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify(buildShimBody(text, { model: MODEL })),
+      body: JSON.stringify(buildShimBody(text)),
       signal: ac.signal,
     });
 

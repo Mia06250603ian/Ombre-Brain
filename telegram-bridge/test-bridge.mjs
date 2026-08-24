@@ -67,14 +67,15 @@ eq(mergeTurn([{ text: "", images: [] }, { text: "b" }]), { text: "b", images: []
 
 // ---- buildShimBody ----
 {
-  const b = buildShimBody({ text: "hi", images: [] }, { model: "m", system: "" });
+  const b = buildShimBody({ text: "hi", images: [] }, { system: "" });
   eq(b.messages, [{ role: "user", content: "hi" }], "纯文本 content 是字符串");
+  ok(!("model" in b), "**不许报模型**:报了会把她在 Kelivo 切的模型拽回去(2026-08-24 方案 B)");
   ok(!("system" in b), "system 为空不带字段");
   ok(b.stream === true, "stream=true");
 }
 {
   const img = { type: "image", source: {} };
-  const b = buildShimBody({ text: "看", images: [img] }, { model: "m", system: "世界书" });
+  const b = buildShimBody({ text: "看", images: [img] }, { system: "世界书" });
   eq(b.messages[0].content, [{ type: "text", text: "看" }, img], "带图 content 是数组");
   eq(b.system, "世界书", "system 透传");
 }

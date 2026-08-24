@@ -21,7 +21,6 @@ const ALLOW = (process.env.TELEGRAM_CHAT_ID || "").split(",").map((s) => s.trim(
 const SHIM_URL = (process.env.SHIM_URL || "https://yan-shim.zeabur.app").replace(/\/$/, "");
 const SHIM_KEY = process.env.SHIM_KEY || "";
 const SYSTEM_TEXT = process.env.SYSTEM_TEXT || "";   // 如需与 Kelivo 世界书一致,整段放这里
-const MODEL = process.env.BRAIN_MODEL || "claude-opus-4-6"; // 占位,shim 不看
 const DEBOUNCE_MS = +(process.env.DEBOUNCE_MS || 4000);
 const TG_THINKING = process.env.TG_THINKING === "1";  // 思考折叠引用,默认关
 const BRIDGE_ON = process.env.BRIDGE_ON !== "0";      // 总开关:设 0 只留 /health
@@ -255,7 +254,7 @@ async function sendThinking(chatId, thinking) {
 // ---- shim 调用(node:https,免 undici 300s 超时;SSE 攒完整段再发)----
 function shimTurn(turn) {
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify(buildShimBody(turn, { model: MODEL, system: SYSTEM_TEXT }));
+    const body = JSON.stringify(buildShimBody(turn, { system: SYSTEM_TEXT }));
     const u = new URL(SHIM_URL + "/v1/messages");
     const req = https.request({
       hostname: u.hostname, path: u.pathname, method: "POST",

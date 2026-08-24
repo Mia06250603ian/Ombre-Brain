@@ -12,6 +12,21 @@ import { buildPromptArgs, helpMentionsReplace, BASE_PROMPT_DEFAULT, ANCHOR_TAIL_
 const PORT = process.env.PORT || 8080;
 const SHIM_KEY = process.env.SHIM_KEY || "";            // Kelivo 要填的 API Key,自己编
 const MODEL = process.env.BRAIN_MODEL || "claude-opus-4-6";
+// 2026-08-24 起(方案 B):Kelivo 的模型菜单从这份名单来,她可以在手机上自己切。
+// ⚠️ **默认休眠**:不设 BRAIN_MODELS = 名单里只有当前模型一个 = 下面「模型变了就重开进程」
+// 那段永远走不到、白名单也只会命中当前模型,**行为与改动前逐字相同**。
+// **急救开关**:清掉 BRAIN_MODELS + service restart,立刻回到原行为,不用回滚部署。
+// ⚠️ 名单里只许放**窗口大小相同**的模型(4.5/4.6/4.8 压缩点都是 167000,见 ../docs/多模型接出方案.md 4.3)——
+// 窗口不同的模型要连三条上下文线一起按模型分,否则会不报警地丢尾巴。
+// ⚠️ Opus 5 现在别放:CLI 2.1.215 不认识它(同文 4.5 节),要先单独立项升 CLI。
+// ⚠️ 分隔符逗号/空格/分号都认,并**剥掉包裹的引号** —— 2026-08-24 实翻:
+// `zeabur variable create -k K=a,b,c` 的 `-k` 是 stringToString,逗号是它的分隔符,
+// 加引号绕开又会把引号本身存进值里(线上真存成了 `"claude-opus-4-6,...`)。
+// 那样第一项会变成带引号的假型号,进了她的菜单、点了就是个不存在的模型名。
+// 所以这里兜住:名单怎么写都不该产出脏条目。**线上现在存的是空格分隔的那种。**
+const MODELS = [...new Set((process.env.BRAIN_MODELS || "")
+  .split(/[,;\s]+/).map((x) => x.trim().replace(/^["']+|["']+$/g, "")).filter(Boolean))];
+if (!MODELS.includes(MODEL)) MODELS.unshift(MODEL);
 const EFFORT = process.env.THINK_EFFORT || "low";        // low省额度 / medium思考更长
 const CLAUDE_BIN = process.env.CLAUDE_BIN || "claude";
 const MCP_CONFIG = process.env.MCP_CONFIG || ".mcp.json";
@@ -97,6 +112,7 @@ const log = (...a) => console.log(new Date().toISOString(), ...a);
 const MCP_WARMUP_MS = +(process.env.MCP_WARMUP_MS || 10000);
 let procReadyAt = 0;
 let proc = null, outBuf = "", busy = false, spawnedSystem = "";
+let spawnedModel = MODEL;   // 当前进程出生时用的模型(模型在 --model 里钉死,换模型必须让进程重新出生)
 const queue = [];
 let turn = null;
 let lastUsage = null;
@@ -113,8 +129,9 @@ let ctxArchivedAt = 0, ctxCompactions = 0, ctxLastWould = null;
 // ctxFinalFired = 本压缩周期是否已催过「存原话」(终线一周期只发一次,压缩检测后随 softFired 一起复位)
 let ctxFinalFired = false;
 
-function spawnClaude(kelivoSystem) {
+function spawnClaude(kelivoSystem, model) {
   spawnedSystem = kelivoSystem || "";
+  spawnedModel = model || MODEL;
   ctxTokens = 0; ctxSoftFired = false; ctxTrusted = true;   // 新进程=空上下文,守卫状态清零(覆盖世界书切换/窗口重启/崩溃复活各路径)
   ctxArchivedAt = 0; ctxCompactions = 0; ctxLastWould = null; ctxFinalFired = false;
   // 系统提示词参数由 sysprompt.mjs 决定(纯逻辑,单测 test-sysprompt.mjs 覆盖两种模式与两道降级阀)。
@@ -136,7 +153,7 @@ function spawnClaude(kelivoSystem) {
     "--output-format", "stream-json",
     "--verbose",
     "--include-partial-messages",
-    "--model", MODEL,
+    "--model", spawnedModel,
     "--effort", EFFORT,
     "--thinking-display", "summarized",   // 隐藏flag:没它 -p 下拿不到思考
     ...sp.args,
@@ -166,14 +183,14 @@ function spawnClaude(kelivoSystem) {
     if (proc !== p) return; // 被 pump/世界书切换主动换掉的旧进程,不许动新回合的现场
     proc = null; busy = false;
     if (turn && !turn.done) { if (turn.isKA) kaFailedAt = Date.now(); try { turn.sse?.finish(); } catch {} turn = null; }
-    setTimeout(() => ensureProc(spawnedSystem), 1500); // 复活时带上原世界书,否则下一条消息必触发杀进程重开
+    setTimeout(() => ensureProc(spawnedSystem, spawnedModel), 1500); // 复活时带上原世界书**和原模型**,否则下一条消息必触发杀进程重开
   });
   procReadyAt = Date.now() + MCP_WARMUP_MS;
-  log("[claude] spawned", MODEL, "sysLen", spawnedSystem.length,
+  log("[claude] spawned", spawnedModel, "sysLen", spawnedSystem.length,
       "sysPrompt", `${SYS_PROMPT_MODE}->${sp.mode}/${sp.source || "-"}(${sp.reason})`);
   return p;
 }
-function ensureProc(sys) { if (!proc) proc = spawnClaude(sys); }
+function ensureProc(sys, model) { if (!proc) proc = spawnClaude(sys, model); }
 
 function onStdout(chunk) {
   outBuf += chunk.toString();
@@ -270,8 +287,11 @@ function pump() {
   if (busy || !queue.length) return;
   const item = queue.shift();
   busy = true;
-  if (proc && item.system !== spawnedSystem) { try { proc.kill(); } catch {} proc = null; } // 世界书变了重启生效
-  ensureProc(item.system);
+  // 世界书**或模型**变了都要重开进程(模型在出生时用 --model 钉死,活着改不了)。
+  // ⚠️ item.model 恒为字符串:没报模型/报了不在名单的,入口处已回落成 spawnedModel,
+  // 所以「没报模型」永远不会触发重开——这是防两个桥把她拽回旧模型的那道锁。
+  if (proc && (item.system !== spawnedSystem || item.model !== spawnedModel)) { try { proc.kill(); } catch {} proc = null; }
+  ensureProc(item.system, item.model);
   turn = { sse: item.sse, fullText: "", newWindow: !!item.newWindow, isKA: !!item.isKA, isSystem: !!item.isSystem, lastCallUsage: null, apiError: "" };
   const content = item.images?.length ? [{ type: "text", text: item.text }, ...item.images] : item.text;
   const p = proc;
@@ -292,7 +312,7 @@ function makeSSE(res) {
   let started = false, cur = null, idx = -1;
   function ensureStart() {
     if (started) return; started = true;
-    send("message_start", { type: "message_start", message: { id: msgId, type: "message", role: "assistant", model: MODEL, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 0, output_tokens: 0 } } });
+    send("message_start", { type: "message_start", message: { id: msgId, type: "message", role: "assistant", model: spawnedModel, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 0, output_tokens: 0 } } });
   }
   function open(kind) {
     if (cur === kind) return; close();
@@ -310,7 +330,7 @@ function makeSSE(res) {
 function makeCollector(res) {  // 非流式
   return { text() {}, thinking() {},
     finish(usage, fullText) {
-      res.json({ id: "msg_" + randomUUID().replace(/-/g, "").slice(0, 24), type: "message", role: "assistant", model: MODEL, content: [{ type: "text", text: fullText || "" }], stop_reason: "end_turn", stop_sequence: null, usage: usage || { input_tokens: 0, output_tokens: 0 } });
+      res.json({ id: "msg_" + randomUUID().replace(/-/g, "").slice(0, 24), type: "message", role: "assistant", model: spawnedModel, content: [{ type: "text", text: fullText || "" }], stop_reason: "end_turn", stop_sequence: null, usage: usage || { input_tokens: 0, output_tokens: 0 } });
     } };
 }
 
@@ -334,7 +354,7 @@ function extractImages(messages) {
 
 const app = express();
 app.use(express.json({ limit: "12mb" }));
-app.get("/health", (_q, r) => r.json({ ok: true, model: MODEL, busy, queued: queue.length }));
+app.get("/health", (_q, r) => r.json({ ok: true, model: spawnedModel, models: MODELS, busy, queued: queue.length }));
 app.get("/debug", (_q, r) => r.json({
   lastUsage,
   // 2026-08-11 起:最近一次上游报错(null = 从没报过)。「他怎么不说话」先看这里,
@@ -358,7 +378,9 @@ app.get("/debug", (_q, r) => r.json({
 
 // Kelivo「模型」页拉这个列表,没有它选不了模型
 function listModels(_req, res) {
-  res.json({ data: [{ type: "model", id: MODEL, display_name: AI_NAME + " (" + MODEL + ")", created_at: new Date().toISOString() }], has_more: false, first_id: MODEL, last_id: MODEL });
+  const now = new Date().toISOString();
+  const data = MODELS.map((m) => ({ type: "model", id: m, display_name: AI_NAME + " (" + m + ")", created_at: now }));
+  res.json({ data, has_more: false, first_id: MODELS[0], last_id: MODELS[MODELS.length - 1] });
 }
 app.get("/v1/models", listModels);
 app.get("/models", listModels);
@@ -416,7 +438,7 @@ function keepaliveTick(force) {
       lastProactiveAt = Date.now();  // 冷却只在他真发了消息时才计时
       proactivePush((fullText || "").trim()).catch((e) => log("[push-err]", e.message));
     } };
-  enqueue({ text: kaPrompt({ speak: allowSpeak, bjNow: bjNowStr(), idleMin, userName: USER_NAME, viaBridge: !!BRIDGE_PUSH_URL }), images: [], system: spawnedSystem, sse: sink, newWindow: false, isKA: true });
+  enqueue({ text: kaPrompt({ speak: allowSpeak, bjNow: bjNowStr(), idleMin, userName: USER_NAME, viaBridge: !!BRIDGE_PUSH_URL }), images: [], system: spawnedSystem, model: spawnedModel, sse: sink, newWindow: false, isKA: true });
 }
 setInterval(keepaliveTick, KA_CHECK_MIN * 60000);
 app.post("/hb", (req, res) => {  // 手动触发测试口(带开口权,绕过昼夜/冷却/闲置判定)
@@ -666,9 +688,14 @@ function handleMessages(req, res) {
   const sse = stream ? makeSSE(res) : makeCollector(res);
   // isSystem:bridge 带 x-system-turn:1 的回合(查岗/深夜提醒/写信提醒)。
   // 除了原有的三条「不当她出现」之外,2026-08-11 起还多一条:上游断了也不拿报错去打扰她。
-  enqueue({ text, images, system, sse, newWindow, isSystem: systemTurn });
+  // 模型白名单:名单里有才认,**没报/不在名单一律沿用当前模型**(不是回落到 BRAIN_MODEL)。
+  // 两个桥曾经写死往上报 claude-opus-4-6,那时 shim 不看所以无害;白名单一上线它就会命中,
+  // 于是在 Kelivo 切了模型、去 Telegram 说一句就被拽回去 = 每来回一次杀进程丢一个窗口。
+  // 两个桥已经不报模型了(2026-08-24 同批改),这里是第二道锁。
+  const model = MODELS.includes(body.model) ? body.model : spawnedModel;
+  enqueue({ text, images, system, model, sse, newWindow, isSystem: systemTurn });
 }
 app.post("/v1/messages", handleMessages);
 app.post("/messages", handleMessages);
 
-app.listen(PORT, () => log(`kelivo-shim on :${PORT} model=${MODEL}`));
+app.listen(PORT, () => log(`kelivo-shim on :${PORT} model=${spawnedModel} models=${MODELS.join(",")}`));
