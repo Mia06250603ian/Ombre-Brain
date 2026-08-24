@@ -1245,7 +1245,10 @@ function letterActions(it, textEl) {
     msg.style.color = bad ? '#c0392b' : 'var(--text-dim)';
   };
 
-  edit.onclick = () => {
+  // ⚠️ 进编辑态会把「改」这个按钮的 handler 换成「保存」。**退出编辑态必须换回来**
+  // ——只改按钮上的字不够(第一版就是这么错的:取消之后再点「改」,跑的还是保存逻辑,
+  // 而输入框已经没了,于是「点了没反应」)。所以 openEditor 具名,restore 里原样装回去。
+  function openEditor() {
     if (acts.dataset.editing === '1') return;
     acts.dataset.editing = '1';
     const ta = document.createElement('textarea');
@@ -1263,14 +1266,16 @@ function letterActions(it, textEl) {
       textEl.style.display = '';
       acts.dataset.editing = '';
       edit.textContent = '改';
+      edit.onclick = openEditor;        // ← 关键:handler 也要换回去
       del.textContent = '删';
       del.className = 'letter-btn danger';
+      bindDelete();
     };
-    del.onclick = () => { restore(); say(''); bindDelete(); };
+    del.onclick = () => { restore(); say(''); };
     edit.onclick = async () => {
       const nt = ta.value.trim();
       if (!nt) { say('内容不能为空(要清空请用删除)', true); return; }
-      if (nt === (it.text || '')) { restore(); say(''); bindDelete(); return; }
+      if (nt === (it.text || '')) { restore(); say(''); return; }
       say('保存中…');
       try {
         const resp = await authFetch(BASE + '/api/letters/update', {
@@ -1301,6 +1306,7 @@ function letterActions(it, textEl) {
       } catch (e) { say('没删成:' + e.message, true); }
     };
   }
+  edit.onclick = openEditor;
   bindDelete();
   return acts;
 }
