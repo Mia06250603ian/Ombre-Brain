@@ -186,6 +186,7 @@ const eq = (a, b, name) => ok(JSON.stringify(a) === JSON.stringify(b), `${name}\
   eq(b.messages[0].role, "user", "请求体：角色是 user");
   eq(b.messages[0].content, "你好", "请求体：纯文本时 content 就是字符串");
   ok(b.stream === true, "请求体：要流式");
+  ok(!("model" in b), "请求体：**不许报模型**——报了会把她在 Kelivo 切的模型拽回去(2026-08-24 方案 B)");
 }
 {
   const b = buildShimBody("看这个", { images: [{ mime: "image/png", data: "AAAA" }] });

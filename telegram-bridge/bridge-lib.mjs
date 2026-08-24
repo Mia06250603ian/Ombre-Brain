@@ -35,11 +35,14 @@ export function mergeTurn(items) {
 }
 
 // ---- shim 请求体(shim 只读最后一条 user 消息;system 恒定,避免触发换世界书杀进程)----
-export function buildShimBody(turn, { model, system }) {
+// ⚠️ 2026-08-24 起**不再往 shim 报模型**(方案 B)。shim 从此认模型白名单,
+// 桥要是还报着写死的 claude-opus-4-6,她在 Kelivo 切了模型、一来 TG 说话就会被拽回去
+// = 杀进程重开 = 每来回一次丢一个窗口。**别把 model 加回来。**
+export function buildShimBody(turn, { system }) {
   const content = turn.images.length
     ? [{ type: "text", text: turn.text }, ...turn.images]
     : turn.text;
-  const body = { model, max_tokens: 8192, stream: true, messages: [{ role: "user", content }] };
+  const body = { max_tokens: 8192, stream: true, messages: [{ role: "user", content }] };
   if (system) body.system = system;
   return body;
 }

@@ -257,10 +257,12 @@ export function makeToken(pass, salt) {
 // shim 只取**最后一条 user 消息**（server.js:541）——历史活在他的常驻进程里，
 // 我们不用把上下文送回去，也**不该**送（送了等于重复喂）。
 
-export function buildShimBody(text, { model = "claude-opus-4-6", images = [] } = {}) {
+// ⚠️ 2026-08-24 起**不再往 shim 报模型**(方案 B),理由同 telegram-bridge:
+// shim 认模型白名单了,桥再报写死的模型名 = 把她切过去的模型拽回来 = 丢窗口。**别加回来。**
+export function buildShimBody(text, { images = [] } = {}) {
   const content = images.length
     ? [...images.map((i) => ({ type: "image", source: { type: "base64", media_type: i.mime, data: i.data } })),
        { type: "text", text }]
     : text;
-  return { model, max_tokens: 4096, stream: true, messages: [{ role: "user", content }] };
+  return { max_tokens: 4096, stream: true, messages: [{ role: "user", content }] };
 }
