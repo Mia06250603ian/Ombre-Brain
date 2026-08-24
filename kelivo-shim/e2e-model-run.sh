@@ -74,7 +74,7 @@ msg() {
 }
 
 # ---- 阶段 A:名单开着 ----
-start_shim A "$M46,$M45"
+start_shim A "$M46 $M45"   # ⚠️ 空格分隔:线上 BRAIN_MODELS 存的就是这种写法
 curl -sS http://127.0.0.1:8600/v1/models > "$WORK/models-list-A.json"
 msg "a1 默认" "$M46"                 # 起步:4.6
 msg "a2 不报模型" ""                  # 两个桥改造后的形态 → 不该重开
@@ -101,6 +101,12 @@ msg "b2 报45" "$M45"                  # 名单里没有它 → 该被无视,不
 msg "b3 不报" ""
 curl -sS http://127.0.0.1:8600/health > "$WORK/health-B.json"
 cp "$WORK/models.json" "$WORK/models-B.json"
+stop_shim
+
+# ---- 阶段 C:脏输入(引号 + 混合分隔符)不该产出脏条目 ----
+# 只拉 /v1/models,不发消息(不用起 claude 进程,几秒钟)。
+start_shim C '"claude-opus-4-6,claude-opus-4-5-20251101" ; claude-opus-4-8'
+curl -sS http://127.0.0.1:8600/v1/models > "$WORK/models-list-C.json"
 stop_shim
 
 # ---- 断言 ----
@@ -153,6 +159,13 @@ const spB = spawns("shim-B.log");
 ok(spB.length === 1, `B:**报任何模型都不重开进程**(got ${spB.length} 次 spawn)——休眠时行为与改动前逐字相同`);
 const mB = rd("models-B.json");
 ok(mB.length === 4 && mB.every((m) => m === M46), `B:四条全走 4.6(got ${mB.join(",")})`);
+
+// ── 阶段 C:脏输入 ──
+const listC = rd("models-list-C.json");
+const idsC = listC.data.map((d) => d.id);
+ok(idsC.length === 3, `C:脏输入也只吐三项(got ${idsC.length}: ${idsC.join("|")})`);
+ok(idsC.every((x) => !/["']/.test(x)), `C:**没有一条带引号**(got ${idsC.join("|")})——带引号的型号点了就是个不存在的模型名`);
+ok(idsC.join(",") === `${M46},${M45},claude-opus-4-8`, `C:三项就是名单本身(got ${idsC.join(",")})`);
 
 if (bad) { console.error(`\n${bad}/${n} 项断言失败(shim-*.log / fake-*.log 在 ${W})`); process.exit(1); }
 console.log(`E2E MODEL ALL PASS (${n} checks)`);

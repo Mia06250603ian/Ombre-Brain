@@ -19,7 +19,13 @@ const MODEL = process.env.BRAIN_MODEL || "claude-opus-4-6";
 // ⚠️ 名单里只许放**窗口大小相同**的模型(4.5/4.6/4.8 压缩点都是 167000,见 ../docs/多模型接出方案.md 4.3)——
 // 窗口不同的模型要连三条上下文线一起按模型分,否则会不报警地丢尾巴。
 // ⚠️ Opus 5 现在别放:CLI 2.1.215 不认识它(同文 4.5 节),要先单独立项升 CLI。
-const MODELS = [...new Set((process.env.BRAIN_MODELS || "").split(",").map((x) => x.trim()).filter(Boolean))];
+// ⚠️ 分隔符逗号/空格/分号都认,并**剥掉包裹的引号** —— 2026-08-24 实翻:
+// `zeabur variable create -k K=a,b,c` 的 `-k` 是 stringToString,逗号是它的分隔符,
+// 加引号绕开又会把引号本身存进值里(线上真存成了 `"claude-opus-4-6,...`)。
+// 那样第一项会变成带引号的假型号,进了她的菜单、点了就是个不存在的模型名。
+// 所以这里兜住:名单怎么写都不该产出脏条目。**线上现在存的是空格分隔的那种。**
+const MODELS = [...new Set((process.env.BRAIN_MODELS || "")
+  .split(/[,;\s]+/).map((x) => x.trim().replace(/^["']+|["']+$/g, "")).filter(Boolean))];
 if (!MODELS.includes(MODEL)) MODELS.unshift(MODEL);
 const EFFORT = process.env.THINK_EFFORT || "low";        // low省额度 / medium思考更长
 const CLAUDE_BIN = process.env.CLAUDE_BIN || "claude";
