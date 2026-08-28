@@ -401,6 +401,7 @@ kelivo-shim(yan-shim.zeabur.app)──→ 常驻 claude 进程(人设+记忆,见
    **观察口**:`/health` 的 `reaction` 字段;日志里 `[react] rejected:` / `[react] 表外的表情`。
 
    **⚠️ 单测证明不了 Telegram 收不收**(静态检查不是真投递,这是 telemood 自己也写明的告诫)。
+   **2026-08-28 所有者已实测通过,表情真的出现了** —— 下面这套演练仍是改这条功能时的回归手段。
    **端到端怎么验(照抄这个,不碰线上)**:假 Telegram(`globalThis.fetch` 改道)+ 假 shim
    (**必须 HTTPS 且监听 443**——`shimTurn` 只取 `u.hostname`/`u.pathname`,**不取端口**)
    + 真 `server.js`,跑三个场景:①正常回应 → 靶子 id 对、payload 形状对、**先贴表情再说话**、
@@ -622,8 +623,8 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
   `/health` 返回 `reaction: true`、`polling: true`、`stickers: 59`、`pendingLosses: 0`。
   **日志里那 3 条 `[poll] not ok: Conflict` 是换容器那半分钟新旧两个抢长轮询(踩坑 1),
   最后一条 21:40:37,此后不再出现——正常现象,别当故障排。**
-  ⚠️ **仍未做真投递验证**:单测和演练都证明不了 Telegram 收不收(见设计要点 20 末尾)。
-  所有者当天口头教晏语法后可现场看一眼;不成的后果只是表情不出现,正文照发。
+  ✅ **真投递已验**:所有者当天口头教了晏语法,**实测表情真的出现在她那条消息上**
+  ——`setMessageReaction` 在私聊里对本 bot 可用这件事,到此从「文档说可以」变成「线上跑过」。
   ⚠️ **本次一个自找的弯路,记下来省得下一个人再走**:`deploy` 的参数是
   `--service-id` / `--environment-id`(**没有 `--id`**,拿 `--id` 会报 unknown flag)。
   **`OPERATIONS.md` 第 6 节的命令块本来就写对了**——我是照 `service restart` 的 `--id` 顺手编的,
