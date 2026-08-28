@@ -141,3 +141,45 @@ npx -y zeabur@latest deployment list --service-id <id> --env-id <env>
   （尤其 §9 的 `SHIM_KEY` 那条和 §7 已知边界），再回来看本手册第 1 节。
 - **本目录不碰 shim / OB / bridge 任何一个。** 它跟它们的关系只有一条：
   没有关系。这一条是刻意的。
+
+## 10. 部署记录
+
+### 第一次(2026-08-28):建服务并上线
+
+**全程没碰晏、没碰 shim、没重启机器、窗口未丢** —— 新建独立容器,和已有服务互不相干。
+
+- Zeabur 位置:项目 `cli-proxy-api--cpa`(`6a53a9fc22dd6ef375eb7484`),
+  env `6a53a9fcb6ce8edcb0163f97`,**service id `6a91a74db7ff62ee8d7ffcb3`**,
+  域名 `yan-chess.zeabur.app`
+- 建法:`zeabur deploy --create --name chess-web --project-id <项目>`(CLI 没有 `service create`)
+- **PLANTYPE 验到 `nodejs`** —— 照 shim 踩坑 17 的规矩,部署后第一件事就看这个
+- 域名:`domain create --domain yan-chess -g`
+
+**验收(全过,2026-08-28)**:
+- `/health` → `{"ok":true,"locked":true,"files":3,"ready":true}`
+- 未登录时 `/`、`/index.html`、`/flight-chess-popup.html` **三条都给登录页(401)**,页面里搜不到棋盘
+- 口令错 401 且不发 cookie;口令对发 cookie 且**带 `Secure`**(线上真走 HTTPS,`x-forwarded-proto` 那条判断成立)
+- 伪造 cookie 401;`/../server.js`、`/..%2fserver.js`、`/../package.json` 全 404
+- 登录后弹窗页 **29676 字节**,`__YAN_COPY_PATCH__` / `__yanCopyReady` 各 1 处
+- **三个文件与本地待部署那份逐字节 md5 一致**(照「部署前和线上容器 md5 对账」的规矩):
+  `index.html 9f35b716…` / `flight-chess-popup.html 70f1ee70…` / `float-window.js 91a048f1…`
+- 单测 **29 项**、真浏览器演练 **25 项**全绿
+
+**⚠️ 内存至今没量到**(2026-08-28):服务刚上线,`zeabur service metric MEMORY` 回
+`no metric history found`。**别拿估计值当实测填进任何文档**(手册规矩 4)。
+过几天再量:
+
+```sh
+npx -y zeabur@latest service metric -i=false MEMORY \
+  --id 6a91a74db7ff62ee8d7ffcb3 --env-id 6a53a9fcb6ce8edcb0163f97
+```
+
+**量到了就把数填进 `../browser-hands/MAINTENANCE.md` 的内存表**(那张表是全机内存的唯一去处)。
+预期很小(零依赖 node + 60KB 静态文件),但**预期不是实测**。
+对照(2026-08-01/02 实测):晏 324~605MB、browser-hands 峰值 1474MB、CLIProxyAPI 24~61MB。
+
+**这次踩的坑**(都已写进第 8 节):端口没退干净、ESM 不认 NODE_PATH、`Secure` cookie 不能无条件加。
+**另外两条 CLI 的事**:
+- `zeabur variable update` **默认进交互模式**,脚本里会 EOF 报错。要加 `-i=false`。
+- `zeabur variable list` 仍会连值一起打出来(dwell 第一次部署的教训)。
+  本次改用 `--json` + 只打印 key 名,**值一次都没进会话记录**。
