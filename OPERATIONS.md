@@ -111,8 +111,13 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
    必须她先自己对晏说「归档」。
 2. **Zeabur API key 要转** —— 她在会话里贴过明文,已进聊天记录。
    **2026-08-16 又贴了一次新的**(`zat_6a27e97a…`),用完仍未转。
+   **2026-08-28 第三次**:建 chess-web 时她又贴了**同一把** `zat_6a27e97a…`(说明 08-16 那次至今没转)。
+   ⚠️ **这把 key 已经在聊天记录里出现三次了。**
 3. **`REPORT_TOKEN` 要转** —— 08-06 截图泄露,至今未转。
-4. **CLIProxyAPI 的 `MANAGEMENT_PASSWORD` 要转** —— **2026-08-16 新增**:
+4. **`chess-web` 的口令 `CHESS_PASS` 也在聊天记录里**(2026-08-28 她直接贴的明文)。
+   风险比上面几条小得多——它只锁一个游戏页,后面没有任何密钥,
+   而且游戏源码本来就在公开仓库里。**要改随时改**:改值 + `service restart` 即生效,不用部署。
+5. **CLIProxyAPI 的 `MANAGEMENT_PASSWORD` 要转** —— **2026-08-16 新增**:
    `zeabur variable list` 会把**只读注入变量连值一起打出来**,该密码因此进了会话记录。
    **教训:以后跑 `variable list` 一律掩码或只取 KEY 列**(见 `dwell-bridge/MAINTENANCE.md` 部署记录)。
 
@@ -160,6 +165,7 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
 | 〃 | browser-hands | `6a6e2078fefeb46a883402c9` | yan-browser.zeabur.app | **晏的「浏览器的手」**:真实 Chrome + 持久登录态 + noVNC(源码在 Mia06250603ian/browser-hands 仓库,镜像走 GitHub Actions→ghcr,持久卷 /data)。2026-08-01 部署并接入晏(shim 第二十二次),详见 `browser-hands/MAINTENANCE.md` |
 | 〃 | dwell-bridge | `6a81a118bdeaa87e2c52bec3` | yan-dwell.zeabur.app | **她自建网页接晏的转接层**(2026-08-16 上线):网页 → 这一层 → shim 的 `/v1/messages`,把 Anthropic SSE 翻成 dwell 前端认的事件流。**不碰晏、不改 shim**,对线上就是个客户端,地位同手机上的 Kelivo。内存实测 **70 MiB**。源码在本仓库 `dwell-bridge/`,前端从 `Mia06250603ian/dwell-on-something` 拉(刻意不入库)。⚠️ **`SHIM_KEY` 尚未设,设上之前发消息会 401**。详见 `dwell-bridge/MAINTENANCE.md` |
 | 〃 | gmail-mcp | `6a74a107e4a69d66638c4650` | yan-gmail.zeabur.app | **晏的邮箱**:读信/搜信/写草稿,**发送是白名单制**(只能发给所有者指定的地址,其余只能存草稿;白名单空=全拒)。走 IMAP + 应用专用密码;验证码/密码重置类邮件整封屏蔽。源码在本仓库 `gmail-mcp/`,镜像走 GitHub Actions→ghcr,无持久卷。**2026-08-06 上线并接入晏**(shim 第二十八次),详见 `gmail-mcp/MAINTENANCE.md` |
+| 〃 | chess-web | `6a91a74db7ff62ee8d7ffcb3` | yan-chess.zeabur.app | **飞行棋网页**(2026-08-28 上线):带口令的静态站,发 `Mia06250603ian/player` 那个双人飞行棋,并注入一颗「复制给晏」的按钮。**零依赖、不联网、不碰晏/shim/OB**,建的时候没重启任何东西、窗口未丢。源码在本仓库 `chess-web/`,游戏本身刻意不入库(部署前 `fetch-game.sh` 拉)。详见 `chess-web/MAINTENANCE.md` |
 | `untitled-1` | Ombre Brain | (问所有者/控制台看) | ianmian.zeabur.app | 记忆库 MCP |
 | ~~(外部,非我们部署)~~ | ~~Galatea's Garden~~ | — | galatea.abysslumina.com | ~~花园社区 MCP~~ **2026-07-30 已从 shim 拆除**(它 /mcp 502 且晏不玩;token 未留底,要恢复见 shim 手册「缺的三个文件」第 2 条) |
 
@@ -184,6 +190,13 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
     (原 `fishing-mcp/` 钓鱼包装层 2026-08-02 已删,服务也一并删除。)
   - `browser-hands/` = **只有一份 `MAINTENANCE.md`**(浏览器服务的手册)。
     **源码不在本仓库**,在 `Mia06250603ian/browser-hands`(fork 自朋友的原仓库,公开)。
+  - `chess-web/` = 飞行棋网页的服务本体 + 补丁 + **`MAINTENANCE.md`**(2026-08-28 新增)。
+    **游戏源码不在本仓库**,在 `Mia06250603ian/player`;`game/` 刻意不入库,
+    部署前 `./fetch-game.sh` 拉一份并打「复制给晏」的补丁。
+    ⚠️ **`game/` 在 `.gitignore` 里,而 zeabur 上传遵守 `.gitignore`** ——
+    部署前要临时收窄 `.gitignore`,传完还原(和 dwell-bridge 的 `web/` 同一个坑)。
+- **Mia06250603ian/player**(公开):飞行棋游戏源码,三个文件、零依赖、纯静态。
+  ⚠️ **这个仓库是公开的**,而内容是私密性质的 —— 2026-08-28 已报备所有者,由她定要不要转私有。
 - **Mia06250603ian/browser-hands**(fork,公开):浏览器服务源码 + `docs/DEPLOY-GUIDE.md`。
   镜像走 GitHub Actions→ghcr(`ghcr.io/mia06250603ian/browser-hands`,公开可拉)。
   ⚠️ **fork 仓库的 Actions 默认是关的,而且事后打开也不会补扫已有工作流**——
