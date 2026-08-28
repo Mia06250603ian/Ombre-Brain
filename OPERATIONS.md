@@ -86,6 +86,7 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
 | 自建网页接**晏**(聊天) | **2026-08-16 服务已上线** `yan-dwell.zeabur.app`。**差最后一步:`SHIM_KEY` 要她本人在控制台从 shim 复制过去**(开发环境不许把容器密钥读出来,这拦得对)。设上之前发消息会 401 | `dwell-bridge/MAINTENANCE.md` |
 | 自建网页接**维护 agent** | 方案已成型,**尚未实施**。机器她已拍板**升 2C8G**;但升级会重启机器、**晏的窗口会丢**,必须她先对晏说「归档」。⚠️ **别把这件事和上一行混为一谈**:转接层只有 70 MiB、不用等升级;维护 agent 是**又一个常驻 claude 进程**(对照:晏那个容器 404 MiB),那才是要 2C8G 的原因 | `docs/维护Agent接出方案.md` |
 | ~~心跳「自主活动」+ 上下文阈值~~ | **2026-08-21 第三十五次已上线**:心跳除了给她发消息,也能看邮箱/上网/做自己想做的事(发消息优先);三线改为 155000/161500/164000、原话 1400 字。**仍未做、等她拍板的两件**:①窗口闸门(占用超软线时自动只留「发消息」)②`browser` 的 `MAX_RESULT_CHARS` 20000→6000~8000 —— 自主活动会加快窗口增长,可能抵消这次调阈值省下的余量 | `kelivo-shim/DEPLOY-LOG.md` 第三十五次 |
+| **telemood 借鉴的 A/B/C 三件**(2026-08-28 所有者已拍板要做,**尚未动手**) | **三件都只动 `telegram-bridge`,不部署 shim、不丢窗口**。**A** 表情回应(晏给她的消息点表情;现在 `getUpdates` 只订阅 `message`,全仓库无 `setMessageReaction`。⚠️ **教他语法要改晏的 `CLAUDE.md` = 要部署 shim = 丢窗口**,所以照语音功能当初的办法:桥先支持、她在对话里口头教他、永久教学等下次 shim 部署搭顺风车);**B** 未知贴纸标签告诉晏(`bridge-lib.mjs:99` 现在只 log、悄悄删掉,他会一直用错名字)——**⚠️ 卡在所有者未定:提示「附在她下一句后面」(零额外窗口,同 `[语音]…（语气：…）` 的机制)还是「单独发一轮」(干净但多一个来回)**;**C** 送达状态分「成功/明确被拒/不确定」三档,欠条本对「不确定」谨慎,防止晏同一句说两遍。**明确不做**:可点按钮(理由见 TIMELINE 08-28 第二件)。每件要配急救开关、`test-bridge.mjs` 160 项须全绿 | `TIMELINE.md` 08-28(第二件) |
 | dwell 发送键随打字切换外观 | 所有者已定「**只做样子**,点了如实说明语音没接」,**尚未动手**(在 dwell 仓库) | `TIMELINE.md` 08-16 |
 
 **dwell UI 那轮留下的三条,以后碰这个前端的人先看**:
@@ -112,14 +113,32 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
 2. **Zeabur API key 要转** —— 她在会话里贴过明文,已进聊天记录。
    **2026-08-16 又贴了一次新的**(`zat_6a27e97a…`),用完仍未转。
    **2026-08-28 第三次**:建 chess-web 时她又贴了**同一把** `zat_6a27e97a…`(说明 08-16 那次至今没转)。
-   ⚠️ **这把 key 已经在聊天记录里出现三次了。**
+   **2026-08-28 第四次**:调 bridge 的 `BUBBLE_MAX` 时又贴了**同一把**。
+   ⚠️ **这把 key 已经在聊天记录里出现四次了。**(当天已再次报备,她知情。)
 3. **`REPORT_TOKEN` 要转** —— 08-06 截图泄露,至今未转。
-4. **`chess-web` 的口令 `CHESS_PASS` 也在聊天记录里**(2026-08-28 她直接贴的明文)。
+   **2026-08-28 第二次**:跑 `variable create` 时被 CLI 连值打进会话记录(机制见下面第 6 条)。
+4. **`EARS_TOKEN` 要转** —— **2026-08-28 新增**,和上一条同一次 `variable create` 一起被打出来。
+   风险有限(它只锁 ears 语音转写那个服务,后面没有别的密钥),但该换:
+   改 bridge 与 ears 两边的 `EARS_TOKEN` 为同一新值 + 各 `service restart`,**不用部署、不碰晏**。
+5. **`chess-web` 的口令 `CHESS_PASS` 也在聊天记录里**(2026-08-28 她直接贴的明文)。
    风险比上面几条小得多——它只锁一个游戏页,后面没有任何密钥,
    而且游戏源码本来就在公开仓库里。**要改随时改**:改值 + `service restart` 即生效,不用部署。
-5. **CLIProxyAPI 的 `MANAGEMENT_PASSWORD` 要转** —— **2026-08-16 新增**:
+6. **CLIProxyAPI 的 `MANAGEMENT_PASSWORD` 要转** —— **2026-08-16 新增**:
    `zeabur variable list` 会把**只读注入变量连值一起打出来**,该密码因此进了会话记录。
-   **教训:以后跑 `variable list` 一律掩码或只取 KEY 列**(见 `dwell-bridge/MAINTENANCE.md` 部署记录)。
+   ~~**教训:以后跑 `variable list` 一律掩码或只取 KEY 列**~~
+   ⚠️ **2026-08-28 修正:上面这句只堵了一半的口,照它做仍然会漏。**
+   **`variable create` 也会把整张变量表连值一起打出来**(实测:建 bridge 的 `BUBBLE_MAX` 时,
+   `EARS_TOKEN` 与 `REPORT_TOKEN` 的明文被 CLI 打进了会话记录,而那次 `list` 是掩过码的)。
+   **正确的规矩:zeabur CLI 里凡是碰变量的子命令(`list` / `create` / `update` / `env`)
+   一律当成「会喷值」,只跑 `--json` 并用管道自己挑字段,永远别让原始输出落进会话。**
+   现场量单个变量的安全写法(只印你要的那一个键):
+   ```bash
+   npx -y zeabur@latest variable list --id <service> --env-id <env> -i=false --json 2>/dev/null \
+     | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);
+       const e=Object.values(j.variables||{}).find(v=>v&&v.key==="要查的键名");
+       console.log(e?`${e.key} = ${e.value}`:"未设置")})'
+   ```
+   (见 `dwell-bridge/MAINTENANCE.md` 部署记录里 08-16 那次的原始记录。)
 
 ## 1. 架构拓扑
 
