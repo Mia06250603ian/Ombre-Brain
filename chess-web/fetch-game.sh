@@ -22,11 +22,13 @@ for f in index.html flight-chess-popup.html float-window.js; do
   echo "  ✓ $f ($(wc -c < "$OUT/$f") 字节)"
 done
 
-# 打补丁：找不到锚点会非零退出，部署当场失败，而不是悄悄上线坏页面
+# 打补丁：① 把功能页的九个版本接进弹窗页 ② 加「复制给晏」按钮
+# 找不到锚点会非零退出，部署当场失败，而不是悄悄上线坏页面
 node "$HERE/inject-copy.mjs" \
   "$OUT/flight-chess-popup.html" \
   "$OUT/flight-chess-popup.html.patched" \
-  "$HERE/copy-to-yan.js"
+  "$HERE/copy-to-yan.js" \
+  "$OUT/index.html"
 mv "$OUT/flight-chess-popup.html.patched" "$OUT/flight-chess-popup.html"
 
 echo "好了：$OUT"

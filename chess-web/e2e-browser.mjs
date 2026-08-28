@@ -91,6 +91,74 @@ await p.waitForTimeout(300);
 chk('「发给晏」能把面板叫回来', await p.locator('#yanCopyPanel').isVisible());
 await p.click('#yanCopyPanel button[aria-label=关闭]');
 
+// 5c. 【2026-08-28 所有者报的 bug】功能页选了别的版本，弹窗页要跟着换
+//     原来弹窗页写死女仆版，选什么进去都是女仆版。
+for (const [key, name] of [['sm','SM版'], ['butler','男仆版'], ['foreplay','前戏版']]) {
+  await p.evaluate((k) => {
+    localStorage.setItem('flight_chess_progress', JSON.stringify(
+      { version: k, playerPos: 0, aiPos: 0, turn: 'player', finished: false }));
+  }, key);
+  await p.goto(base + '/flight-chess-popup.html');
+  await p.waitForSelector('#boardName');
+  const shown = await p.locator('#boardName').textContent();
+  chk(`选「${name}」进弹窗 → 标题就是「${name}」`, shown.trim() === name);
+  const cells = await p.locator('#boardPath .cell, #boardPath > *').count();
+  chk(`  ${name} 的格子数不是女仆版的 50`, key === 'maid' || cells !== 50);
+}
+
+// 5d. 【同一批】「后进X格」要真的退 —— 原来弹窗页的 makeCells 不解析这个字段
+await p.evaluate(() => {
+  localStorage.setItem('flight_chess_progress', JSON.stringify(
+    { version: 'maid', playerPos: 0, aiPos: 0, turn: 'player', finished: false }));
+});
+await p.goto(base + '/flight-chess-popup.html');
+await p.waitForSelector('#btnRoll');
+const backInfo = await p.evaluate(() => {
+  const b = window.__CHESS_BOARDS__.maid.cells;
+  const idx = b.findIndex(c => c.backSteps > 0);
+  return { idx, steps: idx >= 0 ? b[idx].backSteps : 0, text: idx >= 0 ? b[idx].text : '' };
+});
+chk('女仆版里确实有「后进X格」', backInfo.idx > 0 && backInfo.steps > 0);
+
+// 把骰子钉死，让棋子正好停在那个后退格上 —— 不靠碰运气
+await p.evaluate((info) => {
+  localStorage.setItem('flight_chess_progress', JSON.stringify(
+    { version: 'maid', playerPos: 0, aiPos: 0, turn: 'player', finished: false }));
+  window.__forceDice = info.idx;              // 从 0 格掷 idx 点，正好停在 idx
+}, backInfo);
+await p.goto(base + '/flight-chess-popup.html');
+await p.waitForSelector('#btnRoll');
+await p.evaluate((n) => { Math.random = () => (n - 1) / 6 + 0.001; }, backInfo.idx);
+await p.click('#btnRoll');
+await p.waitForTimeout(400);
+const after = await p.evaluate(() => ({
+  desc: document.getElementById('eventDesc').textContent,
+  title: document.getElementById('eventTitle').textContent,
+  pos: document.getElementById('posText').textContent,
+}));
+console.log('   后退格实测:', JSON.stringify(after));
+chk(`  停在第 ${backInfo.idx} 格「${backInfo.text}」`, after.title.includes(String(backInfo.idx)));
+chk('  真的退回去了（原来这条是死的）', /已后退\s*3\s*格/.test(after.desc));
+chk('  退完位置回到第 0 格', /你\s*0/.test(after.pos));
+await p.click('#eventLayer button:has-text("知道了")').catch(()=>{});
+await p.locator('#yanCopyPanel button[aria-label=关闭]').click().catch(()=>{});
+
+// 重新开一页（拿回原生 Math.random），从 0 掷一把，好让下面「棋子真的走了」有东西可看。
+// 注意上面那个确定性用例**故意**把棋子退回了 0 格，所以这里必须再掷一次。
+await p.evaluate(() => localStorage.setItem('flight_chess_progress', JSON.stringify(
+  { version: 'maid', playerPos: 0, aiPos: 0, turn: 'player', finished: false })));
+await p.goto(base + '/flight-chess-popup.html');
+await p.waitForSelector('#btnRoll');
+for (let i = 0; i < 6; i++) {
+  const prog = await p.evaluate(() => JSON.parse(localStorage.getItem('flight_chess_progress')||'{}'));
+  if (prog.playerPos > 0 || prog.aiPos > 0) break;
+  const btn = await p.locator('#btnRoll').isEnabled() ? '#btnRoll' : '#btnAi';
+  await p.click(btn).catch(()=>{});
+  await p.waitForTimeout(250);
+  await p.click('#eventLayer button:has-text(\"知道了\")').catch(()=>{});
+  await p.locator('#yanCopyPanel button[aria-label=关闭]').click().catch(()=>{});
+}
+
 // 6. 游戏本身没被搞坏
 const st = await p.evaluate(() => ({
   posText: document.getElementById('posText').textContent,
