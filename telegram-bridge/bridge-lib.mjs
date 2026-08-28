@@ -28,10 +28,15 @@ export function detectReset(text) {
 }
 
 // ---- 去抖缓冲合并成一轮 ----
+// replyToId:这一轮里**最后一条**她的消息 id,给表情回应当靶子(2026-08-28)。
+// 取最后一条而不是第一条:去抖合并后她可能连发了三句,贴在最新那句上才像在回应「刚说的」。
+// 没有 id(旧调用方、/push 心跳)时是 undefined,调用方据此跳过回应。
 export function mergeTurn(items) {
   const text = items.map((i) => i.text || "").filter(Boolean).join("\n");
   const images = items.flatMap((i) => i.images || []);
-  return { text, images };
+  const withId = items.filter((i) => i.messageId != null);
+  const replyToId = withId.length ? withId[withId.length - 1].messageId : undefined;
+  return { text, images, replyToId };
 }
 
 // ---- shim 请求体(shim 只读最后一条 user 消息;system 恒定,避免触发换世界书杀进程)----
@@ -390,6 +395,49 @@ export function takeCheckMarker(text) {
   if (!CHECK_RE.test(raw)) return { text: raw, wants: false };
   const cleaned = raw.replace(CHECK_RE, "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
   return { text: cleaned, wants: true };
+}
+
+// ---- 表情回应:回复里写 [回应:❤️] → 给她那条消息贴一个表情 ----
+// 2026-08-28 新增(读 telemood 后所有者拍板做的三件里的 A;另两件 B/C 她当场砍了)。
+// 为什么用标记:和 [贴纸:x]/[语音]/[查岗] 同款的已验证机制,零钥匙、不改 shim、不丢窗口。
+// **和别的标记有一点不同**:回应不进段落流。它贴在**她那条消息**上,不是聊天流里的一段,
+// 所以整段抽走(像 takeCheckMarker),由调用方在正文之前单独发一发。
+const REACT_RE = /[\[【]\s*回应\s*[::]\s*([^\]】\n]+?)\s*[\]】]/g;
+
+// Telegram 的「普通表情回应」只认官方那一张固定表,**表外的一律 400 REACTION_INVALID**
+// (自定义表情要 Premium,不在 v1 范围)。所以本地先筛一遍:表外的当没写过,只落日志。
+// ⚠️ 这张表是 Telegram 定的、会变(官方加过几次)。**不确定某个表情在不在表里,别硬塞**——
+// 发出去被拒只是不显示,不影响正文,但日志里会留 [react] rejected。
+export const TG_REACTIONS = new Set([
+  "👍","👎","❤️","🔥","🥰","👏","😁","🤔","🤯","😱","🤬","😢","🎉","🤩","🤮","💩",
+  "🙏","👌","🕊","🤡","🥱","🥴","😍","🐳","❤️‍🔥","🌚","🌭","💯","🤣","⚡","🍌","🏆",
+  "💔","🤨","😐","🍓","🍾","💋","🖕","😈","😴","😭","🤓","👻","👨‍💻","👀","🎃","🙈",
+  "😇","😨","🤝","✍️","🤗","🫡","🎅","🎄","☃️","💅","🤪","🗿","🆒","💘","🙉","🦄",
+  "😘","💊","🙊","😎","👾","🤷‍♂️","🤷","🤷‍♀️","😡",
+]);
+
+// ⚠️ **变体选择符 U+FE0F 必须容错**:`❤️` 是 `❤`+U+FE0F 两个码点,而模型两种都写得出来,
+// 死抠字节会让「他明明写对了却当成表外的」。所以比对时两边都抹掉 FE0F,
+// **但发给 Telegram 的用白名单里那一份**(官方那张表带 FE0F,发裸 `❤` 会被拒)。
+const noVS = (s) => (s || "").replace(/️/g, "");
+const REACTION_BY_BARE = new Map([...TG_REACTIONS].map((e) => [noVS(e), e]));
+
+// 返回 { text, emoji, rejected }:emoji 为 null = 他没写,或写了个表外的
+//(两种都当没写,**正文一律照发**);rejected 记下表外的那个,只为落日志。
+// **只认第一个**:一条消息上 Telegram 只显示一个普通回应,他写多个就取头一个,其余照样剥掉。
+export function takeReactionMarker(text) {
+  const raw = text || "";
+  REACT_RE.lastIndex = 0;
+  let emoji = null, bad = null, m;
+  while ((m = REACT_RE.exec(raw)) !== null) {
+    const v = (m[1] || "").trim();
+    if (emoji) continue;                       // 已经取到一个了,后面的只剥不发
+    const hit = REACTION_BY_BARE.get(noVS(v));
+    if (hit) emoji = hit; else if (!bad) bad = v;
+  }
+  if (!emoji && !bad) return { text: raw, emoji: null, rejected: null };
+  const cleaned = raw.replace(REACT_RE, "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  return { text: cleaned, emoji, rejected: emoji ? null : bad };
 }
 
 // 查岗结果 → 喂回给他的一条。没有记录时也要明说,否则他不知道是「没查到」还是「她没玩」。

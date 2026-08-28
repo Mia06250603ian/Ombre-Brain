@@ -5,7 +5,7 @@ import {
   extractStickers, extractSegments, splitBubbles, bubblesFor,
   formatEarsResult,
   normalizeAppName, pushActivity, summarizeActivity, isCurfewHour, curfewDecide, curfewPrompt, isSilentReply,
-  takeCheckMarker, lookupPrompt, ACTIVITY_CAP, computeStreak, fmtDur, appDurations,
+  takeCheckMarker, takeReactionMarker, TG_REACTIONS, lookupPrompt, ACTIVITY_CAP, computeStreak, fmtDur, appDurations,
   APP_LIST_TOP, APP_MIN_WORTH,
   describeErr, isRetriableNetErr, turnErrorText, describeLoss,
   letterDecide, letterPrompt, LETTER_HOUR, LETTER_MIN, LETTER_WINDOW_MIN,
@@ -578,6 +578,37 @@ ok(!takeCheckMarker("[贴纸:查岗]").wants, "贴纸标记不会被误认成查
   const r = takeCheckMarker("[查岗]\n\n\n在干嘛");
   eq(r.text, "在干嘛", "剥完不留多余空行");
 }
+
+// ---- takeReactionMarker(表情回应,2026-08-28)----
+eq(takeReactionMarker("在忙吗"), { text: "在忙吗", emoji: null, rejected: null }, "没写标记 = 不回应");
+eq(takeReactionMarker("[回应:❤️]"), { text: "", emoji: "❤️", rejected: null }, "只写标记:正文空、贴心");
+eq(takeReactionMarker("【回应:👍】"), { text: "", emoji: "👍", rejected: null }, "全角括号+全角冒号都认");
+eq(takeReactionMarker("[ 回应 : 🔥 ]"), { text: "", emoji: "🔥", rejected: null }, "带空格也认");
+eq(takeReactionMarker("[回应:❤️]我在"), { text: "我在", emoji: "❤️", rejected: null }, "标记剥掉,正文照发");
+eq(takeReactionMarker("我在[回应:❤️]"), { text: "我在", emoji: "❤️", rejected: null }, "句尾的也剥干净");
+// **表外的表情当没写**:Telegram 只认官方那张固定表,硬发会 400。正文必须照常送出去。
+eq(takeReactionMarker("[回应:🥑]好啊"), { text: "好啊", emoji: null, rejected: "🥑" }, "表外表情:不发回应,正文照发,记下是哪个");
+// **只认第一个**:一条消息上只显示一个普通回应,多写的照样剥掉、绝不漏给她看
+eq(takeReactionMarker("[回应:❤️]嗯[回应:👍]"), { text: "嗯", emoji: "❤️", rejected: null }, "写了两个只取头一个,第二个也剥掉");
+ok(!takeReactionMarker("我回应了她").emoji, "光有「回应」二字不带括号 → 不触发");
+ok(!takeReactionMarker("[贴纸:回应]").emoji, "贴纸标记不会被误认成回应");
+ok(takeReactionMarker("[贴纸:回应]").text === "[贴纸:回应]", "不是回应标记就别动人家的原文");
+{
+  const r = takeReactionMarker("[回应:❤️]\n\n\n在干嘛");
+  eq(r.text, "在干嘛", "剥完不留多余空行");
+}
+// 静音判定要在剥完之后做:「。[回应:❤️]」= 不说话只贴表情(server.js runQueue 里那处)
+ok(isSilentReply(takeReactionMarker("。[回应:❤️]").text), "「。」+回应 剥完仍算静音回复");
+ok(TG_REACTIONS.has("❤️") && TG_REACTIONS.has("😡") && !TG_REACTIONS.has("🥑"), "白名单本身:常用的在、没收录的不在");
+// 变体选择符容错:他写裸 ❤(不带 U+FE0F)也认,但**发出去的必须是官方那份带 FE0F 的**
+eq(takeReactionMarker("[回应:❤]").emoji, "❤️", "裸 ❤ 也认,并补成官方那份");
+eq(takeReactionMarker("[回应:❤️]").emoji, "❤️", "带 FE0F 的原样通过");
+
+// ---- mergeTurn 的 replyToId(表情回应的靶子)----
+eq(mergeTurn([{ text: "a", messageId: 11 }, { text: "b", messageId: 12 }]).replyToId, 12,
+   "连发多条:贴在最后一条上");
+eq(mergeTurn([{ text: "a" }]).replyToId, undefined, "没有 id(/push 心跳这类)= 不回应");
+eq(mergeTurn([{ text: "a", messageId: 11 }, { text: "b" }]).replyToId, 11, "后面那条没 id 就退回有 id 的最后一条");
 
 // ---- 查岗结果喂回去的那一条 ----
 {
