@@ -5,7 +5,8 @@ import assert from "node:assert";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { inject } from "./inject-copy.mjs";
+import { inject, injectBoards } from "./inject-copy.mjs";
+import { extractBoards, boardsToLiteral } from "./extract-boards.mjs";
 
 let pass = 0, fail = 0;
 function ok(name, fn) {
@@ -62,6 +63,103 @@ ok("补丁里含 </script> → 拒绝（会切断脚本块）", () => {
 });
 ok("补丁正文里确实没有 </script>", () => {
   assert(!/<\/script/i.test(PATCH), "copy-to-yan.js 里出现了 </script>");
+});
+
+/* ── 棋盘抠取（2026-08-28 补：上一版漏测了「换版本」，所有者报的 bug） ── */
+console.log("棋盘抠取");
+const REAL_INDEX = fs.existsSync(new URL("./game/index.html", import.meta.url))
+  ? fs.readFileSync(new URL("./game/index.html", import.meta.url), "utf8") : null;
+
+const FAKE_INDEX = [
+  "<script>",
+  "function makeCells(list) {",
+  "  return list.map(function (t, i) {",
+  "    var type = 'normal', backSteps = 0, jumpTo = null;",
+  "    var m = t.match(/后进\\s*(\\d+)\\s*格/);",
+  "    if (m) { type = 'special'; backSteps = parseInt(m[1], 10); }",
+  "    return { text: t, type: type, backSteps: backSteps, jumpTo: jumpTo };",
+  "  });",
+  "}",
+  "const BOARDS = {",
+  "  maid: { name: '女仆版', cells: makeCells(['起点','甲','后进3格','终点']) },",
+  "  sm:   { name: 'SM版',  cells: makeCells(['起点','乙','后进2格','终点']) },",
+  "};",
+  "</scr" + "ipt>",
+].join("\n");
+
+ok("抠得出版本、名字、格子", () => {
+  const b = extractBoards(FAKE_INDEX);
+  assert.deepEqual(Object.keys(b).sort(), ["maid", "sm"]);
+  assert.equal(b.sm.name, "SM版");
+  assert.equal(b.maid.cells.length, 4);
+});
+ok("后退格解析出来了（旧版 makeCells 会漏掉这个）", () => {
+  const b = extractBoards(FAKE_INDEX);
+  assert.equal(b.maid.cells[2].backSteps, 3);
+  assert.equal(b.sm.cells[2].backSteps, 2);
+});
+ok("抠到旧版 makeCells（不给 backSteps）→ 抛错不硬上", () => {
+  const oldOne = FAKE_INDEX.replace(/if \(m\) \{[^}]*\}/, "");
+  assert.throws(() => extractBoards(oldOne), /后进X格|旧版/);
+});
+ok("功能页里没有 BOARDS → 抛错", () => {
+  assert.throws(() => extractBoards(FAKE_INDEX.replace("const BOARDS = {", "const XX = {")), /BOARDS/);
+});
+ok("功能页里没有 makeCells → 抛错", () => {
+  assert.throws(() => extractBoards(FAKE_INDEX.replace("function makeCells", "function xx")), /makeCells/);
+});
+ok("嵌进 <script> 前 `<` 被转义（不然能把脚本块切断）", () => {
+  const lit = boardsToLiteral({ x: { name: "</scr" + "ipt>", cells: [] } });
+  assert(!/<\/script/i.test(lit), "没转义");
+  assert.deepEqual(JSON.parse(lit).x.name, "</scr" + "ipt>", "转义之后解析不回来了");
+});
+if (REAL_INDEX) {
+  ok("真功能页：九个版本一个不少", () => {
+    const b = extractBoards(REAL_INDEX);
+    assert.deepEqual(Object.keys(b).sort(),
+      ["advanced","butler","couple","foreplay","love","maid","private","private_adv","sm"]);
+  });
+  ok("真功能页：每个版本都有后退格或跳转格", () => {
+    const b = extractBoards(REAL_INDEX);
+    for (const k of Object.keys(b)) {
+      const n = b[k].cells.filter((c) => c.backSteps > 0 || c.jumpTo != null).length;
+      assert(n > 0, `${k} 一个特殊格都没有`);
+    }
+  });
+} else {
+  console.log("  · 跳过「真功能页」两项（game/ 还没拉，跑 ./fetch-game.sh 后再测）");
+}
+
+console.log("棋盘注入");
+const POPUP = [
+  "<html><body>",
+  "<script>",
+  "const CURRENT_BOARD = {",
+  "  key: 'maid', name: '女仆版', cells: []",
+  "};",
+  "function playerRoll() {}",
+  "function aiRoll() { return null; }",
+  "window.flightChessBuildInjectPrompt = function (ev) { return ''; };",
+  "</scr" + "ipt>",
+  "</body></html>",
+].join("\n");
+
+ok("注入后 CURRENT_BOARD 改成「先查存档、查不到再用原来那份」", () => {
+  const out = injectBoards(POPUP, extractBoards(FAKE_INDEX));
+  assert(out.includes("const CURRENT_BOARD = (window.__pickBoard && window.__pickBoard()) || {"), "没改成兜底写法");
+  assert(out.includes("key: 'maid', name: '女仆版'"), "原来那份字面量被改掉了（它是兜底，必须原样留着）");
+});
+ok("棋盘数据插在游戏脚本之前（__pickBoard 必须先存在）", () => {
+  const out = injectBoards(POPUP, extractBoards(FAKE_INDEX));
+  assert(out.indexOf("__CHESS_BOARDS__") < out.indexOf("const CURRENT_BOARD"), "顺序反了");
+});
+ok("弹窗页里找不到 CURRENT_BOARD → 抛错不硬上", () => {
+  assert.throws(() => injectBoards(POPUP.replace("const CURRENT_BOARD = {", "const XX = {"),
+    extractBoards(FAKE_INDEX)), /找不到/);
+});
+ok("已经接过棋盘数据 → 拒绝再注一遍", () => {
+  const once = injectBoards(POPUP, extractBoards(FAKE_INDEX));
+  assert.throws(() => injectBoards(once, extractBoards(FAKE_INDEX)), /已经接过/);
 });
 
 /* ── 服务器 ───────────────────────────────────────────── */
