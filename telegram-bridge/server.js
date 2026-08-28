@@ -9,7 +9,7 @@ import {
   makeSseAccumulator, escapeHtml, isAllowedChat, mediaTypeOf, stickerMime, extractSegments, bubblesFor,
   formatEarsResult,
   normalizeAppName, pushActivity, summarizeActivity, curfewDecide, curfewPrompt, isSilentReply,
-  takeCheckMarker, lookupPrompt, computeStreak, appDurations, ACTIVITY_CAP, STREAK_GAP_MIN,
+  takeCheckMarker, takeReactionMarker, lookupPrompt, computeStreak, appDurations, ACTIVITY_CAP, STREAK_GAP_MIN,
   letterDecide, letterPrompt, LETTER_HOUR, LETTER_MIN, LETTER_WINDOW_MIN, LETTER_QUIET_MIN,
   describeErr, isRetriableNetErr, turnErrorText,
   recordLoss, pendingNoticeText,
@@ -180,16 +180,44 @@ async function sendVoiceMsg(chatId, text) {
 const BUBBLE_SPLIT = process.env.BUBBLE_SPLIT !== "0";
 const BUBBLE_MAX = +(process.env.BUBBLE_MAX || 200); // 整段回复超过此长度=长文,不拆
 const sleep = (ms) => new Promise((s) => setTimeout(s, ms));
+// ---- 表情回应(2026-08-28):[回应:❤️] → 贴在她那条消息上 ----
+// 三条刻意的选择,别顺手改掉:
+// ① **失败不进 stat**:回应不是「他说的话」,发不出去不该让她收到「你的话没送到」那条提示,
+//    更不该记欠条让定时器一直补(补一个表情既没意义,又会在路通时冒出来一个莫名其妙的动作)。
+// ② **不动 lastOutboundAt**:贴个表情不算「他开过口」。算了的话会压住查岗和写信提醒
+//    ——他明明没说话,却把该说话的机会吃掉了(同 [查岗] 标记那条的道理)。
+// ③ **走 tg() 拿重试**:setMessageReaction 是幂等的(重发= 同一个状态),
+//    和 sendMessage 不同,重试绝不会变成「同一句说两遍」,所以这里用重试是安全的。
+const REACTION_ON = process.env.REACTION_ON !== "0";
+async function sendReaction(chatId, messageId, emoji) {
+  if (!REACTION_ON || !emoji || messageId == null) return false;
+  try {
+    const j = await tg("setMessageReaction", {
+      chat_id: chatId, message_id: messageId,
+      reaction: [{ type: "emoji", emoji }], is_big: false,
+    });
+    if (j?.ok) return true;
+    log("[react] rejected:", j?.description || "unknown", emoji);
+  } catch (e) { log("[react-err]", describeErr(e)); }
+  return false;
+}
+
 // 返回 { sent, failed, kinds, net, rejected }:**一句发失败只丢那一句,后面的照发**
 //(以前是当场抛错,整轮剩下的话全没了——她看到的就是「思考折叠出来了,正文一个字没有」)。
 // kinds 按种类记(话/贴纸/语音),net 与 rejected 分开记原因——**给她的提示要说得准**:
 // 「网络抖了一下」和「Telegram 拒收(内容问题)」是两回事,混为一谈会把排障带沟里。
-async function sendOutput(chatId, rawText, { fallback } = {}) {
+async function sendOutput(chatId, rawText, { fallback, replyToId } = {}) {
+  // 回应先抽走再切段落:它不进段落流,而且要赶在正文之前贴上去(先回应、再开口,像人)。
+  const react = takeReactionMarker(rawText || "");
+  if (react.rejected) log("[react] 表外的表情,当没写:", react.rejected);
+  const reacted = react.emoji ? await sendReaction(chatId, replyToId, react.emoji) : false;
+  rawText = react.text;
   const { segments, unknown } = extractSegments(rawText || "", stickerTags);
   if (unknown.length) log("[sticker] unknown tags:", unknown.join(","));
   const stat = { sent: 0, failed: 0, kinds: { text: 0, sticker: 0, voice: 0 }, net: 0, rejected: 0 };
   if (!segments.length) {
-    if (fallback) { try { await sendReply(chatId, fallback); } catch (e) { log("[send-err] fallback", describeErr(e)); } }
+    // 只贴了个表情、一个字没说,是**合法的一轮**(他就是想这么回),别甩她「空回复」的报错。
+    if (fallback && !reacted) { try { await sendReply(chatId, fallback); } catch (e) { log("[send-err] fallback", describeErr(e)); } }
     return stat;
   }
   // 他每次开口都从这个门出去(回复/心跳/查岗),查岗的冷却看这个。
@@ -333,11 +361,14 @@ async function runQueue() {
     if (r) {
       // 他自己写了 [查岗]:剥掉标记,正文照发,回头把查到的喂回去(lookup 轮不再响应,防打转)
       const { text: outText, wants } = takeCheckMarker(r.text);
-      if ((t.curfew || t.lookup || t.letter) && isSilentReply(outText)) {
+      // ⚠️ 静音判定要在**剥掉回应标记之后**做:他回「。[回应:❤️]」是「不说话,只贴个表情」,
+      // 拿原文去判会判成「有话要说」,于是走进正文分支、发现没正文,再甩她一句「空回复」。
+      // (系统轮本来就没有她的消息可贴,replyToId 是空的,这里丢掉那个表情是对的。)
+      if ((t.curfew || t.lookup || t.letter) && isSilentReply(takeReactionMarker(outText).text)) {
         log(t.letter ? "[letter] 今天没什么想写的" : "[curfew] 他选择不打扰");   // 回「。」= 不说话,这条不进对话
       } else {
         await sendThinking(t.chatId, r.thinking);
-        const stat = await sendOutput(t.chatId, outText, { fallback: wants ? null : "⚠️[bridge] 空回复,看下 shim 日志" });
+        const stat = await sendOutput(t.chatId, outText, { fallback: wants ? null : "⚠️[bridge] 空回复,看下 shim 日志", replyToId: t.replyToId });
         // 真有话没送到才吭声(查岗轮不吭声,她没问)
         if (stat.failed && !t.curfew && !t.letter) {
           const told = await notify(turnErrorText({ stage: "send", ...stat }));
@@ -404,11 +435,11 @@ async function onMessage(msg) {
 
   if (!images.length && detectReset(text)) {
     flushBuffer();                                    // 之前攒的先作为一轮发走
-    turnQueue.push({ text, images: [], chatId });     // 重置词单独成轮
+    turnQueue.push({ text, images: [], chatId, replyToId: msg.message_id });   // 重置词单独成轮
     runQueue();
     return;
   }
-  buffer.push({ text, images });
+  buffer.push({ text, images, messageId: msg.message_id });   // id 留着给表情回应当靶子
   scheduleFlush();
 }
 
@@ -618,7 +649,7 @@ async function noticeTick() {
 }
 if (NOTICE_ON) setInterval(noticeTick, NOTICE_RETRY_MS);
 
-app.get("/health", (_q, r) => r.json({ ok: true, on: BRIDGE_ON, polling, inflight, buffered: buffer.length, queued: turnQueue.length, stickers: stickerTags.length, ears: EARS_ON, report: REPORT_ON, curfew: CURFEW_ON, activity: activity.length, letter: LETTER_ON, letterAt: `${String(LETTER_AT_HOUR).padStart(2,"0")}:${String(LETTER_AT_MIN).padStart(2,"0")}`, letterDoneToday: lastLetterDay === bjToday(), notice: NOTICE_ON, pendingLosses: pendingLosses.length }));
+app.get("/health", (_q, r) => r.json({ ok: true, on: BRIDGE_ON, polling, inflight, buffered: buffer.length, queued: turnQueue.length, stickers: stickerTags.length, ears: EARS_ON, report: REPORT_ON, curfew: CURFEW_ON, activity: activity.length, letter: LETTER_ON, letterAt: `${String(LETTER_AT_HOUR).padStart(2,"0")}:${String(LETTER_AT_MIN).padStart(2,"0")}`, letterDoneToday: lastLetterDay === bjToday(), notice: NOTICE_ON, pendingLosses: pendingLosses.length, reaction: REACTION_ON }));
 app.listen(PORT, () => log(`telegram-bridge on :${PORT} shim=${SHIM_URL} on=${BRIDGE_ON}`));
 
 if (!BRIDGE_ON) log("[bridge] BRIDGE_ON=0,只留 /health");
