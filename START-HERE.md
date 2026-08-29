@@ -37,7 +37,7 @@
 | `gmail-mcp/` | 晏的邮箱(读信/搜信/写草稿,发信白名单制) | ✅ | `gmail-mcp/MAINTENANCE.md` |
 | `dwell-bridge/` | 自建网页 ⇄ shim 的转接层 | ✅ | `dwell-bridge/MAINTENANCE.md` |
 | `browser-hands/` | 晏的「浏览器的手」 | ❌ **只有手册**,源码在 `Mia06250603ian/browser-hands` | `browser-hands/MAINTENANCE.md` |
-| `netease-mcp/` | **晏的网易云音乐**(2026-08-29 上线,**尚未接晏**)。读歌单/歌词/听歌记录;**写操作默认关着** | ❌ **只有手册**,源码在 `Mia06250603ian/netease-mcp`(**私有**) | `netease-mcp/MAINTENANCE.md` |
+| `netease-mcp/` | **晏的网易云音乐**(2026-08-29 上线,**功能已做完、尚未接晏**)。读歌单/歌词/听歌记录;写操作分两道闸,**删歌与排序硬禁** | ❌ **只有手册**,源码在 `Mia06250603ian/netease-mcp`(**私有**) | `netease-mcp/MAINTENANCE.md` |
 
 **七个服务的代码零跨目录依赖**(2026-08-21 实测五个;2026-08-28 的 `chess-web/`、2026-08-29 的 `netease-mcp/` 同样零依赖 —— 后者本目录里连源码都没有,只有手册)。
 一个目录 = 一个独立服务,各跑各的、各有各的 Zeabur 服务、各看各的手册。
