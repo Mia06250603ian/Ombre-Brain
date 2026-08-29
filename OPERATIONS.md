@@ -88,6 +88,7 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
 | ~~心跳「自主活动」+ 上下文阈值~~ | **2026-08-21 第三十五次已上线**:心跳除了给她发消息,也能看邮箱/上网/做自己想做的事(发消息优先);三线改为 155000/161500/164000、原话 1400 字。**仍未做、等她拍板的两件**:①窗口闸门(占用超软线时自动只留「发消息」)②`browser` 的 `MAX_RESULT_CHARS` 20000→6000~8000 —— 自主活动会加快窗口增长,可能抵消这次调阈值省下的余量 | `kelivo-shim/DEPLOY-LOG.md` 第三十五次 |
 | ~~表情回应(telemood 借鉴的 A)~~ | **✅ 2026-08-28 已上线**(bridge 部署;`/health` 的 `reaction:true`)。他写 `[回应:❤️]` → 桥剥掉标记、贴到她那条消息上。**只动 bridge,shim 与晏的窗口零改动**;急救开关 `REACTION_ON=0`。细节全在 `telegram-bridge/MAINTENANCE.md` **设计要点 20**。**⚠️ 还差一步、下一个窗口先看这里**:①**晏还不知道有这个功能** —— 语法教学要写进他的 `CLAUDE.md`,那是入库文件、**改它 = 部署 shim = 丢窗口**,所以照语音功能当初的办法:所有者在对话里口头教他(**2026-08-28 已教,当窗口有效**),**永久教学等下次 shim 因别的事部署时搭顺风车** —— ⚠️ **这条已钉进 `kelivo-shim/MAINTENANCE.md` 部署检查单《部署前》末尾那节《搭顺风车的待办》**,下次部署 shim 的会话必读那节,不会漏;~~②真投递没验过~~ **✅ 2026-08-28 所有者当天实测通过,表情真的出现了**(私聊里 bot 可以贴回应这件事,已从「文档说可以」变成「线上跑过」) | `telegram-bridge/MAINTENANCE.md` 设计要点 20 |
 | ~~telemood 借鉴的 B / C~~ | **2026-08-28 所有者当场砍掉,别自作主张做回来**。**B**(未知贴纸标签告诉晏)砍掉的理由:先没人量过他到底写错过没有,为一个可能不存在的问题冒「他当众回一句莫名其妙的话」的险不划算;**C**(送达状态分三档)砍掉的理由:它真正的取舍是「少重复 = 多一分话丢了没人知道」,而她要的是**宁可重复也别丢话**;改成「只记账不改行为」后,又因为**当下并没有正在查的问题**而一并砍了。**明确不做:可点按钮**(会让晏像客服、把她「看情况吧」那类回答砍成固定选项、且省不了窗口)。⚠️ **另立的第四件仍未查**:她报「他调用工具(比如存 OB)之后会同一句说两遍」——**这不是 C 能修的**,读码怀疑是 CLI 在工具调用前后各出一段 assistant 文本,shim 的 `server.js:231` 把两段都累进 `turn.fullText` 全发了;**病根在 shim(改= 丢窗口),且尚未证实,等她给一个真实例子再动** | `TIMELINE.md` 08-28(第二件) |
+| **网易云音乐接晏** | **2026-08-29 服务已上线** `yan-netease.zeabur.app`(读操作验收八条全过)。**差两步**:①**`NETEASE_COOKIE`/`NETEASE_CSRF` 要她本人在控制台填** —— 填之前所有需要账号的工具都是空的;②填完要**补验带登录态的写操作会不会触发异地 IP 风控**(读的一路已验全通)。**接晏是再往后的事**,那一步要部署 shim = 丢窗口,建议搭顺风车 | `netease-mcp/MAINTENANCE.md` |
 | dwell 发送键随打字切换外观 | 所有者已定「**只做样子**,点了如实说明语音没接」,**尚未动手**(在 dwell 仓库) | `TIMELINE.md` 08-16 |
 
 **dwell UI 那轮留下的三条,以后碰这个前端的人先看**:
@@ -195,6 +196,7 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
 | 〃 | dwell-bridge | `6a81a118bdeaa87e2c52bec3` | yan-dwell.zeabur.app | **她自建网页接晏的转接层**(2026-08-16 上线):网页 → 这一层 → shim 的 `/v1/messages`,把 Anthropic SSE 翻成 dwell 前端认的事件流。**不碰晏、不改 shim**,对线上就是个客户端,地位同手机上的 Kelivo。内存实测 **70 MiB**。源码在本仓库 `dwell-bridge/`,前端从 `Mia06250603ian/dwell-on-something` 拉(刻意不入库)。⚠️ **`SHIM_KEY` 尚未设,设上之前发消息会 401**。详见 `dwell-bridge/MAINTENANCE.md` |
 | 〃 | gmail-mcp | `6a74a107e4a69d66638c4650` | yan-gmail.zeabur.app | **晏的邮箱**:读信/搜信/写草稿,**发送是白名单制**(只能发给所有者指定的地址,其余只能存草稿;白名单空=全拒)。走 IMAP + 应用专用密码;验证码/密码重置类邮件整封屏蔽。源码在本仓库 `gmail-mcp/`,镜像走 GitHub Actions→ghcr,无持久卷。**2026-08-06 上线并接入晏**(shim 第二十八次),详见 `gmail-mcp/MAINTENANCE.md` |
 | 〃 | chess-web | `6a91a74db7ff62ee8d7ffcb3` | yan-chess.zeabur.app | **飞行棋网页**(2026-08-28 上线):带口令的静态站,发 `Mia06250603ian/player` 那个双人飞行棋,并注入一颗「复制给晏」的按钮。**零依赖、不联网、不碰晏/shim/OB**,建的时候没重启任何东西、窗口未丢。源码在本仓库 `chess-web/`,游戏本身刻意不入库(部署前 `fetch-game.sh` 拉)。详见 `chess-web/MAINTENANCE.md` |
+| 〃 | netease-mcp | `6a9308b3cb6b9b31c9e73870` | yan-netease.zeabur.app | **晏的网易云音乐**(2026-08-29 上线)。搜歌/歌单/歌词/听歌记录,**6 个写操作默认关着**(`WRITE_ENABLED=0`,网易云没有撤销键)。`X-Token` 鉴权,**不设 token = 全拒**。⚠️ **尚未接晏**(`mcp-servers.json` 未动),且 `NETEASE_COOKIE`/`NETEASE_CSRF` 要所有者本人在控制台填。源码在 `Mia06250603ian/netease-mcp`(**私有**,非 fork),详见 `netease-mcp/MAINTENANCE.md` |
 | `untitled-1` | Ombre Brain | (问所有者/控制台看) | ianmian.zeabur.app | 记忆库 MCP |
 | ~~(外部,非我们部署)~~ | ~~Galatea's Garden~~ | — | galatea.abysslumina.com | ~~花园社区 MCP~~ **2026-07-30 已从 shim 拆除**(它 /mcp 502 且晏不玩;token 未留底,要恢复见 shim 手册「缺的三个文件」第 2 条) |
 
@@ -224,6 +226,10 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
     部署前 `./fetch-game.sh` 拉一份并打「复制给晏」的补丁。
     ⚠️ **`game/` 在 `.gitignore` 里,而 zeabur 上传遵守 `.gitignore`** ——
     部署前要临时收窄 `.gitignore`,传完还原(和 dwell-bridge 的 `web/` 同一个坑)。
+- **Mia06250603ian/netease-mcp**(**私有**):网易云 MCP 源码。**不是 fork,是复制一份自己维护**
+  (源自 `Vael-KY/netease-music-mcp` v3.1,MIT;所有者 2026-08-29 拍板不 fork)。
+  ⚠️ **上游以后更新要手动搬**,别覆盖掉我们那三处「本地改动 A」(鉴权 / 只读闸门 / 结果长度上限)。
+  ⚠️ **本会话的 GitHub 权限建不了新仓库**(`create_repository` 403),空仓库是所有者本人建的。
 - **Mia06250603ian/player**(公开):飞行棋游戏源码,三个文件、零依赖、纯静态。
   ⚠️ **这个仓库是公开的**,而内容是私密性质的 —— 2026-08-28 已报备所有者,由她定要不要转私有。
 - **Mia06250603ian/browser-hands**(fork,公开):浏览器服务源码 + `docs/DEPLOY-GUIDE.md`。
