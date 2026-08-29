@@ -346,6 +346,10 @@ curl -s -X POST $OB/mcp -H 'Content-Type: application/json' \
 **怎么再验一遍**:`bash tests/galaxy-e2e/run-real-ob.sh`(31 项浏览器演练 + 上面那组影响检查;
 另有 `run.sh` 是不需要 python 的快跑版)。
 
+⚠️ **`Dockerfile` 里必须有 `COPY galaxy.html .`**(2026-08-29 上线前抓到):它 COPY 的是
+`*.py` + `dashboard.html` + config,**不是整个目录**——漏了这行,镜像里没有这个文件,
+线上 `/galaxy` 会回 404 而本地一切正常。以后再往根目录加静态文件同理。
+
 **改文案/调参**:标题那三行字和数据源开关都在 `galaxy.html` 顶部的 `CONFIG` 里;
 调亮度、星星大小、自转速度那些旋钮,文件顶部注释指向教程的《调参指南》。
 
