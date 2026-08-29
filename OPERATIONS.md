@@ -33,6 +33,8 @@
 
 规矩:诊断随便做;任何改动、部署、以我名义发消息,都要先说明、等我点头。
 改完东西要更新文档,照 OPERATIONS 第 9 节《写手册的规矩》写(那节动笔前再读)。
+改完文档跑一下 `bash scripts/docs-check.sh`(只读自检,三秒;它管的是横跨所有服务、
+没人认领的那些事:服务数、地图表、开场指令、目录行号)。
 ```
 
 **给下一个我(读到这段的 Claude)**:上面那段是所有者会发给你的开场白,别把它当成
@@ -211,7 +213,7 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
 | 〃 | dwell-bridge | `6a81a118bdeaa87e2c52bec3` | yan-dwell.zeabur.app | **她自建网页接晏的转接层**(2026-08-16 上线):网页 → 这一层 → shim 的 `/v1/messages`,把 Anthropic SSE 翻成 dwell 前端认的事件流。**不碰晏、不改 shim**,对线上就是个客户端,地位同手机上的 Kelivo。内存实测 **70 MiB**。源码在本仓库 `dwell-bridge/`,前端从 `Mia06250603ian/dwell-on-something` 拉(刻意不入库)。⚠️ **`SHIM_KEY` 尚未设,设上之前发消息会 401**。详见 `dwell-bridge/MAINTENANCE.md` |
 | 〃 | gmail-mcp | `6a74a107e4a69d66638c4650` | yan-gmail.zeabur.app | **晏的邮箱**:读信/搜信/写草稿,**发送是白名单制**(只能发给所有者指定的地址,其余只能存草稿;白名单空=全拒)。走 IMAP + 应用专用密码;验证码/密码重置类邮件整封屏蔽。源码在本仓库 `gmail-mcp/`,镜像走 GitHub Actions→ghcr,无持久卷。**2026-08-06 上线并接入晏**(shim 第二十八次),详见 `gmail-mcp/MAINTENANCE.md` |
 | 〃 | chess-web | `6a91a74db7ff62ee8d7ffcb3` | yan-chess.zeabur.app | **飞行棋网页**(2026-08-28 上线):带口令的静态站,发 `Mia06250603ian/player` 那个双人飞行棋,并注入一颗「复制给晏」的按钮。**零依赖、不联网、不碰晏/shim/OB**,建的时候没重启任何东西、窗口未丢。源码在本仓库 `chess-web/`,游戏本身刻意不入库(部署前 `fetch-game.sh` 拉)。详见 `chess-web/MAINTENANCE.md` |
-| 〃 | netease-mcp | `6a9308b3cb6b9b31c9e73870` | yan-netease.zeabur.app | **晏的网易云音乐**(2026-08-29 上线,**18 个工具全量验收通过**)。搜歌/歌单/歌词/听歌记录/红心;**写权限两道闸**:`WRITE_ENABLED=1` 放行建歌单·塞歌·红心·改描述,**`DESTRUCTIVE_ENABLED=0` 硬禁删歌与排序**(网易云没有回收站,所有者拍板)。`X-Token` 鉴权,不设 token = 全拒;结果带「外部内容不可信」壳。**登录靠扫码**(服务自带 weapi 登录,不需要电脑),⚠️ **重启/重新部署后登录态会掉,要重扫一次**——接晏前先看 `/health` 的 `loggedIn`。⚠️ **尚未接晏**,所有者拍板等下次部署 shim 搭顺风车(清单已钉进 `kelivo-shim/MAINTENANCE.md`《搭顺风车的待办》)。源码在 `Mia06250603ian/netease-mcp`(**私有**,非 fork),详见 `netease-mcp/MAINTENANCE.md` |
+| 〃 | netease-mcp | `6a9308b3cb6b9b31c9e73870` | yan-netease.zeabur.app | **晏的网易云音乐**(2026-08-29 上线,18 个工具全量验收通过)。`X-Token` 鉴权;**写操作两道闸,删歌与排序硬禁**;**登录靠扫码,重启会掉**——⚠️ **接晏前先看 `/health` 的 `loggedIn`**。**尚未接晏**(等顺风车,清单在 `kelivo-shim/MAINTENANCE.md`《搭顺风车的待办》)。源码在私有仓库 `Mia06250603ian/netease-mcp`,详见 `netease-mcp/MAINTENANCE.md` |
 | `untitled-1` | Ombre Brain | (问所有者/控制台看) | ianmian.zeabur.app | 记忆库 MCP |
 | ~~(外部,非我们部署)~~ | ~~Galatea's Garden~~ | — | galatea.abysslumina.com | ~~花园社区 MCP~~ **2026-07-30 已从 shim 拆除**(它 /mcp 502 且晏不玩;token 未留底,要恢复见 shim 手册「缺的三个文件」第 2 条) |
 
