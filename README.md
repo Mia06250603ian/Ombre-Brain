@@ -256,6 +256,9 @@ Ombre Brain gives it persistent memory — not cold key-value storage, but a sys
 - **历史对话导入 / Conversation history import**: 将过去与 Claude / ChatGPT / DeepSeek 等的对话批量导入为记忆桶。支持 Claude JSON 导出、ChatGPT 导出、Markdown、纯文本等格式，分块处理带断点续传，通过 Dashboard「导入」Tab 操作。
   Batch-import past conversations (Claude / ChatGPT / DeepSeek etc.) as memory buckets. Supports Claude JSON export, ChatGPT export, Markdown, and plain text. Chunked processing with resume support, via the Dashboard "Import" tab.
 
+- **记忆银河 / Memory galaxy**: 浏览器打开 `/galaxy`，把记忆桶看成一片可以穿梭的 3D 星图——时间当半径（最早的记忆在正中心，银河随日子往外长）、重要度定星星大小亮度、`domain` 定颜色；点一颗星，同类的星连成星座、正文从屏幕底部浮现。**只读**：数据走已有的 `/api/buckets` 和 `/api/bucket/{id}`，和 Dashboard 同一把锁（未登录先要口令），不写任何桶。文案和配色在 `galaxy.html` 顶部的 `CONFIG` 里改。
+  Open `/galaxy` to see your memory buckets as a 3D galaxy you can fly through — time as radius (the earliest memory sits at the core), importance as size and brightness, `domain` as color; tap a star and its kin light up into a constellation while the memory text rises from the bottom. **Read-only**, reusing `/api/buckets` and `/api/bucket/{id}` behind the same login as the Dashboard. Edit the wording and palette in the `CONFIG` block at the top of `galaxy.html`.
+
 ## 边界说明 / Design boundaries
 
 官方记忆功能已经在做身份层的事了——你是谁，你有什么偏好，你们的关系是什么。那一层交给它，Ombre Brain不打算造重复的轮子。

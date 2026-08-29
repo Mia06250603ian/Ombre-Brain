@@ -2698,6 +2698,31 @@ async def dashboard(request):
         return HTMLResponse("<h1>dashboard.html not found</h1>", status_code=404)
 
 
+@mcp.custom_route("/galaxy", methods=["GET"])
+async def galaxy(request):
+    """Serve the memory galaxy page (read-only star map of buckets).
+
+    记忆银河:把桶画成一片 3D 星图(时间当半径、重要度定大小、domain 定颜色)。
+    ⚠️ 只读,而且刻意做成「OB 优先」:
+      - 这条路由只发一个静态文件,不读桶、不写桶、不起后台任务;
+      - 星图要的数据全走已有的 /api/buckets 和 /api/bucket/{id}(两条都要登录),
+        没有为它新增任何接口;
+      - 页面开一次 = 一次 /api/buckets,和打开 /dashboard 同量级;它不轮询、不定时刷新;
+      - 这里出任何岔子都就地兜住,只影响这一页,不往上抛、碰不到 /mcp。
+    """
+    from starlette.responses import HTMLResponse
+    import os
+    galaxy_path = os.path.join(os.path.dirname(__file__), "galaxy.html")
+    try:
+        with open(galaxy_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    except FileNotFoundError:
+        return HTMLResponse("<h1>galaxy.html not found</h1>", status_code=404)
+    except Exception as e:
+        logger.warning("galaxy page failed: %s", e)
+        return HTMLResponse("<h1>星图暂时打不开</h1>", status_code=500)
+
+
 @mcp.custom_route("/api/config", methods=["GET"])
 async def api_config_get(request):
     """Get current runtime config (safe fields only, API key masked)."""

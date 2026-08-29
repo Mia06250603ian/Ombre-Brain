@@ -324,6 +324,44 @@ curl -s -X POST $OB/mcp -H 'Content-Type: application/json' \
 
 ---
 
+## 1.9 记忆银河 `/galaxy`(2026-08-29 新增)
+
+把桶画成一片可以穿梭的 3D 星图:**时间当半径**(`created` 最早的桶固定在正中心,银河随日子往外长)、
+**重要度定大小亮度**(四档:普通 / ≥7 重要 / ≥9 或 pinned 珍贵 / 核心)、**`domain` 定颜色**;
+点一颗星 → 同 domain 的星连成星座、正文从屏幕底部浮现。出处是所有者提供的《记忆银河搭建教程》。
+
+**它对 OB 的影响被刻意压到最小(所有者 2026-08-29 的要求:「OB > 星图」)**:
+
+| 事 | 实际情况 |
+|---|---|
+| 后端代码 | `server.py` 里**只有一条 `/galaxy` 路由**(约 20 行),照 `/dashboard` 抄的,只发一个静态文件 |
+| 数据从哪来 | **已有的** `GET /api/buckets`(铺星)+ `GET /api/bucket/{id}`(点星才取正文)。**没有为它新增任何接口** |
+| 写操作 | **零**。整条链路上没有一个 POST/PATCH/DELETE |
+| 开销 | 开一次页 = 一次 `/api/buckets`,和打开 `/dashboard` 同量级;**不轮询、不定时刷新、没有后台任务** |
+| 出错时 | 路由内就地兜住异常,只影响这一页,碰不到 `/mcp` |
+| 登录 | 复用 OB 自己的 `/auth/login` 和那块 `ombre_session` cookie,**和记忆库后台同一把锁**;页面本身不存口令 |
+
+**验证过的**(2026-08-29,本地起一个真 OB + 临时空库跑的,线上没碰):
+逛完整个星图之后**桶文件逐字节 md5 全等**(连 `last_active` 都没变)、`/mcp` 照样 200、`/health` 一字不差、日志零 Traceback。
+**怎么再验一遍**:`bash tests/galaxy-e2e/run-real-ob.sh`(31 项浏览器演练 + 上面那组影响检查;
+另有 `run.sh` 是不需要 python 的快跑版)。
+
+⚠️ **`Dockerfile` 里必须有 `COPY galaxy.html .`**(2026-08-29 上线前抓到):它 COPY 的是
+`*.py` + `dashboard.html` + config,**不是整个目录**——漏了这行,镜像里没有这个文件,
+线上 `/galaxy` 会回 404 而本地一切正常。以后再往根目录加静态文件同理。
+
+**改文案/调参**:标题那三行字和数据源开关都在 `galaxy.html` 顶部的 `CONFIG` 里;
+调亮度、星星大小、自转速度那些旋钮,文件顶部注释指向教程的《调参指南》。
+
+⚠️ **一个测试时撞出来的、OB 本来就有的毛病(不是星图引入的,2026-08-29 实测)**:
+`_verify_any_password` 用 `hmac.compare_digest` 直接比两个 `str`,**口令里带非 ASCII 字符时会抛
+`TypeError` → 登录接口回 500 并在日志留一条 Traceback,而不是 401**。
+记忆库后台的登录框同样如此。不是越权、不碰数据,就是打错字时报错难看。
+**尚未修**——所有者说了算(改的是 OB)。修法是比之前先 `.encode()`。
+现场再验:`run-real-ob.sh` 的 G 段会打印出来;修好了就把那段删掉。
+
+---
+
 ## 2. 模块结构与依赖关系
 
 ```
@@ -349,6 +387,7 @@ curl -s -X POST $OB/mcp -H 'Content-Type: application/json' \
 | `dehydrator.py` | 数据脱水压缩 + 合并 + 自动打标（仅 LLM API，不可用时报 RuntimeError） | `utils` | `server.py` |
 | `embedding_engine.py` | 向量化引擎：Gemini embedding API + SQLite + 余弦搜索 | `utils` | `server.py`, `backfill_embeddings.py` |
 | `utils.py` | 配置加载、日志、路径安全、ID 生成、token 估算 | 无 | 所有模块 |
+| `galaxy.html` | **记忆银河**(2026-08-29 新增):把桶画成 3D 星图的单文件页面。**纯前端、只读**,靠 `/api/buckets` + `/api/bucket/{id}` 取数,不新增任何接口 | 无(three.js 走 CDN) | `server.py` 的 `/galaxy` 路由 |
 | `write_memory.py` | 手动写入记忆 CLI（绕过 MCP） | 无（独立脚本） | 无 |
 | `backfill_embeddings.py` | 为存量桶批量生成 embedding | `utils`, `bucket_manager`, `embedding_engine` | 无 |
 | `check_buckets.py` | 桶数据完整性检查 | `bucket_manager`, `utils` | 无 |
