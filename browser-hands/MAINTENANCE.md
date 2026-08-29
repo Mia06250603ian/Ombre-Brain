@@ -242,7 +242,8 @@ browser-hands 容器(Zeabur)
 上游源码注释里写着「浏览器把容器撑爆,这次 AI 没受影响(服务是隔离的)」。
 **在这台机器上,不能照这句话理解风险。** 实测:
 
-- 平台**没给任何容器设内存上限**(cgroup `memory.max` 全是 `max`),七个服务共用一池内存;
+- 平台**没给任何容器设内存上限**(cgroup `memory.max` 全是 `max`),~~七个~~ 服务共用一池内存
+  (⚠️ **「七个」是 2026-08-01 当时的数,已过期**:钓鱼 08-02 删了,之后又加了 gmail / dwell / chess-web / netease-mcp。**2026-08-29 实测机器上是 10 个**。**结论不变**——共用一池、谁都可能被殃及;要现场数就跑 `npx -y zeabur@latest service list --project-id 6a53a9fc22dd6ef375eb7484 -i=false`);
 - 内核 OOM 挑的是**单个进程**,不是服务。实测 `oom_score`:
   **ears 的 python 进程 1365(全机第一)、晏的 claude 进程 1363(第二)**,
   而 browser-hands **1339 反而最安全**——因为 Chrome 拆成 7 个进程,单个都不显眼;
