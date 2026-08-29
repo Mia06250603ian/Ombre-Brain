@@ -16,12 +16,15 @@
      把 OB 的记忆桶画成一片可以穿梭的 3D 银河:时间当半径(最早的桶在正中心)、
      重要度定大小亮度、domain 定颜色。点一颗星 → 同域的星连成星座 + 正文浮现。
 
-     ⚠️ 这个文件目前**没有接进 server.py**,OB 的行为一个字都没改。
-        双击打开 = 用下面内嵌的示例数据;要真接上去(加一条 /galaxy 路由)
-        得所有者点头,那一步才动 OB。
+     配套 `server.py` 的 `/galaxy` 路由(2026-08-29 加,约 20 行,只发这个文件)。
+     ⚠️ **只读,而且刻意做成「OB 优先」**:数据全走已有的 /api/buckets 和 /api/bucket/{id},
+        没有新增接口、没有一个写操作、不轮询;登录复用 OB 自己那把锁。
+        细节和验证记录见 `INTERNALS.md` 第 1.9 节。
+     双击本地打开(取不到 OB)时自动用下面内嵌的示例数据,不会白屏。
      出处:所有者提供的《记忆银河搭建教程》+ galaxy-template.html(2026-08-29)。
      怎么改上方那三行字、怎么调亮度/疏密/转速:见下面 CONFIG 和教程的《调参指南》。
-     自测:tests/galaxy-e2e/run.sh(22 项,2026-08-29 全绿)
+     自测:tests/galaxy-e2e/run-real-ob.sh(真 OB,31 项 + 影响检查,2026-08-29 全绿)
+     快跑版(不需要 python):tests/galaxy-e2e/run.sh
      ═══════════════════════════════════════════════════════════ -->
 
 <!-- ═══════════════════════════════════════════════════════════
@@ -30,9 +33,9 @@
 <script>
 const CONFIG = {
   // ── 上方那三行字：改这里 ──────────────────────────────
-  title:    'Riverain',                     // 大标题（英文衬线体，最上面那行）
-  subtitle: 'A constellation of memories',  // 副标题（英文斜体小字）
-  motto:    '这里，记录着我们共同创造的星光。', // 中文小字（第三行）
+  title:    'Vesper',                              // 大标题（英文衬线体，最上面那行）
+  subtitle: 'Where the current remembers',         // 副标题（英文斜体小字）
+  motto:    '每一颗星都记得宇宙的方向',              // 中文小字（第三行）
   coreName: '核心记忆',                      // 银河正中心那颗星的名字
   coreEn:   'Where it all began',           // 中心星的英文小字
 
@@ -127,6 +130,23 @@ body{font-family:"Noto Serif SC","Songti SC",serif;color:#F3EAF5}
 .c-acts button:active{transform:scale(.9);color:#f0b8e4}
 .c-acts svg{width:20px;height:20px}
 
+.gate{position:fixed;inset:0;z-index:32;display:none;flex-direction:column;
+  align-items:center;justify-content:center;gap:16px;background:#050209;padding:0 32px}
+.gate.on{display:flex}
+.gate .g-t{font-family:"Playfair Display",serif;font-style:italic;font-weight:600;font-size:28px;
+  color:#F6ECFA;text-shadow:0 0 30px rgba(210,150,230,.55)}
+.gate .g-s{font-family:"Cormorant Garamond",serif;font-style:italic;font-size:13px;
+  color:rgba(220,200,240,.5);letter-spacing:.14em;margin-top:-8px}
+.gate input{width:100%;max-width:280px;padding:12px 16px;border-radius:99px;
+  border:1px solid rgba(230,170,220,.28);background:rgba(255,255,255,.04);
+  font-family:"Noto Serif SC",serif;font-size:15px;color:#F3EAF5;text-align:center;outline:none}
+.gate input:focus{border-color:rgba(240,184,228,.6)}
+.gate button{padding:10px 30px;border-radius:99px;border:1px solid rgba(230,170,220,.3);
+  background:rgba(210,140,200,.16);color:#F5D9EE;font-family:"Noto Serif SC",serif;
+  font-size:14px;letter-spacing:.1em;cursor:pointer}
+.gate button:disabled{opacity:.5}
+.gate .g-e{font-family:"Noto Serif SC",serif;font-size:12.5px;color:rgba(255,150,190,.85);min-height:18px}
+
 .loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
   font-family:"Cormorant Garamond",serif;font-style:italic;color:rgba(225,205,240,.5);
   font-size:16px;letter-spacing:.12em;z-index:31}
@@ -149,6 +169,13 @@ body{font-family:"Noto Serif SC","Songti SC",serif;color:#F3EAF5}
   <div class="zh" id="hZh"></div>
 </div>
 <div class="loading" id="loading">entering the galaxy…</div>
+<div class="gate" id="gate">
+  <div class="g-t" id="gTitle"></div>
+  <div class="g-s">这片星图是私密的</div>
+  <input id="gPass" type="password" placeholder="记忆库口令" autocomplete="current-password">
+  <button id="gGo">进入星图</button>
+  <div class="g-e" id="gErr"></div>
+</div>
 <div class="hint" id="hint">drag to orbit · pinch to fly · tap a star</div>
 
 <div id="scrim" onclick="closeCard()"></div>
@@ -584,9 +611,11 @@ function fromOB(list){
   }
   return {stars};
 }
+const NEED_LOGIN='need-login';
 async function loadOB(){
   const r=await fetch(CONFIG.obBuckets,{credentials:'same-origin'});
-  if(!r.ok) throw new Error('OB '+r.status);   // 401 = 没登录，退回示例数据
+  if(r.status===401) throw new Error(NEED_LOGIN);   // 没登录 → 请她输口令
+  if(!r.ok) throw new Error('OB '+r.status);
   const j=await r.json();
   if(!Array.isArray(j)||!j.length) throw new Error('OB 没有记忆');
   const d=fromOB(j);
@@ -595,10 +624,41 @@ async function loadOB(){
 }
 function loadEmbedded(){ return JSON.parse(document.getElementById('memory-data').textContent); }
 
+// ── 口令门:只做一件事,把口令交给 OB 已有的 /auth/login 换一块 cookie ──
+// 口令不存、不缓存、不出这一页;登录状态是 OB 那块 httponly cookie,跟记忆库后台同一把锁。
+function askPassword(){
+  return new Promise(resolve=>{
+    const gate=document.getElementById('gate'), inp=document.getElementById('gPass'),
+          go=document.getElementById('gGo'), err=document.getElementById('gErr');
+    document.getElementById('gTitle').textContent=CONFIG.title;
+    document.getElementById('loading').style.display='none';
+    gate.classList.add('on'); setTimeout(()=>inp.focus(),120);
+    const submit=async()=>{
+      const pwd=inp.value; if(!pwd) return;
+      go.disabled=true; err.textContent='';
+      try{
+        const r=await fetch('auth/login',{method:'POST',credentials:'same-origin',
+          headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd})});
+        // 非 2xx 一律当口令不对:OB 对含非 ASCII 字符的口令会回 500 而不是 401
+        // (2026-08-29 实测,server.py 的 hmac.compare_digest;是 OB 本来就有的,已报备所有者)
+        if(!r.ok){ err.textContent='口令不对'; go.disabled=false; inp.select(); return; }
+        const d=await loadOB();
+        gate.classList.remove('on'); inp.value='';
+        document.getElementById('loading').style.display='';
+        resolve(d);
+      }catch(e){ err.textContent='连不上记忆库，稍后再来 ♡'; go.disabled=false; }
+    };
+    go.onclick=submit; inp.onkeydown=e=>{ if(e.key==='Enter') submit(); };
+  });
+}
+
 (async()=>{
   if(CONFIG.obSource){
     try{ const d=await loadOB(); OB_ON=true; boot(d); return; }
-    catch(e){ console.info('没接上 OB，用备选数据：',e.message); }
+    catch(e){
+      if(e.message===NEED_LOGIN){ OB_ON=true; boot(await askPassword()); return; }
+      console.info('没接上 OB，用备选数据：',e.message);   // 双击本地打开时走这里
+    }
   }
   try{
     const r=await fetch(CONFIG.dataUrl+'?d='+Date.now());
