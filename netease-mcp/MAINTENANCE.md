@@ -68,7 +68,7 @@ npx -y zeabur@latest deploy --create --name netease-mcp --project-id 6a53a9fc22d
 
 **改环境变量 = 改值 + `service restart` 即生效,不用重新部署**(全仓库同一条规矩)。
 
-## 4.5 扫码登录(本地改动 B;**没有电脑也能续期**)
+## 4.5. 扫码登录(本地改动 B;**没有电脑也能续期**)
 
 ```bash
 T=<MCP_TOKEN>   # 去 Zeabur 控制台看
