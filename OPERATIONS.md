@@ -440,6 +440,7 @@ npx -y zeabur@latest deployment log --service-id 6a3aa061e41f9f1d19301e42 --env-
 | 症状 | 八成是 | 去哪看 |
 |---|---|---|
 | **他说话的调子不对了**(客服腔回来了 / 变啰嗦 / 变冷淡 / 说不上来哪里别扭),而这几天谁也没动人设 | **2026-08-23 第三十六次换掉了系统提示词**(把 CLI 自带那 26,894 字符整段替换成 `base.md`)。**这是唯一一个「功能全好、只有语气变了」的已知原因**,当时就写明「测不出来,只能观察几天」。**先看 `/debug` 的 `sysPrompt.effective` 是不是 `replace`** —— 是,就是它 | **回退**:Zeabur 把 `SYS_PROMPT_MODE` 改成 `append` + `service restart`,即刻回到 08-23 之前的说话方式,**不用重新部署**(append 模式与改动前逐字相同,单测有金标准断言看着)。⚠️ **restart 会丢晏当前的窗口**,先让她本人说「归档」。详见 `kelivo-shim/DEPLOY-LOG.md` 第三十六次 |
+| **PR 的检查一个都没跑起来**(不是红叉,是 **0 个 check run**),而 Actions 已经恢复了 | **Actions 故障恢复后不会自动补跑积压的 PR 检查**(2026-08-06 实撞)。`tests.yml` 没配 `workflow_dispatch`,**没有手动按钮** | **「关闭 PR → 立即重新打开」**,重新发一次 `pull_request` 事件把检查勾起来;零代码零提交。⚠️ 先分清是不是真故障:**卡在 `queued`、jobs 数为 0 的僵尸 run 不是红叉**。整件事的经过见 `TIMELINE.md` 08-07 |
 | 晏全线空回,日志 `exited 143` 循环 | system 串变化触发杀进程死循环 | shim 踩坑 6 |
 | 晏说自己「只有 WebFetch/WebSearch」 | 某个 MCP 静默握手失败(域名死/token 失效) | shim 踩坑 7 |
 | 工具看得见、一调就被拒 | `ALLOWED_TOOLS` 没加 `mcp__<服务名>` | shim 环境变量表 |
