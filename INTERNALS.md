@@ -141,7 +141,7 @@
 **`pulse`** — 系统状态：
 - 返回各类型桶数量、衰减引擎状态、未解决/钉选/feel 统计
 
-**REST API（19 个端点）**
+**REST API（36 条路由,2026-08-31 现场数:`grep -c "@mcp.custom_route" server.py`)**
 
 | 端点 | 方法 | 功能 |
 |---|---|---|
@@ -153,6 +153,8 @@
 | `/api/bucket/{id}` | GET | 桶详情 🔒 |
 | `/api/bucket/{id}` | PATCH | 改桶（白名单字段：名称/内容/域/标签/重要度/情感/已解决/已消化/钉选/休眠/触发日期，与 `trace` 同一套；改内容才重建向量、才留写前快照；feel 桶允许空 domain）🔒 |
 | `/api/bucket/{id}` | DELETE | 删桶（默认真删，写前快照 + 清向量；`?mode=archive` 只归档，feel 桶按规格拒绝归档；钉选/固化桶需 `?force=1`）🔒 |
+| `/api/trash` | GET | **回收站**:列出「已删掉、但写前快照还在」的桶(新删的在前)。**只读**,逻辑在 `bucket_manager.list_trash()` 🔒 |
+| `/api/trash/{id}/restore` | POST | 把回收站里的一条捞回来(默认最新快照,可传 `{"version":…}`)。**桶还在则回 409**(那是回滚,走 `trace(restore=…)`);恢复后**重建向量** 🔒 |
 | `/api/search?q=` | GET | 搜索 🔒 |
 | `/api/network` | GET | 向量相似网络 🔒 |
 | `/api/breath-debug` | GET | 评分调试 🔒 |
@@ -426,7 +428,8 @@ Artifact,不在仓库里;重做一个也不难,或者直接改 `dashboard.html` 
 ### 怎么验
 
 ```bash
-bash tests/dashboard-ui/run.sh      # 真浏览器演练 80 项(2026-08-31 现场数),深浅色各跑一遍
+bash tests/dashboard-ui/run.sh      # 真浏览器演练 94 项(2026-08-31 现场数),深浅色各跑一遍
+python3 -m pytest tests/test_trash.py -q   # 回收站存取层 6 项(真 BucketManager,临时库)
 ```
 只读:起一个假 OB(`tests/dashboard-ui/fake-ob.mjs`),**不碰线上、不碰真记忆**
 (和 `tests/galaxy-e2e/` 同一条规矩)。跑完截图落在 `/tmp/dashboard-ui/`(列表/滚动后/详情/网络/宽屏 × 深浅色),
@@ -437,12 +440,33 @@ bash tests/dashboard-ui/run.sh      # 真浏览器演练 80 项(2026-08-31 现�
 1. **标签页一个没动**(记忆桶 / Breath 模拟 / 记忆网络 / 信箱 / 配置 / 导入 / 设置)。
    所有者给的效果图上是「回收站」、没有信箱和设置 —— 那张图是别人画的参考稿,
    **不是我们的功能表**,2026-08-31 她确认过按我们的来。
-2. **没有做「回收站」页面。** 底子其实有:删桶前 `bucket_manager.py` 的 `delete()` 会把文件
-   拷进 `.history/{桶id}/`(每桶留 `history.keep_per_bucket` 份,默认 20),
-   `list_history()` / `restore_from_history()` 能复活。**但这条路目前只有晏走得通** ——
-   它只挂在 MCP 工具 `update` 上(`history=True` 看版本、`restore=版本号` 复活),
-   **网页后台没有入口,也没有对应的 HTTP 接口**。要做就是加接口 + 页面(restore 是写操作),
-   **所有者尚未拍板要不要做**(2026-08-31 已把现状告诉她)。
+2. ~~**没有做「回收站」页面。**~~ —— **2026-08-31 当天做了**,见下面《回收站》一节。
+
+### 回收站(2026-08-31 新增)
+
+**解决的是一件具体的事:她在后台误删一个桶,自己救不回来。**
+数据一直都在(`delete()` 删之前把整个文件拷进 `.history/{桶id}/`,每桶留
+`history.keep_per_bucket` 份、默认 20),复活的功能也早就写好了 —— **但复活要桶的 id,
+而桶一删就从列表里消失、id 也就没了**;问晏也没用,他同样不知道那串 id。
+所以缺的从来不是能力,是**一个能让她看见那串 id 的页面**。
+
+| 件 | 在哪 |
+|---|---|
+| 扫描逻辑 | `bucket_manager.list_trash()`(挨着 `list_history`)。⚠️ **`.history/` 里不只有删掉的** —— 改内容同样留快照,所以要拿 `existing_bucket_ids()` 把还活着的滤掉 |
+| 接口 | `GET /api/trash`(只读)、`POST /api/trash/{id}/restore`(写) |
+| 页面 | 「回收站」标签页;卡片复用 `.bucket-row` 的排版,加 `.trash-row` 去掉手型和悬停位移(它不可点) |
+| 测试 | `tests/test_trash.py` **6 项**(真 `BucketManager` + 临时库,2026-08-31 全过)、浏览器演练里 **6 项**(含「取消确认就什么都不做」) |
+
+**三条动了它就要一起看的规矩**:
+1. **桶还在就不许 restore**(回 409)。那是「拿旧快照覆盖现状」= 回滚,不是恢复,走 `trace(restore=…)`。
+2. **恢复完必须重建向量**。删桶时把向量一并清了(见 DELETE 路由),不重建的话捞回来的桶
+   **搜不到**(只剩关键词通道)。`trace` 的 restore 分支早就是这么写的,这里照抄。
+3. **`existing_bucket_ids()` 认 id 的规矩必须和 `_find_bucket_file` 一致** —— 文件名是
+   `{名字}_{id}.md`,**id 永远是最后一段**。认错了的后果是**活桶被当成已删、错列进回收站**
+   (单测 `test_名字里带下划线也认得出_id` 钉着这条)。
+
+**刻意没做**:①**永久删除**(那是真销毁,v1 不给这个按钮);②自动清理过期快照;
+③改保留份数。**要加之前先问所有者。**
 
 ## 1.9 记忆银河 `/galaxy`(2026-08-29 新增)
 

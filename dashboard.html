@@ -323,6 +323,9 @@
     cursor: pointer;
     transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
   }
+  /* 回收站的卡片长得和记忆卡片一样,但它不可点 —— 别给手型和悬停位移 */
+  .trash-row { cursor: default; }
+  .trash-row:hover { transform: none; box-shadow: inset 0 1px 0 var(--glass-edge), var(--shadow-card); }
   .bucket-row:hover {
     border-color: var(--border-strong);
     box-shadow: inset 0 1px 0 var(--glass-edge), var(--shadow-card-hover);
@@ -890,6 +893,7 @@
   <div class="tab" data-tab="letters">信箱</div>
   <div class="tab" data-tab="config">配置</div>
   <div class="tab" data-tab="import">导入</div>
+  <div class="tab" data-tab="trash">回收站</div>
   <div class="tab" data-tab="settings">设置</div>
 </div>
 
@@ -1075,6 +1079,16 @@
 </div>
 
 <!-- Settings Tab View -->
+<div class="content" id="trash-view" style="display:none">
+  <div class="letters-intro">
+    删掉的记忆<b>没有真的没</b> —— 系统在删之前留了一份副本。这里列出的就是那些副本,
+    点「恢复」就把它整条放回记忆库(名字、正文、重要度、情绪都是删之前的样子)。
+    <span class="letters-note">副本每条最多留 20 份,是删之前的最后状态。这一页只读,不点「恢复」就什么都不会变。</span>
+  </div>
+  <div class="letters-count" id="trash-count"></div>
+  <div id="trash-list"><div class="loading">加载中…</div></div>
+</div>
+
 <div class="content" id="settings-view" style="display:none">
   <div style="max-width:580px;margin:0 auto;">
 
@@ -1343,11 +1357,13 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.getElementById('letters-view').style.display = target === 'letters' ? '' : 'none';
     document.getElementById('config-view').style.display = target === 'config' ? '' : 'none';
     document.getElementById('import-view').style.display = target === 'import' ? '' : 'none';
+    document.getElementById('trash-view').style.display = target === 'trash' ? '' : 'none';
     document.getElementById('settings-view').style.display = target === 'settings' ? '' : 'none';
     if (target === 'network') loadNetwork();
     if (target === 'letters') loadLetters();
     if (target === 'config') loadConfig();
     if (target === 'import') { pollImportStatus(); loadImportResults(); }
+    if (target === 'trash') loadTrash();
     if (target === 'settings') loadSettingsStatus();
   });
 });
@@ -1361,6 +1377,70 @@ document.getElementById('search-input').addEventListener('input', (e) => {
     else refreshBucketList();
   }, 300);
 });
+
+// 回收站。GET /api/trash 列出「删掉了、但副本还在」的桶(新删的在前),
+// POST /api/trash/{id}/restore 把一条捞回来。
+// ⚠️ 恢复是**写操作**,所以要二次确认;列表本身只读,开这一页不改任何东西。
+async function loadTrash() {
+  var list = document.getElementById('trash-list');
+  var count = document.getElementById('trash-count');
+  list.innerHTML = '<div class="loading">加载中…</div>';
+  try {
+    var res = await fetch(BASE + '/api/trash');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var items = await res.json();
+    count.textContent = items.length ? ('共 ' + items.length + ' 条') : '';
+    if (!items.length) {
+      list.innerHTML = '<div class="loading">回收站是空的 —— 没有删掉的记忆</div>';
+      return;
+    }
+    list.innerHTML = items.map(function(t) {
+      var when = t.deleted_at ? formatTimeAgo(t.deleted_at) : '';
+      var dom = (t.domain || []).join(', ');
+      return '<div class="bucket-row trash-row" data-trash="' + esc(t.id) + '">' +
+        '<div class="row-top">' +
+          '<span class="name" title="' + esc(t.name) + '">' + esc(t.name) + '</span>' +
+          '<span class="time">删于 ' + when + '</span>' +
+        '</div>' +
+        '<div class="preview">' + esc(t.content_preview) + '</div>' +
+        '<div class="row-bottom">' +
+          '<span class="domain">' + esc(dom) + (dom ? ' · ' : '') + esc(t.type) + ' · ' + t.snapshots + ' 份副本</span>' +
+        '</div>' +
+        '<div class="letter-acts">' +
+          '<button class="letter-btn" onclick="restoreTrash(\'' + t.id + '\', this)">恢复</button>' +
+          '<span class="letter-msg"></span>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch (e) {
+    list.innerHTML = '<div class="loading">加载失败: ' + esc(e.message) + '</div>';
+  }
+}
+
+async function restoreTrash(id, btn) {
+  var card = btn.closest('.trash-row');
+  var msg = card.querySelector('.letter-msg');
+  if (!confirm('把这条记忆放回记忆库?')) return;
+  btn.disabled = true;
+  msg.style.color = 'var(--text-dim)';
+  msg.textContent = '恢复中…';
+  try {
+    var res = await fetch(BASE + '/api/trash/' + encodeURIComponent(id) + '/restore', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+    });
+    var data = await res.json();
+    if (!res.ok) throw new Error(data.detail || data.error || ('HTTP ' + res.status));
+    msg.style.color = 'var(--accent-text)';
+    msg.textContent = '已放回记忆库';
+    card.style.opacity = '0.55';
+    btn.remove();
+    loadBuckets();          // 列表和统计跟着刷新,别让她以为没生效
+  } catch (e) {
+    btn.disabled = false;
+    msg.style.color = 'var(--negative)';
+    msg.textContent = '恢复失败: ' + e.message;
+  }
+}
 
 // 信箱。接口 /api/letters 返回 {total, letters:[{time,text,edited?}]},新的在前。
 // ⚠️ 2026-08-24 起可以改/删(所有者推翻了 08-19「面板只读」那条决定,理由:信写错了

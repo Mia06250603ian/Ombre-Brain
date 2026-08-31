@@ -2532,6 +2532,80 @@ async def api_bucket_delete(request):
     return JSONResponse({"ok": True, "id": bucket_id, "mode": "delete"})
 
 
+@mcp.custom_route("/api/trash", methods=["GET"])
+async def api_trash_list(request):
+    """
+    回收站:列出「已经删掉、但写前快照还留着」的桶。**只读**。
+
+    为什么要这条:删桶时 `BucketManager.delete()` 会先把整个文件拷进 `.history/{id}/`，
+    所以东西没真没;但**桶一删就从列表里消失，那串 id 也就没了**，
+    而复活(`restore`)偏偏要 id + 版本号 —— 于是在网页上等于救不回来。
+    这条接口就是把那串 id 重新交到她手上。
+
+    ⚠️ 逻辑在 `bucket_manager.list_trash()`(挨着 `list_history`，有单测 `tests/test_trash.py`)，
+    这里只是薄薄一层鉴权 + JSON。
+    """
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    try:
+        return JSONResponse(bucket_mgr.list_trash())
+    except Exception as e:
+        logger.warning("trash list failed / 回收站列表失败: %s", e)
+        return JSONResponse({"error": "trash_failed", "detail": str(e)}, status_code=500)
+
+
+@mcp.custom_route("/api/trash/{bucket_id}/restore", methods=["POST"])
+async def api_trash_restore(request):
+    """
+    把回收站里的一条捞回来。可传 {"version": "..."} 指定快照，默认用最新那份
+    (= 删除之前的最后状态)。
+
+    ⚠️ 三件事照着做，别省:
+      1. **只对「已经不在的桶」放行**。桶还在却调这条 = 拿旧快照覆盖现状，那是回滚不是恢复，
+         走 `trace(restore=...)` 那条路，这里回 409。
+      2. **恢复完要重建向量**。删桶时把向量一并清了(见上面的 DELETE 路由)，
+         不重建的话捞回来的桶搜不到 —— 照 `trace` 的 restore 分支同一套写法。
+      3. 失败要说清是「没这条」还是「没这个版本」。
+    """
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+
+    bucket_id = request.path_params["bucket_id"]
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    version = (body or {}).get("version") or ""
+
+    if await bucket_mgr.get(bucket_id):
+        return JSONResponse(
+            {"error": "still_alive", "detail": "这个桶还在，不在回收站里;要回滚旧版本用 trace(restore=...)"},
+            status_code=409,
+        )
+
+    if not version:
+        snaps = bucket_mgr.list_history(bucket_id)
+        if not snaps:
+            return JSONResponse({"error": "not_found", "detail": "回收站里没有这一条"}, status_code=404)
+        version = snaps[0]["version"]
+
+    snap = await bucket_mgr.restore_from_history(bucket_id, version)
+    if not snap:
+        return JSONResponse({"error": "version_not_found", "detail": f"没有这个快照: {version}"}, status_code=404)
+
+    # 向量:删的时候清掉了，恢复要重建，否则捞回来的桶搜不到(和 trace 的 restore 分支同一套)
+    if embedding_engine:
+        try:
+            await embedding_engine.generate_and_store(bucket_id, snap["content"])
+        except Exception as e:
+            logger.warning("restore: embedding rebuild failed / 恢复后重建向量失败: %s: %s", bucket_id, e)
+
+    meta = snap.get("metadata") or {}
+    return JSONResponse({"ok": True, "id": bucket_id, "name": meta.get("name") or bucket_id, "version": version})
+
+
 @mcp.custom_route("/api/search", methods=["GET"])
 async def api_search(request):
     """Search buckets by query."""

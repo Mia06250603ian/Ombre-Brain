@@ -24,6 +24,7 @@ for (const scheme of ['light', 'dark']) {
   page.on('response', r => { if (r.status() >= 400) errors.push('HTTP ' + r.status() + ' ' + r.url()); });
   page.on('console', m => { if (m.type() === 'error' && !/net::ERR|status of 40/.test(m.text())) errors.push(m.text()); });
 
+  await fetch(BASE + '/__reset');   // 上一轮把回收站里的一条恢复掉了,复位再来
   await page.goto(BASE + '/dashboard', { waitUntil: 'networkidle' });
   await page.waitForSelector('.bucket-row');
 
@@ -142,6 +143,28 @@ for (const scheme of ['light', 'dark']) {
   });
   ok('画布底色跟着深浅色走', scheme === 'light' ? canvasPx[0] > 200 : canvasPx[0] < 60, canvasPx.join(','));
   await page.screenshot({ path: SHOTS + '/network-' + scheme + '.png' });
+
+  // 回收站
+  await page.locator('.tab[data-tab="trash"]').click();
+  await page.waitForTimeout(400);
+  ok('回收站列出两条', (await page.locator('#trash-list .trash-row').count()) === 2);
+  ok('回收站显示删除时间', /^删于 /.test(await page.locator('#trash-list .time').first().innerText()));
+  ok('回收站卡片不可点', await page.locator('#trash-list .trash-row').first().evaluate(
+    el => getComputedStyle(el).cursor === 'default'));
+  ok('回收站显示副本份数', /份副本/.test(await page.locator('#trash-list .domain').first().innerText()));
+  await page.screenshot({ path: SHOTS + '/trash-' + scheme + '.png' });
+  // 恢复要二次确认:先取消,不能有任何变化
+  page.once('dialog', d => d.dismiss());
+  await page.locator('#trash-list .letter-btn').first().click();
+  await page.waitForTimeout(250);
+  ok('取消确认就什么都不做', (await page.locator('#trash-list .trash-row').count()) === 2
+    && (await page.locator('#trash-list .letter-btn').count()) === 2);
+  // 再来一次,这回确认
+  page.once('dialog', d => d.accept());
+  await page.locator('#trash-list .letter-btn').first().click();
+  await page.waitForTimeout(500);
+  ok('恢复后当场给回执', /已放回记忆库/.test(await page.locator('#trash-list .letter-msg').first().innerText()));
+  ok('恢复后那条的按钮没了', (await page.locator('#trash-list .letter-btn').count()) === 1);
 
   // 其余标签页各开一次,看有没有炸
   for (const t of ['breath', 'letters', 'config', 'import', 'settings']) {

@@ -10,6 +10,17 @@ const B = [
   {id:'b05',name:'他的自省',type:'feel',domain:['自省'],importance:6,pinned:false,resolved:false,digested:false,valence:0.44,score:5.30,created:'2026-05-02T21:00:00+08:00',last_active:'2026-08-30T21:00:00+08:00',content_preview:'预览五',model_valence:0.4},
   {id:'b06',name:'没有域的桶',type:'dynamic',domain:[],importance:7,pinned:false,resolved:false,digested:false,valence:0.50,score:4.10,created:'2026-06-10T15:00:00+08:00',last_active:'2026-08-25T15:00:00+08:00',content_preview:'预览六'},
 ];
+// 回收站:桶已经没了、副本还在。restore 之后从这张表里挪走(照 server.py 的语义)
+const TRASH0 = () => [
+  {id:'t01',name:'误删的约定',type:'dynamic',domain:['计划'],importance:6,pinned:false,
+   created:'2026-07-01T10:00:00+08:00',deleted_at:'2026-08-30T21:00:00',last_op:'delete',
+   version:'20260830-210000_delete',snapshots:3,content_preview:'说好周末去看海,后来改期了。'},
+  {id:'t02',name:'手滑删掉的 feel',type:'feel',domain:['自省'],importance:5,pinned:false,
+   created:'2026-08-01T10:00:00+08:00',deleted_at:'2026-08-25T09:30:00',last_op:'delete',
+   version:'20260825-093000_delete',snapshots:1,content_preview:'那天我有点难过,但没说。'},
+];
+let TRASH = TRASH0();
+
 const FULL = {b01:'相遇那天的全文。',b02:'规则全文',b03:'松绑全文',b04:'旧事全文',b05:'自省全文',b06:'无域全文'};
 
 const json = (r, o, code = 200) => { r.writeHead(code, {'content-type':'application/json'}); r.end(JSON.stringify(o)); };
@@ -40,6 +51,16 @@ http.createServer((q, r) => {
     edges: [{source:'b01',target:'b02',similarity:0.8},{source:'b02',target:'b03',similarity:0.5}],
   });
   if (p === '/api/config') return json(r, {config:{}, keys:[]});
+  // 测试专用:恢复是会改状态的,深浅色两轮跑同一个假 OB,中间要能复位
+  if (p === '/__reset') { TRASH = TRASH0(); return json(r, {ok:true}); }
+  if (p === '/api/trash') return json(r, TRASH);
+  if (/^\/api\/trash\/[^/]+\/restore$/.test(p) && q.method === 'POST') {
+    const id = p.split('/')[3];
+    const i = TRASH.findIndex(t => t.id === id);
+    if (i < 0) return json(r, {error:'not_found', detail:'回收站里没有这一条'}, 404);
+    const [t] = TRASH.splice(i, 1);
+    return json(r, {ok:true, id:t.id, name:t.name, version:t.version});
+  }
   if (p === '/api/status') return json(r, {buckets:B.length, embeddings:B.length, disk:'—'});
   if (p === '/api/host-vault') return json(r, {entries:[]});
   if (p.startsWith('/api/import/')) return json(r, {status:'idle', results:[], patterns:[]});
