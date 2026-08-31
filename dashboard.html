@@ -230,18 +230,6 @@
     transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
   }
   .hbtn:hover { color: var(--text); border-color: var(--text-light); }
-  /* 「记忆银河」按钮左边那颗小星图:纯 CSS 画的,不引外部图片 */
-  .galaxy-thumb {
-    width: 22px; height: 16px; border-radius: 4px; flex: none;
-    background:
-      radial-gradient(1.1px 1.1px at 4px 4px,  #fff 60%, transparent 62%),
-      radial-gradient(1.3px 1.3px at 11px 8px, #ffd9c2 60%, transparent 62%),
-      radial-gradient(1px 1px   at 16px 4px,  #cbcadb 60%, transparent 62%),
-      radial-gradient(1px 1px   at 7px 12px,  #bcd1ca 60%, transparent 62%),
-      radial-gradient(1.2px 1.2px at 18px 12px, #fff 60%, transparent 62%),
-      radial-gradient(ellipse at 50% 50%, #3b3a63 0%, #141413 100%);
-  }
-
   .search-bar { margin-top: 12px; }
   .search-bar input {
     width: 100%;
@@ -880,9 +868,11 @@
     <div class="header-top">
       <h1><span class="logo">◐</span>Ombre Brain</h1>
       <div class="header-acts">
-        <!-- 记忆银河:同一台 OB 的 /galaxy(只读星图,复用同一块 ombre_session cookie)。
-             用 <a> 不用 fetch —— 这颗按钮不该带来任何请求,点了才跳。 -->
-        <a class="hbtn" href="/galaxy" title="记忆银河(只读星图)"><span class="galaxy-thumb"></span>记忆银河</a>
+        <!-- Vesper = 记忆银河 /galaxy(同一台 OB 的只读星图,复用同一块 ombre_session cookie)。
+             用 <a> 不用 fetch —— 这颗按钮不该带来任何请求,点了才跳。
+             ⚠️ 所有者 2026-08-31 定:文字用「Vesper」(和星图自己的大标题一致),
+             前面那颗小星图缩略图不要。别再加图标回去。 -->
+        <a class="hbtn" href="/galaxy" title="Vesper · 记忆银河(只读星图)">Vesper</a>
         <button class="hbtn" onclick="doLogout()" title="退出登录">退出</button>
       </div>
     </div>

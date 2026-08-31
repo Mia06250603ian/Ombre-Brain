@@ -50,9 +50,11 @@ for (const scheme of ['light', 'dark']) {
     return stops.length >= 2 && stops[0] !== stops[stops.length - 1];
   }));
 
-  // 记忆银河入口
+  // 星图入口
   const gal = page.locator('a.hbtn[href="/galaxy"]');
-  ok('顶栏有「记忆银河」入口', await gal.isVisible());
+  ok('顶栏有星图入口', await gal.isVisible());
+  ok('按钮上写的是 Vesper', (await gal.innerText()).trim() === 'Vesper');
+  ok('按钮里没有图标', (await gal.locator('span, img, svg').count()) === 0);
   ok('入口指向 /galaxy', (await gal.getAttribute('href')) === '/galaxy');
   ok('入口是链接不是请求', (await gal.evaluate(el => el.tagName)) === 'A');
 
