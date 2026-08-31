@@ -6,6 +6,18 @@
 <!-- 跟随系统深浅色:滚动条/表单控件/地址栏也要跟着换,光靠 CSS 变量不够 -->
 <meta name="color-scheme" content="light dark">
 <title>Ombre Brain</title>
+<!-- 加到 iPhone 主屏时用的图标和名字。
+     ⚠️ iOS **只认 PNG**,给 svg 它会当没有、退回一张网页缩略图(所以别改成 svg)。
+     ⚠️ `apple-touch-icon.png` 必须在 `Dockerfile` 里 COPY 一行,不然线上 404、
+        本地一切正常 —— 和 galaxy.html 同一个坑(见 INTERNALS 1.9 结尾)。 -->
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Ombre Brain">
+<!-- 从主屏打开时不显示 Safari 那圈壳,像个 app。⚠️ 也就没有「返回」按钮了 -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#faf9f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   /* ============================================================

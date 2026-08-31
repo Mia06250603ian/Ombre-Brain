@@ -51,6 +51,21 @@ for (const scheme of ['light', 'dark']) {
     return stops.length >= 2 && stops[0] !== stops[stops.length - 1];
   }));
 
+  // 加到手机主屏用的图标:iOS 只认 PNG,而且这张图不能要登录(它抓图时不带 cookie)
+  ok('声明了主屏图标', await page.locator('link[rel="apple-touch-icon"]').count() === 1);
+  ok('图标是 png 不是 svg',
+    /\.png(\?|$)/.test(await page.locator('link[rel="apple-touch-icon"]').getAttribute('href')));
+  ok('声明了主屏名字',
+    (await page.locator('meta[name="apple-mobile-web-app-title"]').getAttribute('content')) === 'Ombre Brain');
+  ok('深浅色各有一条 theme-color',
+    (await page.locator('meta[name="theme-color"]').count()) === 2);
+  {
+    const res = await page.request.get(BASE + '/apple-touch-icon.png');
+    ok('图标真能取到(200 + image/png)',
+      res.status() === 200 && (res.headers()['content-type'] || '').includes('image/png'),
+      res.status() + ' ' + (res.headers()['content-type'] || ''));
+  }
+
   // 星图入口
   const gal = page.locator('a.hbtn[href="/galaxy"]');
   ok('顶栏有星图入口', await gal.isVisible());

@@ -34,6 +34,11 @@ http.createServer((q, r) => {
     r.writeHead(200, {'content-type':'text/html'});
     return r.end(fs.readFileSync('dashboard.html', 'utf8'));
   }
+  if (p === '/apple-touch-icon.png' || p === '/apple-touch-icon-precomposed.png' || p === '/favicon.png') {
+    const f = 'apple-touch-icon.png';
+    if (!fs.existsSync(f)) { r.writeHead(404); return r.end(); }
+    r.writeHead(200, {'content-type':'image/png'}); return r.end(fs.readFileSync(f));
+  }
   if (p === '/galaxy') { r.writeHead(200, {'content-type':'text/html'}); return r.end('<h1>galaxy stub</h1>'); }
   if (p === '/auth/status') return json(r, {initialized: true, authenticated: true});
   if (p === '/auth/logout') return json(r, {ok: true});
