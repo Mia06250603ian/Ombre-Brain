@@ -141,7 +141,8 @@
 **`pulse`** — 系统状态：
 - 返回各类型桶数量、衰减引擎状态、未解决/钉选/feel 统计
 
-**REST API（36 条路由,2026-08-31 现场数:`grep -c "@mcp.custom_route" server.py`)**
+**REST API（39 条路由,2026-08-31 现场数:`grep -c "@mcp.custom_route" server.py`。
+⚠️ 数的是「路由装饰器」不是「接口个数」——主屏图标那一个函数挂了三个路径,所以比接口多）**
 
 | 端点 | 方法 | 功能 |
 |---|---|---|
@@ -153,6 +154,7 @@
 | `/api/bucket/{id}` | GET | 桶详情 🔒 |
 | `/api/bucket/{id}` | PATCH | 改桶（白名单字段：名称/内容/域/标签/重要度/情感/已解决/已消化/钉选/休眠/触发日期，与 `trace` 同一套；改内容才重建向量、才留写前快照；feel 桶允许空 domain）🔒 |
 | `/api/bucket/{id}` | DELETE | 删桶（默认真删，写前快照 + 清向量；`?mode=archive` 只归档，feel 桶按规格拒绝归档；钉选/固化桶需 `?force=1`）🔒 |
+| `/apple-touch-icon.png`(另挂 `-precomposed.png` / `favicon.png`) | GET | 主屏/标签页图标。**刻意不鉴权**:iOS 抓图标时不带 cookie,挂了鉴权就永远拿不到 |
 | `/api/trash` | GET | **回收站**:列出「已删掉、但写前快照还在」的桶(新删的在前)。**只读**,逻辑在 `bucket_manager.list_trash()` 🔒 |
 | `/api/trash/{id}/restore` | POST | 把回收站里的一条捞回来(默认最新快照,可传 `{"version":…}`)。**桶还在则回 409**(那是回滚,走 `trace(restore=…)`);恢复后**重建向量** 🔒 |
 | `/api/search?q=` | GET | 搜索 🔒 |
