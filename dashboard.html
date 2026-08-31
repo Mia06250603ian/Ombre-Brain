@@ -1542,17 +1542,17 @@ function buildFilters() {
   const domains = new Set();
   allBuckets.forEach(b => (b.domain || []).forEach(d => domains.add(d)));
   const filters = document.getElementById('filters');
-  // 所有者 2026-08-31 定的:**只有「未解决」和「已消化」去掉表情**,
-  // 钉选 / Feel / 归档 保留。(~~我先做成整排都去掉~~,她当场纠正,别再改回去。)
-  // ⚠️ 卡片上那颗图标是另一回事,别跟着删 —— 它标的是每条记忆的状态
-  // (📌钉选 / 🫧feel / 🌿已消化 / 💤已解决 / 💭普通)。
+  // 所有者 2026-08-31 最终定的:**筛选药丸整排不要表情**(她的话:「使用的时候有就行」——
+  // 指卡片上那颗还在)。中间有过一版「只去掉未解决/已消化、留钉选/Feel/归档」,已被她推翻。
+  // ⚠️ **卡片上那颗图标是另一回事,别跟着删** —— 它标的是每条记忆的状态
+  // (📌钉选 / 🫧feel / 🌿已消化 / 💤已解决 / 💭普通),`renderBuckets()` 里那个 icon。
   const types = [
     { key: 'all', label: '全部' },
-    { key: 'pinned', label: '📌 钉选' },
-    { key: 'feel', label: '🫧 Feel' },
+    { key: 'pinned', label: '钉选' },
+    { key: 'feel', label: 'Feel' },
     { key: 'unresolved', label: '未解决' },
     { key: 'digested', label: '已消化' },
-    { key: 'archived', label: '📦 归档' },
+    { key: 'archived', label: '归档' },
   ];
   filters.innerHTML = types.map(function(t) {
     return '<button class="filter-btn ' + (t.key === 'all' ? 'active' : '') + '" data-filter="' + t.key + '">' + t.label + '</button>';

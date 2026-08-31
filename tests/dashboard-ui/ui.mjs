@@ -107,11 +107,11 @@ for (const scheme of ['light', 'dark']) {
   await page.locator('.filter-btn[data-filter="pinned"]').click();
   await page.waitForTimeout(400);   // 药丸底色有 0.18s 过渡,早了会量到中间色
   ok('筛选「钉选」剩三张', (await page.locator('.bucket-row').count()) === 3);
-  // 只有「未解决/已消化」去表情,钉选/Feel/归档 留着
-  const chipText = await page.locator('#filters').innerText();
-  ok('未解决/已消化 没有表情', !/\p{Extended_Pictographic}\s*(未解决|已消化)/u.test(chipText));
-  ok('钉选/Feel/归档 留着表情',
-    /📌\s*钉选/u.test(chipText) && /🫧\s*Feel/u.test(chipText) && /📦\s*归档/u.test(chipText));
+  // 筛选药丸整排不要表情;卡片上那颗状态图标要留着
+  ok('药丸一个表情都没有',
+    !/\p{Extended_Pictographic}/u.test(await page.locator('#filters').innerText()));
+  ok('卡片上那颗图标还在',
+    /\p{Extended_Pictographic}/u.test(await page.locator('.bucket-row .icon').first().innerText()));
   const wantChip = scheme === 'light' ? 'rgb(153, 153, 153)' : 'rgb(52, 52, 52)';
   const gotChip = await page.locator('.filter-btn.active').evaluate(el => getComputedStyle(el).backgroundColor);
   ok('选中的药丸是实心强调色', gotChip === wantChip, gotChip);
