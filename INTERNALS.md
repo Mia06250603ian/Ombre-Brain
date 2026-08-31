@@ -437,10 +437,28 @@ Artifact,不在仓库里;重做一个也不难,或者直接改 `dashboard.html` 
 ~~原来是「🌌 记忆银河」+ 一颗纯 CSS 画的小星图缩略图~~ —— **已撤销,别再加回去**,
 测试钉了两条(「按钮上写的是 Vesper」+「按钮里没有图标」)。
 
+### 加到手机主屏的图标(2026-08-31 新增)
+
+`apple-touch-icon.png`(180×180,仓库根目录)。图案是后台顶栏那个 ◐:左半实心带一道
+由亮到暗的渐变(呼应 “Ombre”),整圈描边,压在近黑底上。**源文件是一段 HTML/SVG,
+用 Playwright 截出来的**(`icon-512.png` 是同一张的大图,留着以后要别的尺寸时重截)。
+
+**三条别踩**:
+1. **iOS 只认 PNG**。给它 svg 会被当成没有,退回一张网页缩略图。
+2. **这张图不能要登录**。iOS 抓图标时**不带 cookie**,挂了 `_require_auth` 就永远拿不到 ——
+   所以 `server.py` 那条路由是**刻意不鉴权**的(它只是一张 13KB 的图,不含任何数据)。
+   路由同时挂了 `apple-touch-icon-precomposed.png`(老 iOS 先要这个名字)和 `favicon.png`。
+3. ⚠️ **`Dockerfile` 里必须有 `COPY apple-touch-icon.png .`** —— 和 `galaxy.html` 同一个坑
+   (见 1.9 结尾):漏了就是「本地一切正常、线上 404」。
+
+顺带加的:`apple-mobile-web-app-title`(主屏上显示的名字,后台是 `Ombre Brain`、
+星图是 `Vesper`)、`apple-mobile-web-app-capable`(**从主屏打开时不显示 Safari 那圈壳,
+像个 app —— 代价是也没有「返回」按钮了**)、深浅色各一条 `theme-color`。
+
 ### 怎么验
 
 ```bash
-bash tests/dashboard-ui/run.sh      # 真浏览器演练 98 项(2026-08-31 现场数),深浅色各跑一遍
+bash tests/dashboard-ui/run.sh      # 真浏览器演练 108 项(2026-08-31 现场数),深浅色各跑一遍
 python3 -m pytest tests/test_trash.py -q   # 回收站存取层 6 项(真 BucketManager,临时库)
 ```
 只读:起一个假 OB(`tests/dashboard-ui/fake-ob.mjs`),**不碰线上、不碰真记忆**

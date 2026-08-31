@@ -2778,6 +2778,33 @@ async def dashboard(request):
         return HTMLResponse("<h1>dashboard.html not found</h1>", status_code=404)
 
 
+@mcp.custom_route("/apple-touch-icon.png", methods=["GET"])
+@mcp.custom_route("/apple-touch-icon-precomposed.png", methods=["GET"])
+@mcp.custom_route("/favicon.png", methods=["GET"])
+async def apple_touch_icon(request):
+    """
+    主屏/标签页图标。**不需要登录** —— iOS 抓这张图时不带 cookie,加了鉴权就永远拿不到。
+    它只是一张 13KB 的静态图,不含任何数据。
+    ⚠️ `apple-touch-icon-precomposed.png` 那条别删:老一点的 iOS 会先要这个名字。
+    ⚠️ 文件要在 `Dockerfile` 里 COPY,不然线上 404 而本地正常(同 galaxy.html 那个坑)。
+    """
+    from starlette.responses import Response
+    import os
+    icon_path = os.path.join(os.path.dirname(__file__), "apple-touch-icon.png")
+    try:
+        with open(icon_path, "rb") as f:
+            return Response(
+                f.read(),
+                media_type="image/png",
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+    except FileNotFoundError:
+        return Response(status_code=404)
+    except Exception as e:
+        logger.warning("icon failed: %s", e)
+        return Response(status_code=500)
+
+
 @mcp.custom_route("/galaxy", methods=["GET"])
 async def galaxy(request):
     """Serve the memory galaxy page (read-only star map of buckets).
