@@ -43,6 +43,12 @@ for (const scheme of ['light', 'dark']) {
   }));
   ok('底行有 domain', (await card.locator('.row-bottom .domain').innerText()).includes('社交'));
   ok('底行有情绪条', await card.locator('.row-bottom .v-bar .v-dot').isVisible());
+  // 情绪条改成强调色深浅渐变后,两端必须还分得出来(深色下 #343434 压 #1a1918 只有 1.48:1)
+  ok('情绪条两端有区别', await card.locator('.v-bar').evaluate(el => {
+    const bg = getComputedStyle(el).backgroundImage;
+    const stops = bg.match(/rgba?\([^)]+\)/g) || [];
+    return stops.length >= 2 && stops[0] !== stops[stops.length - 1];
+  }));
 
   // 记忆银河入口
   const gal = page.locator('a.hbtn[href="/galaxy"]');
@@ -56,28 +62,63 @@ for (const scheme of ['light', 'dark']) {
   const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
   const wantBg = scheme === 'light' ? 'rgb(250, 249, 245)' : 'rgb(20, 20, 19)';   // gray-050 / gray-950
   const wantFg = scheme === 'light' ? 'rgb(20, 20, 19)' : 'rgb(250, 249, 245)';
-  const wantAccent = scheme === 'light' ? '#d97757' : '#c46849';                   // clay / clay-dark
+  const wantAccent = scheme === 'light' ? '#999999' : '#343434';   // 所有者 2026-08-31 定的中性灰
   ok('底色 = 官端 ' + (scheme === 'light' ? 'gray-050' : 'gray-950'), bg === wantBg, bg);
   ok('字色 = 官端反色', fg === wantFg, fg);
-  ok('强调色 = 官端 clay', accent === wantAccent, accent);
+  ok('强调色 = 所有者定的灰', accent === wantAccent, accent);
+  // 强调色当填色 / 当文字是两个角色,合并回一个就会有地方看不见
+  const at = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent-text').trim());
+  ok('文字用的强调色是另一档', at !== accent, at);
   ok('color-scheme 跟着系统', (await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)) === scheme);
 
   // 手机上筛选药丸排一行横滑,不许换行把列表挤下去
   ok('药丸一行横滑', await page.locator('.filters').evaluate(el =>
     getComputedStyle(el).flexWrap === 'nowrap' && el.scrollWidth > el.clientWidth));
 
+  // 玻璃质感:顶栏/标签/卡片都得真的挂上 backdrop-filter,且底是半透明的
+  for (const sel of ['.header', '.tabs', '.bucket-row', '.filter-btn:not(.active)']) {
+    ok('玻璃:' + sel, await page.locator(sel).first().evaluate(el => {
+      const cs = getComputedStyle(el);
+      const blur = cs.backdropFilter || cs.webkitBackdropFilter || '';
+      return blur.includes('blur') && /rgba\([^)]+, *0?\.\d+\)/.test(cs.backgroundColor);
+    }));
+  }
+  ok('选中的药丸仍是实心', await page.locator('.filter-btn.active').evaluate(
+    el => !/rgba/.test(getComputedStyle(el).backgroundColor)));
+
   // 页面不许横向滚动(手机上最容易翻车的一条)
   ok('没有横向滚动', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
 
   await page.screenshot({ path: SHOTS + '/list-' + scheme + '.png', fullPage: false });
+  // 滚一段再拍:毛玻璃要有东西从底下过才看得出来
+  await page.mouse.wheel(0, 420);
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: SHOTS + '/scrolled-' + scheme + '.png' });
+  // 顶栏是 sticky、标签栏不是:两个都 top:0 会叠在一起透出鬼影
+  ok('滚动后顶栏还在、标签栏已滑走', await page.evaluate(() => {
+    const h = document.querySelector('.header').getBoundingClientRect();
+    const t = document.querySelector('.tabs').getBoundingClientRect();
+    return Math.abs(h.top) < 1 && t.top < h.top;   // 标签栏得跟着内容滑走,不能也钉在 0
+  }));
+  await page.mouse.wheel(0, -420);
+  await page.waitForTimeout(200);
 
   // 筛选:点「钉选」应当只剩三张
   await page.locator('.filter-btn[data-filter="pinned"]').click();
   await page.waitForTimeout(400);   // 药丸底色有 0.18s 过渡,早了会量到中间色
   ok('筛选「钉选」剩三张', (await page.locator('.bucket-row').count()) === 3);
-  const wantChip = scheme === 'light' ? 'rgb(217, 119, 87)' : 'rgb(196, 104, 73)';
+  // 只有「未解决/已消化」去表情,钉选/Feel/归档 留着
+  const chipText = await page.locator('#filters').innerText();
+  ok('未解决/已消化 没有表情', !/\p{Extended_Pictographic}\s*(未解决|已消化)/u.test(chipText));
+  ok('钉选/Feel/归档 留着表情',
+    /📌\s*钉选/u.test(chipText) && /🫧\s*Feel/u.test(chipText) && /📦\s*归档/u.test(chipText));
+  const wantChip = scheme === 'light' ? 'rgb(153, 153, 153)' : 'rgb(52, 52, 52)';
   const gotChip = await page.locator('.filter-btn.active').evaluate(el => getComputedStyle(el).backgroundColor);
   ok('选中的药丸是实心强调色', gotChip === wantChip, gotChip);
+  // 所有者点名:药丸上的字深浅色都用白的。⚠️ 别把这条改成"对比度要够" ——
+  // 白字压 #999999 只有 2.94:1,是她知情后定的,测试要看着她这个决定别被人改回去。
+  ok('药丸上的字是白的', await page.locator('.filter-btn.active').evaluate(
+    el => ['rgb(255, 255, 255)', 'rgb(250, 249, 245)'].includes(getComputedStyle(el).color)));
   await page.locator('.filter-btn[data-filter="all"]').click();
 
   // 详情抽屉

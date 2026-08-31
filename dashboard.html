@@ -47,19 +47,42 @@
     --text: var(--color-gray-950);          /* foreground-primary */
     --text-dim: var(--color-gray-750);      /* foreground-secondary */
     --text-light: var(--color-gray-600);    /* foreground-tertiary */
-    --accent: var(--color-clay);            /* accent-clay-primary */
-    --accent-hover: var(--color-clay-hover);
-    --accent-fg: var(--color-gray-000);     /* button-clay-fg */
-    --accent-glow: rgba(217, 119, 87, 0.14);
+    /* ⚠️ 强调色 2026-08-31 由所有者定成中性灰(不再是官端的 clay);其余灰阶仍是官端原文。
+       它拆成三个角色,别合并回一个 —— 合了会有两处直接看不见:
+       ① `#999999` 上压白字只有 2.85:1(选中的药丸糊);
+       ② `#999999` 当文字压在浅底上 2.7:1、`#343434` 当文字压在深底上 1.48:1
+          (选中的标签和那条 2px 下划线会消失)。数值 2026-08-31 现场算的。 */
+    --accent: #999999;                      /* 填色:药丸/按钮/圆点/情绪条 */
+    --accent-hover: #8a8a8a;
+    /* ⚠️ 压在填色上的字:**浅色模式也用白**。所有者 2026-08-31 两次点名要白的,
+       她知道白字压 `#999999` 只有 2.94:1(低于 4.5:1)。~~此前改成过近黑(6.47:1)~~,
+       **是她当场否掉的,别再"修"回去。** */
+    --accent-fg: var(--color-gray-000);
+    --accent-text: var(--color-gray-600);   /* 当文字/细线用 → 6.26:1(官端 gray-600) */
+    --accent-glow: rgba(153, 153, 153, 0.22);
     --chip-bg: var(--color-gray-200);       /* button-tertiary-bg */
     --chip-fg: var(--color-gray-650);       /* button-secondary-fg */
     --input-bg: var(--color-gray-000);      /* input-bg */
     --positive: var(--color-olive);
     --negative: var(--color-error);
     --warning: var(--color-clay);
+    /* 情绪条:所有者 2026-08-31 定的,从红→绿渐变改成强调色的深浅渐变。
+       ⚠️ 代价她知情:红=负面/绿=正面那层意思没了,只剩圆点位置表示情绪值。 */
+    --vbar-from: var(--color-gray-200);
+    --vbar-to: var(--accent);
     --shadow-card: 0 1px 2px rgba(20, 20, 19, 0.05);
     --shadow-card-hover: 0 4px 14px rgba(20, 20, 19, 0.09);
     --shadow-panel: 0 8px 40px rgba(20, 20, 19, 0.14);
+    /* iOS 那种玻璃(2026-08-31 所有者要的)。三样东西凑出来的,少一样就不像:
+       ①半透明底 ②backdrop-filter 的模糊+提饱和 ③上缘一道高光。
+       ⚠️ 玻璃底下要有东西才看得出来 —— 顶栏/标签栏是内容滑过去,卡片靠 --wash 那层极淡的底光。 */
+    --glass-chrome: rgba(250, 249, 245, 0.72);   /* 顶栏、标签栏 */
+    --glass-card: rgba(255, 255, 255, 0.62);     /* 卡片、面板 */
+    --glass-soft: rgba(255, 255, 255, 0.48);     /* 药丸、小按钮 */
+    --glass-blur: saturate(180%) blur(20px);
+    --glass-edge: rgba(255, 255, 255, 0.75);     /* 上缘高光 */
+    --wash-a: rgba(176, 174, 165, 0.16);
+    --wash-b: rgba(153, 153, 153, 0.10);
     /* 记忆网络 / Breath 画布用(JS 靠 cssVar() 现读,别写死在 JS 里) */
     --net-dynamic: var(--color-clay);
     --net-permanent: var(--color-mineral);
@@ -82,15 +105,27 @@
       --text: var(--color-gray-050);
       --text-dim: var(--color-gray-400);
       --text-light: var(--color-gray-500);
-      --accent: var(--color-clay-dark);      /* 官端深色用的是 clay-dark */
-      --accent-hover: var(--color-clay-hover);
-      --accent-glow: rgba(196, 104, 73, 0.20);
+      --accent: #343434;                     /* 所有者 2026-08-31 定的深色强调色 */
+      --accent-hover: #444444;
+      --accent-fg: var(--color-gray-050);    /* #343434 上压浅字 → 11.82:1 */
+      --accent-text: var(--color-gray-400);  /* → 8.29:1(官端 gray-400) */
+      --accent-glow: rgba(255, 255, 255, 0.12);
+      /* ⚠️ 深色下 `#343434` 压在卡片底 `#1a1918` 上只有 1.48:1 —— 整条会看不见。
+         所以深色这条是「从她的强调色往浅里走」,浅色那条是「往深里走」,两边都读得出来。 */
+      --vbar-from: var(--accent);
+      --vbar-to: var(--color-gray-400);
       --chip-bg: var(--color-gray-800);
       --chip-fg: var(--color-gray-050);
       --input-bg: var(--color-gray-800);
       --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.30);
       --shadow-card-hover: 0 4px 14px rgba(0, 0, 0, 0.45);
       --shadow-panel: 0 8px 40px rgba(0, 0, 0, 0.55);
+      --glass-chrome: rgba(20, 20, 19, 0.68);
+      --glass-card: rgba(38, 38, 36, 0.52);
+      --glass-soft: rgba(38, 38, 36, 0.38);
+      --glass-edge: rgba(255, 255, 255, 0.08);
+      --wash-a: rgba(255, 255, 255, 0.05);
+      --wash-b: rgba(255, 255, 255, 0.03);
       --net-line: var(--color-gray-650);
       --canvas-bg: var(--color-gray-900);
     }
@@ -98,13 +133,33 @@
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
+  /* 浏览器不支持毛玻璃(或系统开了「降低透明度」)就退回实色 —— 半透明没了模糊会发灰糊字 */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    :root {
+      --glass-chrome: var(--bg); --glass-card: var(--surface); --glass-soft: var(--surface);
+      --glass-edge: transparent;
+    }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    :root {
+      --glass-chrome: var(--bg); --glass-card: var(--surface); --glass-soft: var(--surface);
+      --glass-edge: transparent;
+    }
+  }
+
   /* ⚠️ 中文兜底必须显式接苹方/黑体。写成裸 `serif` 会让中文变宋体 ——
      这是 dwell 那轮踩过的坑(见 dwell-bridge/MAINTENANCE.md 第五次「反直觉的点」1)。 */
   body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI',
                  'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
     font-weight: 400;
-    background: var(--bg);
+    /* background-color 仍是官端那个纯色(测试按它对账);上面浮一层极淡的底光,
+       给半透明的卡片一点可透的东西,不然「玻璃」和「灰卡片」看不出区别。 */
+    background-color: var(--bg);
+    background-image:
+      radial-gradient(58rem 40rem at 12% -8%, var(--wash-a), transparent 62%),
+      radial-gradient(46rem 34rem at 92% 4%, var(--wash-b), transparent 60%);
+    background-attachment: fixed;
     color: var(--text);
     min-height: 100vh;
     line-height: 1.6;
@@ -119,7 +174,9 @@
   /* ── 顶栏:标题+按钮一行、统计一行、搜索独占一行(照所有者给的效果图) ── */
   .header {
     padding: 20px 20px 14px;
-    background: var(--bg);
+    background: var(--glass-chrome);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;
@@ -142,7 +199,7 @@
     align-items: center;
     gap: 8px;
   }
-  .header h1 .logo { color: var(--accent); font-size: 22px; }
+  .header h1 .logo { color: var(--accent-text); font-size: 22px; }
   .header-acts { margin-left: auto; display: flex; align-items: center; gap: 8px; }
   .header .stats {
     display: block;
@@ -157,7 +214,10 @@
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    background: var(--surface);
+    background: var(--glass-soft);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    box-shadow: inset 0 1px 0 var(--glass-edge);
     border: 1px solid var(--border-strong);
     color: var(--text-dim);
     border-radius: 999px;
@@ -185,7 +245,9 @@
   .search-bar { margin-top: 12px; }
   .search-bar input {
     width: 100%;
-    background: var(--input-bg);
+    background: var(--glass-soft);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     border: 1px solid var(--border-strong);
     color: var(--text);
     padding: 11px 18px;
@@ -196,7 +258,7 @@
   }
   .search-bar input:focus {
     outline: none;
-    border-color: var(--accent);
+    border-color: var(--accent-text);
     box-shadow: 0 0 0 3px var(--accent-glow);
   }
   .search-bar input::placeholder { color: var(--text-light); }
@@ -205,15 +267,16 @@
   .tabs {
     display: flex;
     gap: 2px;
-    background: var(--bg);
+    background: var(--glass-chrome);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     border-bottom: 1px solid var(--border);
     padding: 0 20px;
     overflow-x: auto;
     scrollbar-width: none;
-    position: sticky;
-    top: 0;
-    z-index: 40;
   }
+  /* ⚠️ 标签栏不要设 sticky。它和顶栏都 top:0,滚起来会钻到顶栏底下,
+     透过毛玻璃显出一排鬼影(2026-08-31 我自己加出来的,截图才看见)。原版就没有。 */
   .tabs::-webkit-scrollbar { display: none; }
   .tab {
     padding: 13px 16px;
@@ -226,8 +289,8 @@
   }
   .tab:hover { color: var(--text); }
   .tab.active {
-    color: var(--accent);
-    border-bottom-color: var(--accent);
+    color: var(--accent-text);
+    border-bottom-color: var(--accent-text);
     font-weight: 500;
   }
 
@@ -240,7 +303,10 @@
     font-size: 13px;
     border: 1px solid var(--border);
     border-radius: 999px;
-    background: var(--surface);
+    background: var(--glass-soft);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    box-shadow: inset 0 1px 0 var(--glass-edge);
     color: var(--chip-fg);
     cursor: pointer;
     font-family: inherit;
@@ -249,8 +315,9 @@
   .filter-btn:hover { border-color: var(--text-light); color: var(--text); }
   .filter-btn.active {
     color: var(--accent-fg);
-    background: var(--accent);
+    background: var(--accent);          /* ⚠️ 这颗刻意不透明:上面压着字,透了就糊 */
     border-color: var(--accent);
+    box-shadow: none;
     font-weight: 500;
   }
 
@@ -260,15 +327,17 @@
     display: block;
     padding: 16px 18px;
     border-radius: 16px;
-    background: var(--surface);
+    background: var(--glass-card);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     border: 1px solid var(--border);
-    box-shadow: var(--shadow-card);
+    box-shadow: inset 0 1px 0 var(--glass-edge), var(--shadow-card);
     cursor: pointer;
     transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
   }
   .bucket-row:hover {
     border-color: var(--border-strong);
-    box-shadow: var(--shadow-card-hover);
+    box-shadow: inset 0 1px 0 var(--glass-edge), var(--shadow-card-hover);
     transform: translateY(-1px);
   }
   .row-top { display: flex; align-items: baseline; gap: 8px; }
@@ -313,7 +382,7 @@
     margin-left: auto;
     font-size: 12px;
     font-weight: 500;
-    color: var(--accent);
+    color: var(--accent-text);
     flex: none;
   }
   .bucket-row .emotion { font-size: 11px; color: var(--text-light); flex: none; }
@@ -322,7 +391,7 @@
     width: 56px;
     height: 5px;
     border-radius: 3px;
-    background: linear-gradient(to right, var(--negative), var(--color-oat), var(--positive));
+    background: linear-gradient(to right, var(--vbar-from), var(--vbar-to));
     position: relative;
     display: inline-block;
     vertical-align: middle;
@@ -333,14 +402,15 @@
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: var(--surface);
-    border: 2px solid var(--accent);
+    background: var(--accent);          /* 实心的拉钮,不是个洞 */
+    border: 2px solid var(--accent-text);
     transform: translateX(-50%);
   }
 
   /* ── 信箱 ── */
   .letters-intro {
-    background: var(--surface); border: 1px solid var(--border);
+    background: var(--glass-card); -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur); border: 1px solid var(--border);
     border-radius: 16px; padding: 18px 20px; margin-bottom: 18px;
     line-height: 1.8; font-size: 13px; color: var(--text-dim);
     box-shadow: var(--shadow-card);
@@ -365,7 +435,8 @@
     color: var(--text);
   }
   .letter-card {
-    background: var(--surface); border: 1px solid var(--border);
+    background: var(--glass-card); -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur); border: 1px solid var(--border);
     border-radius: 16px; padding: 18px 20px; margin-bottom: 14px;
     box-shadow: var(--shadow-card);
   }
@@ -386,7 +457,9 @@
     top: 0;
     width: 440px;
     height: 100vh;
-    background: var(--surface);
+    background: var(--glass-chrome);
+    -webkit-backdrop-filter: saturate(180%) blur(30px);
+    backdrop-filter: saturate(180%) blur(30px);
     border-left: 1px solid var(--border);
     padding: 32px 24px;
     overflow-y: auto;
@@ -491,7 +564,7 @@
     font-size: 13px;
   }
   .detail-form input:focus, .detail-form textarea:focus {
-    outline: none; border-color: var(--accent);
+    outline: none; border-color: var(--accent-text);
     box-shadow: 0 0 0 3px var(--accent-glow);
   }
   .detail-form textarea {
@@ -540,7 +613,9 @@
   .config-section {
     margin-bottom: 20px;
     padding: 20px;
-    background: var(--surface);
+    background: var(--glass-card);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     border-radius: 16px;
     border: 1px solid var(--border);
     box-shadow: var(--shadow-card);
@@ -580,7 +655,7 @@
   }
   .config-row input:focus, .config-row select:focus {
     outline: none;
-    border-color: var(--accent);
+    border-color: var(--accent-text);
     box-shadow: 0 0 0 3px var(--accent-glow);
   }
 
@@ -662,7 +737,7 @@
   }
   .breath-controls input:focus {
     outline: none;
-    border-color: var(--accent);
+    border-color: var(--accent-text);
     box-shadow: 0 0 0 3px var(--accent-glow);
   }
   .breath-controls button {
@@ -689,7 +764,9 @@
     margin-bottom: 18px;
     line-height: 1.8;
     padding: 16px 18px;
-    background: var(--surface);
+    background: var(--glass-card);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     border-radius: 14px;
     border: 1px solid var(--border);
   }
@@ -745,7 +822,9 @@
     gap: 8px;
     margin-bottom: 20px;
     padding: 14px 16px;
-    background: var(--surface);
+    background: var(--glass-card);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     border: 1px solid var(--border);
     border-radius: 16px;
     font-size: 12px;
@@ -760,7 +839,7 @@
     text-align: center;
     min-width: 90px;
   }
-  .flow-step.active { border-color: var(--accent); color: var(--accent); }
+  .flow-step.active { border-color: var(--accent-text); color: var(--accent-text); }
   .flow-arrow { color: var(--text-light); font-size: 16px; }
 
   /* 宽屏:顶栏和内容一起收在 1100 里,手机那套结构原样沿用 */
@@ -887,7 +966,7 @@
 
     <div id="import-upload-zone" style="border:2px dashed var(--border);border-radius:16px;padding:40px;text-align:center;cursor:pointer;margin:20px 0;transition:border-color .2s;">
       <div style="font-size:32px;margin-bottom:8px;">📁</div>
-      <div>拖拽文件到此处，或 <span style="color:var(--accent);text-decoration:underline;">点击选择</span></div>
+      <div>拖拽文件到此处，或 <span style="color:var(--accent-text);text-decoration:underline;">点击选择</span></div>
       <input type="file" id="import-file-input" accept=".json,.txt,.md,.jsonl" style="display:none" />
     </div>
 
@@ -1161,7 +1240,7 @@ async function changePassword() {
   const resp = await authFetch('/auth/change-password', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({current: currentPwd, new: newPwd}) });
   if (!resp) return;
   if (resp.ok) {
-    msgEl.style.color = 'var(--accent)'; msgEl.textContent = '密码修改成功';
+    msgEl.style.color = 'var(--accent-text)'; msgEl.textContent = '密码修改成功';
     document.getElementById('settings-current-pwd').value = '';
     document.getElementById('settings-new-pwd').value = '';
     document.getElementById('settings-new-pwd2').value = '';
@@ -1234,7 +1313,7 @@ async function saveHostVault() {
     if (!resp) return;
     const d = await resp.json();
     if (resp.ok) {
-      msg.style.color = 'var(--accent)';
+      msg.style.color = 'var(--accent-text)';
       msg.textContent = '已保存 → ' + (d.env_file || '.env') + '（需重启容器生效）';
     } else {
       msg.style.color = 'var(--negative)';
@@ -1463,12 +1542,16 @@ function buildFilters() {
   const domains = new Set();
   allBuckets.forEach(b => (b.domain || []).forEach(d => domains.add(d)));
   const filters = document.getElementById('filters');
+  // 所有者 2026-08-31 定的:**只有「未解决」和「已消化」去掉表情**,
+  // 钉选 / Feel / 归档 保留。(~~我先做成整排都去掉~~,她当场纠正,别再改回去。)
+  // ⚠️ 卡片上那颗图标是另一回事,别跟着删 —— 它标的是每条记忆的状态
+  // (📌钉选 / 🫧feel / 🌿已消化 / 💤已解决 / 💭普通)。
   const types = [
     { key: 'all', label: '全部' },
     { key: 'pinned', label: '📌 钉选' },
     { key: 'feel', label: '🫧 Feel' },
-    { key: 'unresolved', label: '⚡ 未解决' },
-    { key: 'digested', label: '🌿 已消化' },
+    { key: 'unresolved', label: '未解决' },
+    { key: 'digested', label: '已消化' },
     { key: 'archived', label: '📦 归档' },
   ];
   filters.innerHTML = types.map(function(t) {
@@ -2101,7 +2184,7 @@ const uploadZone = document.getElementById('import-upload-zone');
 const fileInput = document.getElementById('import-file-input');
 
 uploadZone.addEventListener('click', () => fileInput.click());
-uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.style.borderColor = 'var(--accent)'; });
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.style.borderColor = 'var(--accent-text)'; });
 uploadZone.addEventListener('dragleave', () => { uploadZone.style.borderColor = 'var(--border)'; });
 uploadZone.addEventListener('drop', e => {
   e.preventDefault();
