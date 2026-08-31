@@ -73,16 +73,22 @@
     --shadow-card: 0 1px 2px rgba(20, 20, 19, 0.05);
     --shadow-card-hover: 0 4px 14px rgba(20, 20, 19, 0.09);
     --shadow-panel: 0 8px 40px rgba(20, 20, 19, 0.14);
-    /* iOS 那种玻璃(2026-08-31 所有者要的)。三样东西凑出来的,少一样就不像:
-       ①半透明底 ②backdrop-filter 的模糊+提饱和 ③上缘一道高光。
-       ⚠️ 玻璃底下要有东西才看得出来 —— 顶栏/标签栏是内容滑过去,卡片靠 --wash 那层极淡的底光。 */
+    /* 毛玻璃。**2026-08-31 所有者定稿的这一版,三处都别乱动**(中间试错两轮才到这儿):
+       ① 面是「白纱」不是「灰块」—— 深色下 7% 白,不是 52% 灰。
+          ~~灰块那版~~ 合成出来 `#1d1d1c`,而实色卡片本来就是 `#1a1918`,**差 3/255,肉眼等于没差**。
+       ② **边缘是一圈均匀的淡描边,没有上缘高光线。**
+          ~~`inset 0 1px 0` 那道亮线~~ 已撤销 —— 所有者原话「卡片上方那个线有点太粗了不像玻璃感」,
+          2 倍屏上它就是一条又粗又硬的白杠。参照物是 Claude Code 手机端自己的面板:通体一圈淡边,没有亮线。
+       ③ 页面要有一层**底光**给玻璃当透视素材,否则平底色上模糊了个寂寞。
+          **强度 1%、纯灰(饱和度 0)** —— 所有者拿滑杆自己定的;她试过带色的,不要。
+       ⚠️ 别把 `--wash-*` 调大或加颜色,也别把高光线加回来。 */
     --glass-chrome: rgba(250, 249, 245, 0.72);   /* 顶栏、标签栏 */
-    --glass-card: rgba(255, 255, 255, 0.62);     /* 卡片、面板 */
-    --glass-soft: rgba(255, 255, 255, 0.48);     /* 药丸、小按钮 */
-    --glass-blur: saturate(180%) blur(20px);
-    --glass-edge: rgba(255, 255, 255, 0.75);     /* 上缘高光 */
-    --wash-a: rgba(176, 174, 165, 0.16);
-    --wash-b: rgba(153, 153, 153, 0.10);
+    --glass-card: rgba(255, 255, 255, 0.50);     /* 卡片、面板 */
+    --glass-soft: rgba(255, 255, 255, 0.42);     /* 药丸、小按钮 */
+    --glass-blur: saturate(180%) blur(24px);
+    --glass-edge: rgba(20, 20, 19, 0.07);        /* 均匀描边,不是高光线 */
+    --wash-a: rgba(20, 20, 19, 0.010);
+    --wash-b: rgba(20, 20, 19, 0.008);
     /* 记忆网络 / Breath 画布用(JS 靠 cssVar() 现读,别写死在 JS 里) */
     --net-dynamic: var(--color-clay);
     --net-permanent: var(--color-mineral);
@@ -121,11 +127,11 @@
       --shadow-card-hover: 0 4px 14px rgba(0, 0, 0, 0.45);
       --shadow-panel: 0 8px 40px rgba(0, 0, 0, 0.55);
       --glass-chrome: rgba(20, 20, 19, 0.68);
-      --glass-card: rgba(38, 38, 36, 0.52);
-      --glass-soft: rgba(38, 38, 36, 0.38);
-      --glass-edge: rgba(255, 255, 255, 0.08);
-      --wash-a: rgba(255, 255, 255, 0.05);
-      --wash-b: rgba(255, 255, 255, 0.03);
+      --glass-card: rgba(255, 255, 255, 0.07);   /* 白纱,不是灰块 */
+      --glass-soft: rgba(255, 255, 255, 0.05);
+      --glass-edge: rgba(255, 255, 255, 0.10);   /* 均匀描边 */
+      --wash-a: rgba(255, 255, 255, 0.010);
+      --wash-b: rgba(255, 255, 255, 0.008);
       --net-line: var(--color-gray-650);
       --canvas-bg: var(--color-gray-900);
     }
@@ -217,7 +223,6 @@
     background: var(--glass-soft);
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
-    box-shadow: inset 0 1px 0 var(--glass-edge);
     border: 1px solid var(--border-strong);
     color: var(--text-dim);
     border-radius: 999px;
@@ -289,12 +294,11 @@
   .filter-btn {
     padding: 8px 16px;
     font-size: 13px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--glass-edge);
     border-radius: 999px;
     background: var(--glass-soft);
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
-    box-shadow: inset 0 1px 0 var(--glass-edge);
     color: var(--chip-fg);
     cursor: pointer;
     font-family: inherit;
@@ -318,17 +322,17 @@
     background: var(--glass-card);
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
-    border: 1px solid var(--border);
-    box-shadow: inset 0 1px 0 var(--glass-edge), var(--shadow-card);
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--shadow-card);
     cursor: pointer;
     transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
   }
   /* 回收站的卡片长得和记忆卡片一样,但它不可点 —— 别给手型和悬停位移 */
   .trash-row { cursor: default; }
-  .trash-row:hover { transform: none; box-shadow: inset 0 1px 0 var(--glass-edge), var(--shadow-card); }
+  .trash-row:hover { transform: none; box-shadow: var(--shadow-card); }
   .bucket-row:hover {
     border-color: var(--border-strong);
-    box-shadow: inset 0 1px 0 var(--glass-edge), var(--shadow-card-hover);
+    box-shadow: var(--shadow-card-hover);
     transform: translateY(-1px);
   }
   .row-top { display: flex; align-items: baseline; gap: 8px; }

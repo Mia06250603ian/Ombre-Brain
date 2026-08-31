@@ -78,7 +78,7 @@ for (const scheme of ['light', 'dark']) {
   ok('药丸一行横滑', await page.locator('.filters').evaluate(el =>
     getComputedStyle(el).flexWrap === 'nowrap' && el.scrollWidth > el.clientWidth));
 
-  // 玻璃质感:顶栏/标签/卡片都得真的挂上 backdrop-filter,且底是半透明的
+  // 玻璃:顶栏/标签/卡片/药丸都得真的挂上 backdrop-filter,且底是半透明的
   for (const sel of ['.header', '.tabs', '.bucket-row', '.filter-btn:not(.active)']) {
     ok('玻璃:' + sel, await page.locator(sel).first().evaluate(el => {
       const cs = getComputedStyle(el);
@@ -88,6 +88,17 @@ for (const scheme of ['light', 'dark']) {
   }
   ok('选中的药丸仍是实心', await page.locator('.filter-btn.active').evaluate(
     el => !/rgba/.test(getComputedStyle(el).backgroundColor)));
+  // ⚠️ 所有者原话:「卡片上方那个线有点太粗了不像玻璃感」。
+  // 边缘要一圈均匀的淡描边,**不许有 inset 高光线**;参照物是 Claude Code 手机端自己的面板。
+  ok('卡片没有上缘高光线', await page.locator('.bucket-row').first().evaluate(
+    el => !/inset/.test(getComputedStyle(el).boxShadow)));
+  // 底光要在(1%,玻璃靠它才有东西可透),但必须很淡
+  ok('页面有一层极淡的底光', await page.evaluate(() => {
+    const bi = getComputedStyle(document.body).backgroundImage;
+    if (!bi.includes('gradient')) return false;
+    const a = [...bi.matchAll(/rgba\([^)]*?,\s*([0-9.]+)\)/g)].map(m => parseFloat(m[1]));
+    return a.length > 0 && Math.max(...a) <= 0.02;   // 所有者定的 1%
+  }));
 
   // 页面不许横向滚动(手机上最容易翻车的一条)
   ok('没有横向滚动', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
