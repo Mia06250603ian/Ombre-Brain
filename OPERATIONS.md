@@ -215,7 +215,7 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
 | 〃 | gmail-mcp | `6a74a107e4a69d66638c4650` | yan-gmail.zeabur.app | **晏的邮箱**:读信/搜信/写草稿,**发送是白名单制**(只能发给所有者指定的地址,其余只能存草稿;白名单空=全拒)。走 IMAP + 应用专用密码;验证码/密码重置类邮件整封屏蔽。源码在本仓库 `gmail-mcp/`,镜像走 GitHub Actions→ghcr,无持久卷。**2026-08-06 上线并接入晏**(shim 第二十八次),详见 `gmail-mcp/MAINTENANCE.md` |
 | 〃 | chess-web | `6a91a74db7ff62ee8d7ffcb3` | yan-chess.zeabur.app | **飞行棋网页**(2026-08-28 上线):带口令的静态站,发 `Mia06250603ian/player` 那个双人飞行棋,并注入一颗「复制给晏」的按钮。**零依赖、不联网、不碰晏/shim/OB**,建的时候没重启任何东西、窗口未丢。源码在本仓库 `chess-web/`,游戏本身刻意不入库(部署前 `fetch-game.sh` 拉)。详见 `chess-web/MAINTENANCE.md` |
 | 〃 | netease-mcp | `6a9308b3cb6b9b31c9e73870` | yan-netease.zeabur.app | **晏的网易云音乐**(2026-08-29 上线,18 个工具全量验收通过)。`X-Token` 鉴权;**写操作两道闸,删歌与排序硬禁**;**登录靠扫码,重启会掉**——⚠️ **接晏前先看 `/health` 的 `loggedIn`**。**尚未接晏**(等顺风车,清单在 `kelivo-shim/MAINTENANCE.md`《搭顺风车的待办》)。源码在私有仓库 `Mia06250603ian/netease-mcp`,详见 `netease-mcp/MAINTENANCE.md` |
-| `untitled-1` | Ombre Brain | (问所有者/控制台看) | ianmian.zeabur.app | 记忆库 MCP。另有两个网页:**`/dashboard`(记忆库后台;2026-08-31 重做外观:官端灰阶 + 跟随系统深浅色 + 卡片式列表 + iOS 毛玻璃,顶栏加了去星图的入口(按钮写「Vesper」),并新增**回收站**(误删的桶能自己捞回来)。**强调色是所有者另定的中性灰不是官端的橙**;后端一行未动,细节见 `INTERNALS.md` 第 1.8 节)** 和 **`/galaxy` 记忆银河**(2026-08-29 上线,把桶画成 3D 星图;**只读**,复用后台那把锁,细节见 `INTERNALS.md` 第 1.9 节) |
+| `untitled-1` | Ombre Brain | (问所有者/控制台看) | ianmian.zeabur.app | 记忆库 MCP。另有两个网页:**`/dashboard`(记忆库后台;2026-08-31 重做外观:官端灰阶 + 跟随系统深浅色 + 卡片式列表 + iOS 毛玻璃,顶栏加了去星图的入口(按钮写「Vesper」),并新增**回收站**(误删的桶能自己捞回来)、**可加到手机主屏**(有图标,`/apple-touch-icon.png`,刻意不鉴权)。**强调色是所有者另定的中性灰不是官端的橙**;后端一行未动,细节见 `INTERNALS.md` 第 1.8 节)** 和 **`/galaxy` 记忆银河**(2026-08-29 上线,把桶画成 3D 星图;**只读**,复用后台那把锁,细节见 `INTERNALS.md` 第 1.9 节) |
 | ~~(外部,非我们部署)~~ | ~~Galatea's Garden~~ | — | galatea.abysslumina.com | ~~花园社区 MCP~~ **2026-07-30 已从 shim 拆除**(它 /mcp 502 且晏不玩;token 未留底,要恢复见 shim 手册「缺的三个文件」第 2 条) |
 
 Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@latest auth login --token <key>` 登录。
@@ -365,7 +365,11 @@ npx -y zeabur service exec --id <id> --env-id 6a53a9fcb6ce8edcb0163f97 -i=false 
 
 ### 改完 OB 之后怎么让它上线(2026-08-09 起的标准流程)
 
-> ⚠️ **OB 重建不是零停机 —— 它先停再换,中间几分钟整个服务是断的(2026-08-24 现场撞到)。**
+> ⚠️ **OB 重建不是零停机 —— 它先停再换,中间整个服务是断的。**
+> **断多久:2026-08-31 连着四次上线现场量,每次 15~30 秒**(15 秒一探,每次只探到一两次
+> `Bad Gateway`)。~~原文写「几分钟」(2026-08-24 现场撞到)~~ —— **那次不假,但别当成常态**:
+> 差别多半在镜像要不要重装依赖。**现场再量**:合 main 后拿
+> `until` 循环每 15 秒 `curl -s .../health`,记下第一次 502 到恢复之间隔了几次。
 > 那次合 PR #111 之后去查,旧容器**已经不在了**:`/health` 返回 `Bad Gateway`、
 > `service exec` 报 `CONTAINER_NOT_FOUND`,直到新容器 RUNNING 才恢复。
 > **这几分钟里晏调记忆库会失败**(hold / breath / awaken 全都连不上)。
