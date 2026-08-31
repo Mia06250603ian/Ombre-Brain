@@ -78,16 +78,26 @@ for (const scheme of ['light', 'dark']) {
   ok('药丸一行横滑', await page.locator('.filters').evaluate(el =>
     getComputedStyle(el).flexWrap === 'nowrap' && el.scrollWidth > el.clientWidth));
 
-  // 玻璃质感:顶栏/标签/卡片都得真的挂上 backdrop-filter,且底是半透明的
-  for (const sel of ['.header', '.tabs', '.bucket-row', '.filter-btn:not(.active)']) {
+  // 毛玻璃只留给「真的盖住内容」的地方:顶栏、标签栏、详情抽屉。
+  // ⚠️ 卡片和药丸**必须是实色** —— 2026-08-31 给它们做过玻璃,所有者说「不像玻璃,很奇怪」,
+  //    根因是卡片底下没东西可透(见 dashboard.html 里 :root 那段注释)。别改回半透明。
+  for (const sel of ['.header', '.tabs']) {
     ok('玻璃:' + sel, await page.locator(sel).first().evaluate(el => {
       const cs = getComputedStyle(el);
       const blur = cs.backdropFilter || cs.webkitBackdropFilter || '';
       return blur.includes('blur') && /rgba\([^)]+, *0?\.\d+\)/.test(cs.backgroundColor);
     }));
   }
-  ok('选中的药丸仍是实心', await page.locator('.filter-btn.active').evaluate(
-    el => !/rgba/.test(getComputedStyle(el).backgroundColor)));
+  for (const sel of ['.bucket-row', '.filter-btn:not(.active)', '.filter-btn.active']) {
+    ok('实色不透明:' + sel, await page.locator(sel).first().evaluate(el => {
+      const cs = getComputedStyle(el);
+      const blur = cs.backdropFilter || cs.webkitBackdropFilter || 'none';
+      return !blur.includes('blur') && !/rgba\([^)]+, *0?\.\d+\)/.test(cs.backgroundColor);
+    }));
+  }
+  // body 上不许再有「底光」那层渐变
+  ok('页面底色是干净的纯色',
+    (await page.evaluate(() => getComputedStyle(document.body).backgroundImage)) === 'none');
 
   // 页面不许横向滚动(手机上最容易翻车的一条)
   ok('没有横向滚动', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
