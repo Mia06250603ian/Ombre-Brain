@@ -73,16 +73,22 @@
     --shadow-card: 0 1px 2px rgba(20, 20, 19, 0.05);
     --shadow-card-hover: 0 4px 14px rgba(20, 20, 19, 0.09);
     --shadow-panel: 0 8px 40px rgba(20, 20, 19, 0.14);
-    /* 毛玻璃**只用在真的盖住内容的地方**:顶栏、标签栏、详情抽屉。
-       ⚠️ 2026-08-31 所有者先要「整体加玻璃」,做完她说「不像玻璃,很奇怪」——
-       **问题不在参数,在这个做法本身**:玻璃要透出后面的东西才叫玻璃,
-       而卡片底下是一整片平底色,什么都没有。当时为了给它「可透的东西」在 body 上画了几团光晕
-       (`--wash-*`),那几团光**没有来由**,眼睛会问「这儿为什么会亮」,于是更怪。
-       ~~`--glass-card` / `--glass-soft` / `--wash-a` / `--wash-b`~~ **已撤销,别再加回来**:
-       卡片、药丸、面板一律实色。顶栏那三处留着,因为内容真的从它们底下滑过去(那儿是有来由的)。 */
+    /* 毛玻璃。**2026-08-31 所有者定稿的这一版,三处都别乱动**(中间试错两轮才到这儿):
+       ① 面是「白纱」不是「灰块」—— 深色下 7% 白,不是 52% 灰。
+          ~~灰块那版~~ 合成出来 `#1d1d1c`,而实色卡片本来就是 `#1a1918`,**差 3/255,肉眼等于没差**。
+       ② **边缘是一圈均匀的淡描边,没有上缘高光线。**
+          ~~`inset 0 1px 0` 那道亮线~~ 已撤销 —— 所有者原话「卡片上方那个线有点太粗了不像玻璃感」,
+          2 倍屏上它就是一条又粗又硬的白杠。参照物是 Claude Code 手机端自己的面板:通体一圈淡边,没有亮线。
+       ③ 页面要有一层**底光**给玻璃当透视素材,否则平底色上模糊了个寂寞。
+          **强度 1%、纯灰(饱和度 0)** —— 所有者拿滑杆自己定的;她试过带色的,不要。
+       ⚠️ 别把 `--wash-*` 调大或加颜色,也别把高光线加回来。 */
     --glass-chrome: rgba(250, 249, 245, 0.72);   /* 顶栏、标签栏 */
-    --glass-blur: saturate(180%) blur(20px);
-    --glass-edge: rgba(255, 255, 255, 0.75);     /* 上缘高光 */
+    --glass-card: rgba(255, 255, 255, 0.50);     /* 卡片、面板 */
+    --glass-soft: rgba(255, 255, 255, 0.42);     /* 药丸、小按钮 */
+    --glass-blur: saturate(180%) blur(24px);
+    --glass-edge: rgba(20, 20, 19, 0.07);        /* 均匀描边,不是高光线 */
+    --wash-a: rgba(20, 20, 19, 0.010);
+    --wash-b: rgba(20, 20, 19, 0.008);
     /* 记忆网络 / Breath 画布用(JS 靠 cssVar() 现读,别写死在 JS 里) */
     --net-dynamic: var(--color-clay);
     --net-permanent: var(--color-mineral);
@@ -121,7 +127,11 @@
       --shadow-card-hover: 0 4px 14px rgba(0, 0, 0, 0.45);
       --shadow-panel: 0 8px 40px rgba(0, 0, 0, 0.55);
       --glass-chrome: rgba(20, 20, 19, 0.68);
-      --glass-edge: rgba(255, 255, 255, 0.08);
+      --glass-card: rgba(255, 255, 255, 0.07);   /* 白纱,不是灰块 */
+      --glass-soft: rgba(255, 255, 255, 0.05);
+      --glass-edge: rgba(255, 255, 255, 0.10);   /* 均匀描边 */
+      --wash-a: rgba(255, 255, 255, 0.010);
+      --wash-b: rgba(255, 255, 255, 0.008);
       --net-line: var(--color-gray-650);
       --canvas-bg: var(--color-gray-900);
     }
@@ -132,12 +142,14 @@
   /* 浏览器不支持毛玻璃(或系统开了「降低透明度」)就退回实色 —— 半透明没了模糊会发灰糊字 */
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     :root {
-      --glass-chrome: var(--bg); --glass-edge: transparent;
+      --glass-chrome: var(--bg); --glass-card: var(--surface); --glass-soft: var(--surface);
+      --glass-edge: transparent;
     }
   }
   @media (prefers-reduced-transparency: reduce) {
     :root {
-      --glass-chrome: var(--bg); --glass-edge: transparent;
+      --glass-chrome: var(--bg); --glass-card: var(--surface); --glass-soft: var(--surface);
+      --glass-edge: transparent;
     }
   }
 
@@ -147,8 +159,13 @@
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI',
                  'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
     font-weight: 400;
-    /* 干净的纯色。⚠️ 别再往这儿加「底光/光晕」当玻璃的透视素材 —— 理由见上面 :root 那段。 */
+    /* background-color 仍是官端那个纯色(测试按它对账);上面浮一层极淡的底光,
+       给半透明的卡片一点可透的东西,不然「玻璃」和「灰卡片」看不出区别。 */
     background-color: var(--bg);
+    background-image:
+      radial-gradient(58rem 40rem at 12% -8%, var(--wash-a), transparent 62%),
+      radial-gradient(46rem 34rem at 92% 4%, var(--wash-b), transparent 60%);
+    background-attachment: fixed;
     color: var(--text);
     min-height: 100vh;
     line-height: 1.6;
@@ -203,8 +220,9 @@
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    background: var(--surface);
-    box-shadow: inset 0 1px 0 var(--glass-edge);
+    background: var(--glass-soft);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     border: 1px solid var(--border-strong);
     color: var(--text-dim);
     border-radius: 999px;
@@ -220,7 +238,9 @@
   .search-bar { margin-top: 12px; }
   .search-bar input {
     width: 100%;
-    background: var(--input-bg);
+    background: var(--glass-soft);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     border: 1px solid var(--border-strong);
     color: var(--text);
     padding: 11px 18px;
@@ -274,10 +294,11 @@
   .filter-btn {
     padding: 8px 16px;
     font-size: 13px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--glass-edge);
     border-radius: 999px;
-    background: var(--surface);
-    box-shadow: inset 0 1px 0 var(--glass-edge);
+    background: var(--glass-soft);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     color: var(--chip-fg);
     cursor: pointer;
     font-family: inherit;
@@ -298,8 +319,10 @@
     display: block;
     padding: 16px 18px;
     border-radius: 16px;
-    background: var(--surface);
-    border: 1px solid var(--border);
+    background: var(--glass-card);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-edge);
     box-shadow: var(--shadow-card);
     cursor: pointer;
     transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
@@ -381,7 +404,7 @@
 
   /* ── 信箱 ── */
   .letters-intro {
-    background: var(--surface);
+    background: var(--glass-card); -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur); border: 1px solid var(--border);
     border-radius: 16px; padding: 18px 20px; margin-bottom: 18px;
     line-height: 1.8; font-size: 13px; color: var(--text-dim);
@@ -407,7 +430,7 @@
     color: var(--text);
   }
   .letter-card {
-    background: var(--surface);
+    background: var(--glass-card); -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur); border: 1px solid var(--border);
     border-radius: 16px; padding: 18px 20px; margin-bottom: 14px;
     box-shadow: var(--shadow-card);
@@ -585,7 +608,9 @@
   .config-section {
     margin-bottom: 20px;
     padding: 20px;
-    background: var(--surface);
+    background: var(--glass-card);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     border-radius: 16px;
     border: 1px solid var(--border);
     box-shadow: var(--shadow-card);
@@ -734,7 +759,9 @@
     margin-bottom: 18px;
     line-height: 1.8;
     padding: 16px 18px;
-    background: var(--surface);
+    background: var(--glass-card);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     border-radius: 14px;
     border: 1px solid var(--border);
   }
@@ -790,7 +817,9 @@
     gap: 8px;
     margin-bottom: 20px;
     padding: 14px 16px;
-    background: var(--surface);
+    background: var(--glass-card);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     border: 1px solid var(--border);
     border-radius: 16px;
     font-size: 12px;
