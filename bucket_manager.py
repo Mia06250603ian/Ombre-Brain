@@ -290,6 +290,79 @@ class BucketManager:
             })
         return out
 
+    def existing_bucket_ids(self) -> set:
+        """
+        一次扫出「现在还在的桶 id」。
+        为什么要它:回收站要判断「这个 id 的桶还在不在」，逐个调 `_find_bucket_file`
+        会把整棵目录树走一遍 × 候选个数(编辑也留快照，候选可能接近全部桶)。这里一趟走完。
+        匹配规则和 `_find_bucket_file` 一致:文件名是 `{名字}_{id}.md` 或 `{id}.md`，
+        **id 永远是最后一段**(名字里带下划线也不影响)。两种形态都收进来。
+        """
+        ids = set()
+        for dir_path in [self.permanent_dir, self.dynamic_dir, self.archive_dir, self.feel_dir]:
+            if not os.path.exists(dir_path):
+                continue
+            for root, _, files in os.walk(dir_path):
+                for fname in files:
+                    if not fname.endswith(".md"):
+                        continue
+                    stem = fname[:-3]
+                    ids.add(stem)
+                    if "_" in stem:
+                        ids.add(stem.rsplit("_", 1)[-1])
+        return ids
+
+    def list_trash(self) -> list[dict]:
+        """
+        回收站:列出「桶已经不在了、但写前快照还留着」的记忆，新删的在前。
+        **只读**——不动任何文件。
+
+        数据从哪来:`delete()` 在删之前会把整个文件拷进 `.history/{id}/`(见 `_snapshot`)，
+        桶没了、这个目录还在，就是「可以捞回来的」。⚠️ 注意 `.history/` 里**不只有删掉的**——
+        改内容同样留快照，所以必须拿 `existing_bucket_ids()` 把还活着的滤掉。
+
+        每条给的是**最新那份快照**里的信息(删之前的最后状态)，`version` 就是恢复时要传的版本号。
+        """
+        out = []
+        if not os.path.isdir(self.history_dir):
+            return out
+        alive = self.existing_bucket_ids()
+        for bucket_id in os.listdir(self.history_dir):
+            if bucket_id in alive:
+                continue
+            if not os.path.isdir(os.path.join(self.history_dir, bucket_id)):
+                continue
+            snaps = self.list_history(bucket_id)
+            if not snaps:
+                continue
+            newest = snaps[0]
+            snap = self.read_history_version(bucket_id, newest["version"]) or {}
+            meta = snap.get("metadata") or {}
+            content = snap.get("content") or ""
+            # 快照文件名是 `YYYYMMDD-HHMMSS_{op}.md`，前半段就是当时的时间
+            stamp = newest.get("time") or ""
+            try:
+                deleted_at = datetime.strptime(stamp, "%Y%m%d-%H%M%S").isoformat()
+            except ValueError:
+                deleted_at = ""
+            out.append({
+                "id": bucket_id,
+                "name": meta.get("name") or bucket_id,
+                "type": meta.get("type", "dynamic"),
+                "domain": meta.get("domain") or [],
+                "importance": meta.get("importance"),
+                "pinned": bool(meta.get("pinned")),
+                "created": str(meta.get("created") or ""),
+                "deleted_at": deleted_at,
+                # op 正常是 delete;不是的话说明桶是被别的方式弄没的(比如直接删文件)，照样列出来
+                "last_op": newest.get("op", "?"),
+                "version": newest["version"],
+                "snapshots": len(snaps),
+                "content_preview": content[:120],
+            })
+        out.sort(key=lambda x: x["deleted_at"], reverse=True)
+        return out
+
     def read_history_version(self, bucket_id: str, version: str) -> Optional[dict]:
         """
         Load one snapshot's content+metadata. version 为 list_history 返回的 version 字段。
