@@ -455,13 +455,16 @@ python3 -m pytest tests/test_trash.py -q   # 回收站存取层 6 项(真 Bucket
 | 扫描逻辑 | `bucket_manager.list_trash()`(挨着 `list_history`)。⚠️ **`.history/` 里不只有删掉的** —— 改内容同样留快照,所以要拿 `existing_bucket_ids()` 把还活着的滤掉 |
 | 接口 | `GET /api/trash`(只读)、`POST /api/trash/{id}/restore`(写) |
 | 页面 | 「回收站」标签页;卡片复用 `.bucket-row` 的排版,加 `.trash-row` 去掉手型和悬停位移(它不可点) |
-| 测试 | `tests/test_trash.py` **6 项**(真 `BucketManager` + 临时库,2026-08-31 全过)、浏览器演练里 **6 项**(含「取消确认就什么都不做」) |
+| 测试 | `tests/test_trash.py` **7 项**(真 `BucketManager` + 临时库,2026-08-31 全过)、浏览器演练里 **6 项**(含「取消确认就什么都不做」) |
 
 **三条动了它就要一起看的规矩**:
 1. **桶还在就不许 restore**(回 409)。那是「拿旧快照覆盖现状」= 回滚,不是恢复,走 `trace(restore=…)`。
 2. **恢复完必须重建向量**。删桶时把向量一并清了(见 DELETE 路由),不重建的话捞回来的桶
    **搜不到**(只剩关键词通道)。`trace` 的 restore 分支早就是这么写的,这里照抄。
-3. **`existing_bucket_ids()` 认 id 的规矩必须和 `_find_bucket_file` 一致** —— 文件名是
+3. **restore 路由先 `os.path.basename(bucket_id)`**。那个 id 会被拼进 `.history/` 的路径
+   (`list_history` / `restore_from_history` 都是直接 join),不掐掉路径成分就是一次目录穿越。
+   桶 id 本来就是 12 位短 UUID,basename 不会误伤(单测 `test_id_里塞路径进不去`)。
+4. **`existing_bucket_ids()` 认 id 的规矩必须和 `_find_bucket_file` 一致** —— 文件名是
    `{名字}_{id}.md`,**id 永远是最后一段**。认错了的后果是**活桶被当成已删、错列进回收站**
    (单测 `test_名字里带下划线也认得出_id` 钉着这条)。
 

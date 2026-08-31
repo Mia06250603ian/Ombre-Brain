@@ -107,3 +107,17 @@ def test_feel_桶删了也能进回收站(mgr):
     assert trash[0]["type"] == "feel"
     run(mgr.restore_from_history(bid, trash[0]["version"]))
     assert run(mgr.get(bid)) is not None
+
+
+def test_id_里塞路径进不去(mgr):
+    """
+    接口那层会先 `os.path.basename` 掐掉路径成分。这里验存取层本身:
+    传一个带路径的 id,不能真去读别的目录。
+    """
+    bid = run(_make(mgr, "正常的"))
+    run(mgr.delete(bid))
+    v = mgr.list_trash()[0]["version"]
+    assert run(mgr.restore_from_history("../" + bid, v)) is None, "带路径的 id 不该命中任何快照"
+    assert run(mgr.restore_from_history(bid, "../../etc/passwd")) is None, "带路径的版本号同理"
+    # 正常的那条照样能恢复
+    assert run(mgr.restore_from_history(bid, v)) is not None

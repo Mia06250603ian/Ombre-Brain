@@ -2572,7 +2572,13 @@ async def api_trash_restore(request):
     err = _require_auth(request)
     if err: return err
 
-    bucket_id = request.path_params["bucket_id"]
+    # ⚠️ 这个 id 会被拼进 `.history/` 的路径(list_history / restore_from_history 都直接 join),
+    # 所以先 basename 掐掉任何路径成分 —— 不然 `..%2F..` 这类就是一次目录穿越。
+    # (桶 id 本来就是 12 位短 UUID,basename 不会误伤。)
+    bucket_id = os.path.basename((request.path_params["bucket_id"] or "").strip())
+    if not bucket_id:
+        from starlette.responses import JSONResponse as _J
+        return _J({"error": "bad_id", "detail": "id 不合法"}, status_code=400)
     try:
         body = await request.json()
     except Exception:
