@@ -460,21 +460,27 @@
   /* ── 便利贴(2026-09-01)──
      这块便利贴是晏的,面板只是让她也能看见。所以视觉上刻意做成「贴在墙上的纸片」,
      和记忆桶那种卡片列表区分开 —— 一眼能看出这不是记忆库的内容。
-     ⚠️ 纸片的黄色是**唯一一处不跟强调色走的颜色**:便利贴不黄就不是便利贴了。
-     深色模式下压暗到勉强能看出是纸,别直接用浅色那张黄(会糊眼) */
+     ⚠️ 颜色是所有者 2026-09-01 从三版真实效果里挑的 B(淡纸色):
+     ~~第一版是明黄 #fdf0b8 + 天蓝 #dbeefd~~ —— 她一句「好丑的颜色」,**已撤销,别改回去**。
+     现在这版是极淡的纸色,她贴的那张是极淡的灰蓝,两张都压到不跳。
+     ⚠️ **深色不是把浅色那两个值直接搬过去** —— 那是白纸贴在黑底上,糊眼(实测过)。
+     深色另配一套暗纸色,见下面的 @media 那段。
+     ⚠️ 这是全后台**唯一一处不跟 --accent 走的填色**:便利贴不像纸就不是便利贴了。
+     再要调色照 1.8 那条教训:做几版真实效果给她看,或者给滑杆让她自己调,别猜。 */
   /* 手机上要两列 —— 一列会让纸片摊成横条,就不像贴在墙上的便利贴了 */
   .todo-wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 13px; }
   .todo-note {
-    position: relative; padding: 16px 16px 40px; border-radius: 3px;
-    background: #fdf0b8; color: #3d3522; box-shadow: var(--shadow-card);
+    position: relative; padding: 16px 16px 40px; border-radius: 6px;
+    background: #f6f1e4; color: #4a4438; border: 1px solid rgba(0,0,0,.06);
+    box-shadow: var(--shadow-card);
     font-size: 13.5px; line-height: 1.75; word-break: break-word; white-space: pre-wrap;
     min-height: 108px; transform: rotate(-0.5deg);
   }
-  .todo-note:nth-child(3n)   { transform: rotate(0.7deg); background: #fdeaa8; }
+  .todo-note:nth-child(3n)   { transform: rotate(0.7deg); background: #f4efe1; }
   .todo-note:nth-child(3n+1) { transform: rotate(-0.9deg); }
-  .todo-note.is-done { background: #ece9dd; color: var(--text-light); text-decoration: line-through; }
-  .todo-note.by-owner { background: #dbeefd; color: #24364a; }
-  .todo-note.by-owner.is-done { background: #e2e8ee; color: var(--text-light); }
+  .todo-note.is-done { background: #efeee9; color: var(--text-light); text-decoration: line-through; }
+  .todo-note.by-owner { background: #eceff3; color: #3d434b; }
+  .todo-note.by-owner.is-done { background: #ebedef; color: var(--text-light); }
   .todo-id { display: block; margin-bottom: 7px; font-size: 10.5px; letter-spacing: .06em; opacity: .55; }
   .todo-who { display: block; margin-top: 9px; font-size: 10.5px; opacity: .6; text-decoration: none; }
   .todo-acts { position: absolute; left: 14px; right: 14px; bottom: 11px; display: flex; gap: 8px; }
@@ -496,13 +502,14 @@
   }
   .todo-add button:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
   @media (prefers-color-scheme: dark) {
-    .todo-note { background: #6b6134; color: #f2ecd8; }
-    .todo-note:nth-child(3n) { background: #6f6437; }
-    .todo-note.is-done { background: #3a3a35; color: var(--text-light); }
-    .todo-note.by-owner { background: #38516b; color: #e6eef6; }
-    .todo-note.by-owner.is-done { background: #333c45; color: var(--text-light); }
-    .todo-acts button { background: rgba(0,0,0,.22); border-color: rgba(255,255,255,.16); }
-    .todo-acts button:hover { background: rgba(0,0,0,.4); }
+    /* 深色是同一张纸压暗,不是把浅色那两个值搬过来(白纸贴黑底会糊眼) */
+    .todo-note { background: #2b2721; color: #e7e0d2; border-color: rgba(255,255,255,.07); }
+    .todo-note:nth-child(3n) { background: #2e2a23; }
+    .todo-note.is-done { background: #242320; color: var(--text-light); }
+    .todo-note.by-owner { background: #262b31; color: #dbe2ea; }
+    .todo-note.by-owner.is-done { background: #232629; color: var(--text-light); }
+    .todo-acts button { background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.14); }
+    .todo-acts button:hover { background: rgba(255,255,255,.14); }
   }
 
   /* ── 详情抽屉 ── */
@@ -1080,7 +1087,7 @@
 <div class="content" id="todos-view" style="display:none">
   <div class="letters-intro">
     便利贴是<b>晏自己的待办</b>——他随手记、做完自己勾掉,开机时「还没做的」会摆在他眼前。
-    <span class="letters-note">这块是他的东西,这一页只是让你也能看见。你也可以贴一张给他:<b>你贴的会是蓝色的,他那边会标「(她留的)」</b>——他有权知道哪条不是自己写的。撕掉的便利贴不留底,撕了就没了。</span>
+    <span class="letters-note">这块是他的东西,这一页只是让你也能看见。你也可以贴一张给他:<b>你贴的那张偏灰蓝,他那边会标「(她留的)」</b>——他有权知道哪条不是自己写的。撕掉的便利贴不留底,撕了就没了。</span>
   </div>
   <div class="todo-add">
     <input id="todo-input" type="text" maxlength="500" placeholder="贴一张给他…(可留空不用)" />
