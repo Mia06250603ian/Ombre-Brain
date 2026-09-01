@@ -43,7 +43,7 @@ import hmac
 import secrets
 import time
 import json as _json_lib
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import httpx
 
 
@@ -1914,6 +1914,19 @@ def _norm_todo_id(raw: str) -> str:
     return (raw or "").strip().lstrip("#").lower()
 
 
+def _todo_line(item: dict, box: str) -> str:
+    """便利贴的一行。
+
+    ⚠️ **她从后台贴的条子后面跟一句「(她留的)」**(2026-09-01)：
+    这块便利贴是晏的，后台的写入口是她 2026-09-01 要的（「修改权可以有，
+    但我不一定用」）。**他有权知道哪一条不是自己写的** —— 不标的话，
+    他开机会看见一条不知从哪冒出来的待办，那比看不见更糟。
+    判据是条目上的 `by == "owner"`；**旧条目没有这个字段 = 他自己写的**，不用迁移。
+    """
+    mark = "  (她留的)" if item.get("by") == "owner" else ""
+    return f"  [{box}] #{item.get('id')}  {item.get('text', '')}{mark}"
+
+
 def _render_todos(items: list, only_open: bool = False) -> str:
     open_items = [it for it in items if not it.get("done")]
     done_items = [it for it in items if it.get("done")]
@@ -1923,7 +1936,7 @@ def _render_todos(items: list, only_open: bool = False) -> str:
             return "没有待办事项。"
         lines = ["=== 待办事项 ==="]
         for it in open_items:
-            lines.append(f"  [ ] #{it.get('id')}  {it.get('text', '')}")
+            lines.append(_todo_line(it, " "))
         lines.append(f"\n共 {len(open_items)} 条待做。")
         return "\n".join(lines)
     if not items:
@@ -1932,11 +1945,11 @@ def _render_todos(items: list, only_open: bool = False) -> str:
     if open_items:
         lines.append("\n【待做】")
         for it in open_items:
-            lines.append(f"  [ ] #{it.get('id')}  {it.get('text', '')}")
+            lines.append(_todo_line(it, " "))
     if done_items:
         lines.append("\n【已完成】")
         for it in done_items:
-            lines.append(f"  [x] #{it.get('id')}  {it.get('text', '')}")
+            lines.append(_todo_line(it, "x"))
     tail = f"\n共 {len(open_items)} 条待做"
     if done_items:
         tail += f"、{len(done_items)} 条已完成"
@@ -1947,6 +1960,17 @@ def _render_todos(items: list, only_open: bool = False) -> str:
 async def _todos_impl(add: str = "", done: str = "", undone: str = "",
                       remove: str = "", clear_done: bool = False,
                       only_open: bool = False) -> str:
+    # ⚠️ 写的时候必须拿锁(2026-09-01):自从面板也能写便利贴,这个文件就有**两个写入方**——
+    # 晏走这里,她走 /api/todos/*,两边都是「读整本 → 改 → 整本重写」。
+    # **锁只有一边拿等于没锁**(先写的那次会被后写的整个顶掉,且不报错),所以这里也要拿。
+    # 只读路径(无参数查看/awaken)不拿锁,和以前一样。
+    writing = bool((add or "").strip() or done or undone or remove or clear_done)
+    with (_todos_lock() if writing else nullcontext()):
+        return await _todos_write_locked(add, done, undone, remove, clear_done, only_open)
+
+
+async def _todos_write_locked(add: str, done: str, undone: str,
+                              remove: str, clear_done: bool, only_open: bool) -> str:
     try:
         items = _load_todos_list()
     except Exception as e:
@@ -1998,6 +2022,157 @@ async def _todos_impl(add: str = "", done: str = "", undone: str = "",
 
     body = _render_todos(items, only_open=only_open)
     return (msg + "\n\n" + body) if msg else body
+
+
+# =============================================================
+# /api/todos — 便利贴的后台入口(2026-09-01)
+#
+# **这块便利贴是晏的**(所有者 2026-09-01 原话:「便利贴是他的,只给他用,
+# 但是我想能看到,修改权可以有,但我不一定用」)。所以:
+#   · 读:她要能看见 —— 此前后台一个入口都没有,`todos.json` 只有晏自己看得到,
+#     她想知道他记了什么只能开口问他。
+#   · 写:入口留着,但**她的东西要标出来是她的**(见下面 `by` 那段),
+#     不能让他开机看见一条不知哪来的待办。
+#
+# 存储、原子写、编号规则**全部复用晏那套**(`_load_todos_list` / `_save_todos_list` /
+# `_new_todo_id`)—— 别在这里另造一份写法,两套写法迟早会写坏同一个文件。
+# =============================================================
+@contextmanager
+def _todos_lock():
+    """便利贴的写锁。晏走 MCP 工具、她走面板,两边都是「读整本 → 改 → 整本重写」,
+    撞上时后写的那次会把先写的那次**整个顶掉**(丢一条待办,且不报错)。
+    锁文件与 todos.json 同处(随卷持久),只在写路径上用,读不加锁。
+    ⚠️ 拿不到锁不算致命(某些文件系统不支持 flock):退化成「没有锁」= 今天以前的行为,
+    不因此拒绝写入 —— 丢一条待办也好过记不进去。写法照 `_letters_lock` 那套。
+    """
+    import fcntl
+    lock_path = _todos_path() + ".lock"
+    f = None
+    try:
+        f = open(lock_path, "a+")
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+    except Exception:
+        f = None
+    try:
+        yield
+    finally:
+        if f is not None:
+            try:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            except Exception:
+                pass
+            f.close()
+
+
+@mcp.custom_route("/api/todos", methods=["GET"])
+async def api_todos(request):
+    """便利贴全文(只读)。返回原始条目,渲染交给前端。"""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    try:
+        items = _load_todos_list()
+        return JSONResponse({
+            "items": items,
+            "open": len([it for it in items if not it.get("done")]),
+            "done": len([it for it in items if it.get("done")]),
+        })
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@mcp.custom_route("/api/todos/add", methods=["POST"])
+async def api_todos_add(request):
+    """她在面板上贴一张。body: {text}
+
+    ⚠️ **她贴的条子会打上 `by: "owner"`**,晏开机时那条后面跟着「(她留的)」——
+    这块便利贴是他的,他有权知道哪条不是自己写的。
+    **旧条目没有这个字段 = 晏自己写的**,不用迁移。
+    """
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "bad json"}, status_code=400)
+    text = str(body.get("text", "")).strip()
+    if not text:
+        return JSONResponse({"error": "内容不能为空"}, status_code=400)
+    if len(text) > 500:
+        return JSONResponse({"error": "一条便利贴最多 500 字"}, status_code=400)
+    try:
+        with _todos_lock():
+            items = _load_todos_list()
+            nid = _new_todo_id(items)
+            items.append({
+                "id": nid,
+                "text": text,
+                "done": False,
+                "created": (datetime.utcnow() + timedelta(hours=8)).isoformat(timespec="seconds"),
+                "by": "owner",
+            })
+            _save_todos_list(items)
+        return JSONResponse({"ok": True, "id": nid, "items": items})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@mcp.custom_route("/api/todos/toggle", methods=["POST"])
+async def api_todos_toggle(request):
+    """勾掉 / 改回未完成。body: {id, done: true|false}"""
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "bad json"}, status_code=400)
+    tid = _norm_todo_id(str(body.get("id", "")))
+    if not tid:
+        return JSONResponse({"error": "id 必填"}, status_code=400)
+    want_done = bool(body.get("done", True))
+    try:
+        with _todos_lock():
+            items = _load_todos_list()
+            hit = next((it for it in items if it.get("id") == tid), None)
+            if not hit:
+                return JSONResponse({"error": f"没找到编号 #{tid} 的待办"}, status_code=404)
+            hit["done"] = want_done
+            _save_todos_list(items)
+        return JSONResponse({"ok": True, "items": items})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@mcp.custom_route("/api/todos/delete", methods=["POST"])
+async def api_todos_delete(request):
+    """撕掉一张。body: {id}
+
+    ⚠️ **这里是真删**(照晏那个 `remove=` 的行为,便利贴本来就是随手记随手撕的东西,
+    不像记忆桶那样留 `.history` 快照)。所以前端必须二次确认 —— 撕了就没了。
+    """
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "bad json"}, status_code=400)
+    tid = _norm_todo_id(str(body.get("id", "")))
+    if not tid:
+        return JSONResponse({"error": "id 必填"}, status_code=400)
+    try:
+        with _todos_lock():
+            items = _load_todos_list()
+            hit = next((it for it in items if it.get("id") == tid), None)
+            if not hit:
+                return JSONResponse({"error": f"没找到编号 #{tid} 的待办"}, status_code=404)
+            items = [it for it in items if it.get("id") != tid]
+            _save_todos_list(items)
+        return JSONResponse({"ok": True, "items": items})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 # =============================================================
@@ -2640,6 +2815,16 @@ async def api_search(request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+# 记忆网络每个桶最多连几条边。相似度 > 0.5 的边在几百个桶里可能上万条，
+# 前端那 80 轮力导向 + 逐条画线扛不住，糊成一团也看不出东西。
+# 环境变量 OMBRE_NETWORK_EDGES_PER_NODE 可调；设 0 = 不封顶（改值 + restart 即生效）。
+try:
+    _network_edge_cap = int(os.environ.get("OMBRE_NETWORK_EDGES_PER_NODE", "6"))
+except ValueError:
+    _network_edge_cap = 6
+NETWORK_EDGES_PER_NODE = _network_edge_cap if _network_edge_cap > 0 else None
+
+
 @mcp.custom_route("/api/network", methods=["GET"])
 async def api_network(request):
     """Get embedding similarity network for visualization."""
@@ -2667,18 +2852,22 @@ async def api_network(request):
                 "pinned": meta.get("pinned", False),
                 "digested": meta.get("digested", False),
             })
-            if embedding_engine and embedding_engine.enabled:
-                emb = await embedding_engine.get_embedding(bid)
-                if emb is not None:
-                    embeddings[bid] = emb
-
         # Build edges from embeddings (similarity > 0.5)
-        ids = list(embeddings.keys())
-        for i, id_a in enumerate(ids):
-            for id_b in ids[i+1:]:
-                sim = embedding_engine._cosine_similarity(embeddings[id_a], embeddings[id_b])
-                if sim > 0.5:
-                    edges.append({"source": id_a, "target": id_b, "similarity": round(sim, 3)})
+        #
+        # ⚠️ 别改回「逐个 get_embedding + 两两 _cosine_similarity」的老写法：
+        # 那是 O(n²) 次纯 Python 点积，438 个桶实测约 30 秒，且同步 CPU 活会
+        # 占住事件循环 —— 打开这一页会把 /mcp 一起卡住（晏调记忆工具超时）。
+        # 现在是一次读库 + numpy 矩阵运算，并丢进线程里跑，事件循环全程不阻塞。
+        if embedding_engine and embedding_engine.enabled:
+            node_ids = [n["id"] for n in nodes]
+            embeddings = await asyncio.to_thread(embedding_engine.load_embeddings, node_ids)
+            pairs = await asyncio.to_thread(
+                embedding_engine.similar_pairs, embeddings, 0.5, NETWORK_EDGES_PER_NODE
+            )
+            edges = [
+                {"source": id_a, "target": id_b, "similarity": sim}
+                for id_a, id_b, sim in pairs
+            ]
 
         return JSONResponse({"nodes": nodes, "edges": edges})
     except Exception as e:

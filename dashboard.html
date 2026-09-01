@@ -457,6 +457,74 @@
     line-height: 1.9; color: var(--text); font-size: 14px;
   }
 
+  /* ── 便利贴(2026-09-01)──
+     这块便利贴是晏的,面板只是让她也能看见。
+     ⚠️ **一天一张小票**(所有者 2026-09-01 拿一张收银小票的图来定的,当天改了三轮,
+     最后一句原话:「可以同一天的待办写在一起,但是不要一大坨都在一起」):
+     同一天记下的待办凑成一张,一张一张铺开;不是一整张长票,也不是一条一张。
+     ~~此前是贴纸墙(黄+蓝 → 淡纸色 B)、以及一整张长小票~~ —— **都已撤销,别改回去**,
+     三轮的取舍记在 INTERNALS 1.11。
+     ⚠️ 深色不是把浅色那张白纸搬过来(白纸贴黑底糊眼),另配一套暗纸色。
+     ⚠️ 手写体走**系统自带的**字体栈,**刻意不引 Google Fonts**:后台目前零外部请求。
+     ⚠️ 下缘锯齿是 conic-gradient 遮罩横向平铺,不是图片;改 padding/背景别把 mask 删了。 */
+  .receipt-wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; align-items: start; }
+  .receipt {
+    position: relative; padding: 16px 15px 22px;
+    background: linear-gradient(#fffefb, #faf6ef);
+    color: #3a352c;
+    box-shadow: 0 6px 18px rgba(0,0,0,.09), 0 1px 2px rgba(0,0,0,.05);
+    --zig: 11px;
+    -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / var(--zig) 100% repeat-x;
+    mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / var(--zig) 100% repeat-x;
+  }
+  .receipt-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .receipt-head b { font-size: 12px; font-weight: 650; letter-spacing: .16em; color: #6d6659; }
+  .receipt-date { font-size: 12.5px; color: #3a352c; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .receipt-rule { border: 0; border-top: 1px dashed #c9c2b4; margin: 11px 0 9px; }
+  .receipt-line {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 6px 2px; cursor: pointer; border-radius: 4px;
+  }
+  .receipt-line:hover { background: rgba(0,0,0,.03); }
+  .receipt-text { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.6; word-break: break-word; white-space: pre-wrap; }
+  .receipt-line.is-done .receipt-text { text-decoration: line-through; color: #a09889; }
+  .receipt-line.by-owner .receipt-text { color: #2f3a46; }
+  .receipt-who { margin-left: 6px; font-size: 10.5px; color: #8a8275; white-space: nowrap; }
+  .receipt-mark { flex: 0 0 auto; font-size: 12px; color: #8a8275; }
+  .receipt-tear {
+    border: 0; background: none; color: #c0b8aa; cursor: pointer; font-family: inherit;
+    font-size: 14px; line-height: 1; padding: 2px 3px; flex: 0 0 auto;
+  }
+  .receipt-tear:hover { color: #6d6659; }
+  .receipt-total { display: flex; justify-content: space-between; padding: 2px 2px 0; font-size: 12px; color: #6d6659; }
+  .receipt-total b { font-weight: 600; color: #3a352c; }
+  .receipt-empty { padding: 22px 2px; text-align: center; font-size: 13px; color: var(--text-light); }
+  .todo-add { display: flex; gap: 10px; margin-bottom: 16px; }
+  .todo-add input {
+    flex: 1; min-width: 0; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 999px; padding: 10px 16px; font-size: 13px; color: var(--text); font-family: inherit;
+  }
+  /* 按钮配色走 --accent / --accent-fg,和 .btn-primary 同一套(别写死颜色) */
+  .todo-add button {
+    background: var(--accent); border: 1px solid var(--accent); color: var(--accent-fg);
+    border-radius: 999px; padding: 10px 20px; font-size: 13px; cursor: pointer;
+    font-family: inherit; white-space: nowrap;
+  }
+  .todo-add button:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+  @media (prefers-color-scheme: dark) {
+    .receipt { background: linear-gradient(#262420, #201e1b); color: #e3ddd0; box-shadow: 0 6px 18px rgba(0,0,0,.45); }
+    .receipt-head b { color: #948c7e; }
+    .receipt-date { color: #e3ddd0; }
+    .receipt-rule { border-top-color: #45413a; }
+    .receipt-line:hover { background: rgba(255,255,255,.05); }
+    .receipt-line.is-done .receipt-text { color: #857e72; }
+    .receipt-line.by-owner .receipt-text { color: #cfdae6; }
+    .receipt-who, .receipt-mark, .receipt-total { color: #948c7e; }
+    .receipt-total b { color: #e3ddd0; }
+    .receipt-tear { color: #6f6961; }
+    .receipt-tear:hover { color: #b9b1a4; }
+  }
+
   /* ── 详情抽屉 ── */
   .detail-panel {
     position: fixed;
@@ -907,6 +975,7 @@
   <div class="tab" data-tab="breath">Breath 模拟</div>
   <div class="tab" data-tab="network">记忆网络</div>
   <div class="tab" data-tab="letters">信箱</div>
+  <div class="tab" data-tab="todos">便利贴</div>
   <div class="tab" data-tab="config">配置</div>
   <div class="tab" data-tab="import">导入</div>
   <div class="tab" data-tab="trash">回收站</div>
@@ -1026,6 +1095,19 @@
   </div>
   <div id="letters-count" class="letters-count"></div>
   <div id="letters-list"></div>
+</div>
+
+<div class="content" id="todos-view" style="display:none">
+  <div class="letters-intro">
+    便利贴是<b>晏自己的待办</b>——他随手记、做完自己勾掉,开机时「还没做的」会摆在他眼前。
+    <span class="letters-note">这块是他的东西,这一页只是让你也能看见。你也可以贴一张给他:<b>你贴的那条会标「你贴的」,他那边会标「(她留的)」</b>——他有权知道哪条不是自己写的。撕掉的便利贴不留底,撕了就没了。</span>
+  </div>
+  <div class="todo-add">
+    <input id="todo-input" type="text" maxlength="500" placeholder="贴一张给他…(可留空不用)" />
+    <button onclick="addTodo()">贴上去</button>
+  </div>
+  <div id="todos-count" class="letters-count"></div>
+  <div id="todos-lines" class="receipt-wall"></div>
 </div>
 
 <div class="content" id="config-view" style="display:none">
@@ -1371,12 +1453,14 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.getElementById('breath-view').style.display = target === 'breath' ? '' : 'none';
     document.getElementById('network-view').style.display = target === 'network' ? '' : 'none';
     document.getElementById('letters-view').style.display = target === 'letters' ? '' : 'none';
+    document.getElementById('todos-view').style.display = target === 'todos' ? '' : 'none';
     document.getElementById('config-view').style.display = target === 'config' ? '' : 'none';
     document.getElementById('import-view').style.display = target === 'import' ? '' : 'none';
     document.getElementById('trash-view').style.display = target === 'trash' ? '' : 'none';
     document.getElementById('settings-view').style.display = target === 'settings' ? '' : 'none';
     if (target === 'network') loadNetwork();
     if (target === 'letters') loadLetters();
+    if (target === 'todos') loadTodos();
     if (target === 'config') loadConfig();
     if (target === 'import') { pollImportStatus(); loadImportResults(); }
     if (target === 'trash') loadTrash();
@@ -1546,6 +1630,156 @@ function letterActions(it, textEl) {
   bindDelete();
   return acts;
 }
+
+// ── 便利贴(2026-09-01)──
+// 这块便利贴是晏的(存在卷上的 todos.json,MCP 的 todos 工具是他的入口)。
+// 这一页让她也能看见,并留了写入口 —— 她贴的条子服务端会打 by:"owner",
+// 晏那边显示「(她留的)」,这一页在那行后面标「你贴的」。
+// ⚠️ 页面做成一张小票(所有者拿图来定的):一行一条、右边日期、底下 TOTAL、下缘撕口。
+// ⚠️ 内容一律 textContent,不拼 HTML(便利贴是自由文本,和信箱同一条规矩)。
+async function loadTodos() {
+  const wall = document.getElementById('todos-lines');
+  const cnt = document.getElementById('todos-count');
+  wall.innerHTML = '';
+  cnt.textContent = '读取中…';
+  try {
+    const res = await fetch(BASE + '/api/todos');
+    const data = await res.json();
+    if (!res.ok) throw new Error((data && data.error) ? data.error : `HTTP ${res.status}`);
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (!items.length) {
+      cnt.textContent = '';
+      const empty = document.createElement('div');
+      empty.className = 'receipt-empty';
+      empty.textContent = '便利贴上还什么都没有。';
+      wall.appendChild(empty);
+      return;
+    }
+    cnt.textContent = `${data.open} 条待做` + (data.done ? `、${data.done} 条已完成` : '');
+    // 同一天记下的凑一张小票,新的一天在前;没有日期的(08-14 那版的旧条目)单独一张
+    const days = new Map();
+    for (const it of items) {
+      const key = todoDayKey(it.created);
+      if (!days.has(key)) days.set(key, []);
+      days.get(key).push(it);
+    }
+    const keys = [...days.keys()].sort().reverse();
+    const undated = keys.indexOf('');
+    if (undated >= 0) keys.push(keys.splice(undated, 1)[0]);   // 没日期的排最后
+    for (const key of keys) wall.appendChild(dayReceipt(key, days.get(key)));
+  } catch (e) {
+    cnt.textContent = '读取失败:' + e.message;
+  }
+}
+
+function todoDayKey(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+// 一天一张小票:抬头日期 → 虚线 → 这天的每一条 → 虚线 → 这天的合计 → 下缘撕口
+function dayReceipt(key, dayItems) {
+  const card = document.createElement('div');
+  card.className = 'receipt';
+
+  const head = document.createElement('div');
+  head.className = 'receipt-head';
+  const label = document.createElement('b');
+  label.textContent = 'TO DO';
+  const date = document.createElement('span');
+  date.className = 'receipt-date';
+  date.textContent = key ? key.slice(5).replace('-', '/') + '/' + key.slice(0, 4) : '没有日期';
+  head.appendChild(label); head.appendChild(date);
+  card.appendChild(head);
+  card.appendChild(document.createElement('hr')).className = 'receipt-rule';
+
+  // 一张票里也是没做的在前
+  const ordered = dayItems.filter(it => !it.done).concat(dayItems.filter(it => it.done));
+  for (const it of ordered) card.appendChild(todoLine(it));
+
+  card.appendChild(document.createElement('hr')).className = 'receipt-rule';
+  const total = document.createElement('div');
+  total.className = 'receipt-total';
+  const l = document.createElement('span'); l.textContent = 'TOTAL';
+  const v = document.createElement('b');
+  const open = dayItems.filter(it => !it.done).length;
+  v.textContent = open ? `${open} 条待做` : '全做完了';
+  total.appendChild(l); total.appendChild(v);
+  card.appendChild(total);
+  return card;
+}
+
+function todoLine(it) {
+  const line = document.createElement('div');
+  line.className = 'receipt-line' + (it.done ? ' is-done' : '') + (it.by === 'owner' ? ' by-owner' : '');
+  line.title = '#' + (it.id || '');
+
+  const mark = document.createElement('span');
+  mark.className = 'receipt-mark';
+  mark.textContent = it.done ? '✓' : '□';
+
+  const text = document.createElement('div');
+  text.className = 'receipt-text';
+  text.textContent = it.text || '';
+  if (it.by === 'owner') {
+    const who = document.createElement('span');
+    who.className = 'receipt-who';
+    who.textContent = '· 你贴的';
+    text.appendChild(who);
+  }
+  // 点一行就是勾掉/取消 —— 小票上摆一排按钮不像小票
+  line.onclick = (e) => { if (e.target.classList.contains('receipt-tear')) return; toggleTodo(it.id, !it.done); };
+
+  const tear = document.createElement('button');
+  tear.className = 'receipt-tear';
+  tear.type = 'button';
+  tear.textContent = '×';
+  tear.title = '撕掉';
+  tear.onclick = () => deleteTodo(it);
+
+  line.appendChild(mark); line.appendChild(text); line.appendChild(tear);
+  return line;
+}
+
+async function todoWrite(url, body) {
+  try {
+    const res = await fetch(BASE + url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error((data && data.error) ? data.error : `HTTP ${res.status}`);
+    await loadTodos();
+    return true;
+  } catch (e) {
+    document.getElementById('todos-count').textContent = '操作失败:' + e.message;
+    return false;
+  }
+}
+
+async function addTodo() {
+  const input = document.getElementById('todo-input');
+  const text = input.value.trim();
+  if (!text) return;
+  if (await todoWrite('/api/todos/add', { text })) input.value = '';
+}
+
+function toggleTodo(id, done) { todoWrite('/api/todos/toggle', { id, done }); }
+
+// ⚠️ 撕掉是**真删**,没有回收站(便利贴本来就是随手撕的东西),所以必须二次确认。
+function deleteTodo(it) {
+  const preview = (it.text || '').slice(0, 20);
+  if (!confirm(`撕掉这一条?\n\n${preview}${(it.text || '').length > 20 ? '…' : ''}\n\n撕了就没了,捞不回来。`)) return;
+  todoWrite('/api/todos/delete', { id: it.id });
+}
+
+document.getElementById('todo-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') addTodo();
+});
 
 async function loadLetters() {
   const box = document.getElementById('letters-list');
