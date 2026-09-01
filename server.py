@@ -2640,6 +2640,16 @@ async def api_search(request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+# 记忆网络每个桶最多连几条边。相似度 > 0.5 的边在几百个桶里可能上万条，
+# 前端那 80 轮力导向 + 逐条画线扛不住，糊成一团也看不出东西。
+# 环境变量 OMBRE_NETWORK_EDGES_PER_NODE 可调；设 0 = 不封顶（改值 + restart 即生效）。
+try:
+    _network_edge_cap = int(os.environ.get("OMBRE_NETWORK_EDGES_PER_NODE", "6"))
+except ValueError:
+    _network_edge_cap = 6
+NETWORK_EDGES_PER_NODE = _network_edge_cap if _network_edge_cap > 0 else None
+
+
 @mcp.custom_route("/api/network", methods=["GET"])
 async def api_network(request):
     """Get embedding similarity network for visualization."""
@@ -2667,18 +2677,22 @@ async def api_network(request):
                 "pinned": meta.get("pinned", False),
                 "digested": meta.get("digested", False),
             })
-            if embedding_engine and embedding_engine.enabled:
-                emb = await embedding_engine.get_embedding(bid)
-                if emb is not None:
-                    embeddings[bid] = emb
-
         # Build edges from embeddings (similarity > 0.5)
-        ids = list(embeddings.keys())
-        for i, id_a in enumerate(ids):
-            for id_b in ids[i+1:]:
-                sim = embedding_engine._cosine_similarity(embeddings[id_a], embeddings[id_b])
-                if sim > 0.5:
-                    edges.append({"source": id_a, "target": id_b, "similarity": round(sim, 3)})
+        #
+        # ⚠️ 别改回「逐个 get_embedding + 两两 _cosine_similarity」的老写法：
+        # 那是 O(n²) 次纯 Python 点积，438 个桶实测约 30 秒，且同步 CPU 活会
+        # 占住事件循环 —— 打开这一页会把 /mcp 一起卡住（晏调记忆工具超时）。
+        # 现在是一次读库 + numpy 矩阵运算，并丢进线程里跑，事件循环全程不阻塞。
+        if embedding_engine and embedding_engine.enabled:
+            node_ids = [n["id"] for n in nodes]
+            embeddings = await asyncio.to_thread(embedding_engine.load_embeddings, node_ids)
+            pairs = await asyncio.to_thread(
+                embedding_engine.similar_pairs, embeddings, 0.5, NETWORK_EDGES_PER_NODE
+            )
+            edges = [
+                {"source": id_a, "target": id_b, "similarity": sim}
+                for id_a, id_b, sim in pairs
+            ]
 
         return JSONResponse({"nodes": nodes, "edges": edges})
     except Exception as e:

@@ -309,3 +309,156 @@ class EmbeddingEngine:
         if norm_a == 0 or norm_b == 0:
             return 0.0
         return dot / (norm_a * norm_b)
+
+    # ------------------------------------------------------------------
+    # 全库两两相似度（给 /api/network 这类「所有桶互相比一遍」的场景用）
+    #
+    # ⚠️ 为什么不直接用 _cosine_similarity 循环：那是 O(n²) 次纯 Python 点积。
+    # 438 个桶 = 95703 对 × 3072 维，实测约 30 秒（Zeabur 上更久），
+    # 而且它是同步 CPU 活，跑在 async 处理函数里会占住整个事件循环 ——
+    # 那段时间 /mcp 也不响应，晏调记忆工具会跟着卡。2026-09-01 实测到这个问题。
+    # 这里改成一次读库 + numpy 矩阵乘法，同一批数据毫秒级出结果。
+    # numpy 拿不到时自动退回纯 Python（只是慢，不会坏）。
+    # ------------------------------------------------------------------
+
+    def load_embeddings(self, bucket_ids=None) -> dict[str, list[float]]:
+        """一次连接读出全部向量（可选按 bucket_ids 过滤）。
+
+        老写法是每个桶调一次 get_embedding = 每个桶开一次 sqlite 连接；
+        438 个桶就是 438 次连接。这里只开一次。
+        """
+        wanted = set(bucket_ids) if bucket_ids is not None else None
+        conn = sqlite3.connect(self.db_path)
+        try:
+            rows = conn.execute(
+                "SELECT bucket_id, embedding FROM embeddings WHERE model = ?",
+                (self.model,),
+            ).fetchall()
+        finally:
+            conn.close()
+
+        out: dict[str, list[float]] = {}
+        for bucket_id, emb_json in rows:
+            if wanted is not None and bucket_id not in wanted:
+                continue
+            try:
+                vector = json.loads(emb_json)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(vector, list) and vector:
+                out[bucket_id] = vector
+        return out
+
+    def similar_pairs(
+        self,
+        embeddings: dict[str, list[float]],
+        min_sim: float = 0.5,
+        top_k: int | None = None,
+    ) -> list[tuple[str, str, float]]:
+        """算出所有相似度高于 min_sim 的桶对，返回 [(id_a, id_b, sim), ...]。
+
+        top_k 不为 None 时，每个桶只保留与它最像的 top_k 条
+        （一条边只要在任意一端的前 top_k 里就留下）——防止边多到前端画不动。
+
+        结果与逐对调用 _cosine_similarity 一致（tests/test_similar_pairs.py 钉着这条）。
+        """
+        # 维度不一致的向量没法进同一个矩阵（换过 embedding 模型时会出现）。
+        # 老写法遇到这种是 _cosine_similarity 返回 0.0 = 不连边，
+        # 这里同样把少数派整个排除掉，行为一致。
+        ids_all = [bid for bid, vec in embeddings.items() if vec]
+        if len(ids_all) < 2:
+            return []
+        dims: dict[int, int] = {}
+        for bid in ids_all:
+            dim = len(embeddings[bid])
+            dims[dim] = dims.get(dim, 0) + 1
+        main_dim = max(dims.items(), key=lambda kv: kv[1])[0]
+        ids = [bid for bid in ids_all if len(embeddings[bid]) == main_dim]
+        skipped = len(ids_all) - len(ids)
+        if skipped:
+            logger.warning(
+                f"similar_pairs: skipped {skipped} vector(s) with mismatched dimension "
+                f"(main dim={main_dim})"
+            )
+        if len(ids) < 2:
+            return []
+
+        try:
+            import numpy as np
+        except ImportError:
+            logger.warning("similar_pairs: numpy unavailable, falling back to pure Python")
+            return self._similar_pairs_fallback(embeddings, ids, min_sim, top_k)
+
+        matrix = np.asarray([embeddings[bid] for bid in ids], dtype=np.float32)
+        norms = np.linalg.norm(matrix, axis=1)
+        keep = norms > 0
+        if not bool(keep.all()):
+            matrix = matrix[keep]
+            norms = norms[keep]
+            ids = [bid for bid, ok in zip(ids, keep.tolist()) if ok]
+            if len(ids) < 2:
+                return []
+        matrix = matrix / norms[:, None]
+
+        count = len(ids)
+        # 分块算，峰值内存只跟「块 × 全部」有关，桶再多也不会一口气吃掉整张 n×n 表。
+        block = 256
+        best: dict[str, list[float]] = {}
+        pairs: list[tuple[str, str, float]] = []
+        for start in range(0, count, block):
+            stop = min(start + block, count)
+            sims = matrix[start:stop] @ matrix.T
+            for offset in range(stop - start):
+                row_index = start + offset
+                row = sims[offset]
+                row[row_index] = -1.0          # 自己跟自己不算
+                hits = np.nonzero(row > min_sim)[0]
+                if top_k is not None and hits.size > top_k:
+                    # 只留这一行最像的 top_k 个
+                    order = np.argsort(row[hits])[::-1][:top_k]
+                    hits = hits[order]
+                for col_index in hits.tolist():
+                    if col_index < row_index:
+                        continue           # 上三角即可，每对只出一次
+                    pairs.append((ids[row_index], ids[col_index], float(row[col_index])))
+            del sims
+
+        if top_k is not None:
+            pairs = self._cap_per_node(pairs, top_k)
+        pairs.sort(key=lambda item: item[2], reverse=True)
+        return [(a, b, round(sim, 3)) for a, b, sim in pairs]
+
+    def _similar_pairs_fallback(self, embeddings, ids, min_sim, top_k):
+        """numpy 不在时的退路：仍是 O(n²)，但模长只算一次，比原来的写法快约 3 倍。"""
+        norms = {}
+        for bid in ids:
+            vec = embeddings[bid]
+            norm = math.sqrt(sum(x * x for x in vec))
+            if norm > 0:
+                norms[bid] = norm
+        usable = [bid for bid in ids if bid in norms]
+        pairs: list[tuple[str, str, float]] = []
+        for index, id_a in enumerate(usable):
+            vec_a = embeddings[id_a]
+            for id_b in usable[index + 1:]:
+                sim = sum(x * y for x, y in zip(vec_a, embeddings[id_b])) / (norms[id_a] * norms[id_b])
+                if sim > min_sim:
+                    pairs.append((id_a, id_b, sim))
+        if top_k is not None:
+            pairs = self._cap_per_node(pairs, top_k)
+        pairs.sort(key=lambda item: item[2], reverse=True)
+        return [(a, b, round(sim, 3)) for a, b, sim in pairs]
+
+    @staticmethod
+    def _cap_per_node(pairs, top_k: int):
+        """每个桶只保留最像的 top_k 条边（边在任意一端入选就保留）。"""
+        ranked: dict[str, list[tuple[str, str, float]]] = {}
+        for pair in pairs:
+            ranked.setdefault(pair[0], []).append(pair)
+            ranked.setdefault(pair[1], []).append(pair)
+        kept = set()
+        for edges in ranked.values():
+            edges.sort(key=lambda item: item[2], reverse=True)
+            for edge in edges[:top_k]:
+                kept.add((edge[0], edge[1]))
+        return [pair for pair in pairs if (pair[0], pair[1]) in kept]
