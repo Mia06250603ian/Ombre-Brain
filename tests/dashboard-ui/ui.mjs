@@ -193,43 +193,47 @@ for (const scheme of ['light', 'dark']) {
   ok('恢复后那条的按钮没了', (await page.locator('#trash-list .letter-btn').count()) === 1);
 
   // 便利贴(2026-09-01):这块是晏的,面板只是让她看见 + 留了写入口。
-  // 三种纸片各一张:他记的(黄)、她贴的(蓝)、已完成的(灰+划掉)。
+  // 页面是一张小票:一行一条、右边日期、底下 TOTAL、下缘一排锯齿撕口。
   await page.locator('.tab[data-tab="todos"]').click();
   await page.waitForTimeout(400);
-  ok('便利贴列出三张', (await page.locator('#todos-wall .todo-note').count()) === 3);
-  ok('没做的排在前面', await page.locator('#todos-wall .todo-note').first()
+  ok('小票上列出三条', (await page.locator('#todos-lines .receipt-line').count()) === 3);
+  ok('没做的排在前面', await page.locator('#todos-lines .receipt-line').first()
     .evaluate(el => !el.classList.contains('is-done')));
-  ok('她贴的那张是蓝的、标着「你贴的」', await page.locator('#todos-wall .todo-note.by-owner').first()
+  ok('她贴的那条标着「你贴的」', await page.locator('#todos-lines .receipt-line.by-owner').first()
     .evaluate(el => el.innerText.includes('你贴的')));
-  ok('已完成的划掉了', await page.locator('#todos-wall .todo-note.is-done').first()
+  ok('已完成的划掉了', await page.locator('#todos-lines .receipt-line.is-done .receipt-text').first()
     .evaluate(el => getComputedStyle(el).textDecorationLine === 'line-through'));
-  ok('便利贴不是记忆桶的样子(纸片,不是圆角卡)', await page.locator('#todos-wall .todo-note').first()
-    .evaluate(el => parseFloat(getComputedStyle(el).borderRadius) < 8));
+  ok('底下有 TOTAL 那三行', (await page.locator('#todos-total .receipt-total').count()) === 3
+    && /TOTAL/.test(await page.locator('#todos-total').innerText()));
+  ok('小票下缘有锯齿(挂了遮罩)', await page.locator('#todos-receipt')
+    .evaluate(el => (getComputedStyle(el).webkitMaskImage || getComputedStyle(el).maskImage).includes('conic-gradient')));
+  ok('手写体没走外部字体(零外部请求)', await page.locator('.receipt-sign')
+    .evaluate(el => !/Google|http/i.test(getComputedStyle(el).fontFamily)));
   await page.screenshot({ path: SHOTS + '/todos-' + scheme + '.png' });
 
   // 贴一张:输入框回车即可
   await page.fill('#todo-input', '测试贴一张');
   await page.press('#todo-input', 'Enter');
   await page.waitForTimeout(400);
-  ok('贴上去之后多了一张', (await page.locator('#todos-wall .todo-note').count()) === 4);
+  ok('贴上去之后多了一条', (await page.locator('#todos-lines .receipt-line').count()) === 4);
   ok('贴完输入框清空', (await page.inputValue('#todo-input')) === '');
-  ok('新贴的算她的', (await page.locator('#todos-wall .todo-note.by-owner').count()) === 2);
+  ok('新贴的算她的', (await page.locator('#todos-lines .receipt-line.by-owner').count()) === 2);
 
-  // 勾掉:勾完那张要变成已完成
-  await page.locator('#todos-wall .todo-note:not(.is-done) .todo-acts button').first().click();
+  // 点一行 = 勾掉(小票上不摆按钮)
+  await page.locator('#todos-lines .receipt-line:not(.is-done) .receipt-text').first().click();
   await page.waitForTimeout(400);
-  ok('勾掉之后多一张已完成', (await page.locator('#todos-wall .todo-note.is-done').count()) === 2);
+  ok('点一行就勾掉了', (await page.locator('#todos-lines .receipt-line.is-done').count()) === 2);
 
   // 撕掉是真删,必须二次确认:先取消,什么都不该变
-  const before = await page.locator('#todos-wall .todo-note').count();
+  const before = await page.locator('#todos-lines .receipt-line').count();
   page.once('dialog', d => d.dismiss());
-  await page.locator('#todos-wall .todo-acts button').nth(1).click();
+  await page.locator('#todos-lines .receipt-tear').first().click();
   await page.waitForTimeout(300);
-  ok('撕掉取消确认就什么都不做', (await page.locator('#todos-wall .todo-note').count()) === before);
+  ok('撕掉取消确认就什么都不做', (await page.locator('#todos-lines .receipt-line').count()) === before);
   page.once('dialog', d => d.accept());
-  await page.locator('#todos-wall .todo-acts button').nth(1).click();
+  await page.locator('#todos-lines .receipt-tear').first().click();
   await page.waitForTimeout(400);
-  ok('确认之后那张没了', (await page.locator('#todos-wall .todo-note').count()) === before - 1);
+  ok('确认之后那条没了', (await page.locator('#todos-lines .receipt-line').count()) === before - 1);
 
   // 其余标签页各开一次,看有没有炸
   for (const t of ['breath', 'letters', 'config', 'import', 'settings']) {
