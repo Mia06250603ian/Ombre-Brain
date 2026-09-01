@@ -8,6 +8,7 @@ import { kaDecide, kaPrompt, kaSilent } from "./keepalive.mjs";
 import { ctxReading, ctxDecide, ctxCompacted, ctxSoftNote, ctxHardNote, ctxFinalNote, ctxPct, ctxSoftShouldReset } from "./ctxguard.mjs";
 import { pickApiError, apiErrorKind, resultOutcome } from "./apierror.mjs";
 import { buildPromptArgs, helpMentionsReplace, BASE_PROMPT_DEFAULT, ANCHOR_TAIL_REPLACE, SOUL_ANCHOR_DEFAULT } from "./sysprompt.mjs";
+import { formatArgs, formatResult, pickToolResults, toolName, charLimit, TOOLVIS_DEFAULTS } from "./toolvis.mjs";
 
 const PORT = process.env.PORT || 8080;
 const SHIM_KEY = process.env.SHIM_KEY || "";            // Kelivo 要填的 API Key,自己编
@@ -33,6 +34,25 @@ const MCP_CONFIG = process.env.MCP_CONFIG || ".mcp.json";
 const FORWARD_THINKING = process.env.FORWARD_THINKING !== "0";
 const USER_NAME = process.env.USER_NAME || "你";          // 你的称呼
 const AI_NAME = process.env.AI_NAME || "TA";             // AI 的名字
+
+// ---- 工具可见化(2026-09-01,见 toolvis.mjs 头注)----
+// 思考流里除了 `〔🔧 工具名〕`,再显示参数(`→`)和返回值(`←`)。
+// ⚠️ **别再照「这会吃掉晏的窗口」那句改** —— 那是 2026-08-31 的推断,09-01 读码核实**已撤销**:
+// 这些字只走 shim → 手机那条 SSE,从不回流进程(每轮只喂 `lastUser`),而工具返回本来就在他窗口里。
+// **两把字数尺子是防刷屏,不是省窗口**(考据在 toolvis.mjs 头注)。
+// 四个都是环境变量:**改值 + service restart 即生效,不用重新部署、不丢窗口**。
+// 急救开关:`TOOLVIS_ON=0` + restart,立刻回到 2026-08-31 之前的行为(只剩那行工具名)。
+const TOOLVIS = {
+  on: process.env.TOOLVIS_ON !== "0",
+  // charLimit:值写错(非数字/负数)就回落默认,别静默变成「完全不截断」
+  argChars: charLimit(process.env.TOOLVIS_ARG_CHARS, TOOLVIS_DEFAULTS.argChars),
+  resultChars: charLimit(process.env.TOOLVIS_RESULT_CHARS, TOOLVIS_DEFAULTS.resultChars),
+  // 默认不打码 = `hold` 的 content(记忆原文)会显示出来。所有者 2026-09-01 知情选的;
+  // 她要是嫌截图外发会露正文,设 `TOOLVIS_REDACT=1` + restart,那些字段变成 `〔N 字〕`。
+  redact: process.env.TOOLVIS_REDACT === "1",
+  redactKeys: (process.env.TOOLVIS_REDACT_KEYS || TOOLVIS_DEFAULTS.redactKeys.join(","))
+    .split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean),
+};
 
 // ---- 系统提示词 ----
 // 两种模式,由 SYS_PROMPT_MODE 决定(默认 append = 2026-08-23 之前的行为):
@@ -221,7 +241,13 @@ function handleEvent(ev) {
       // MCP 工具调用可见化:思考里插一行标记
       const cb = e.content_block || {};
       if (cb.type === "tool_use" && typeof cb.name === "string" && cb.name.startsWith("mcp__")) {
-        turn.sse?.thinking(`\n〔🔧 ${cb.name.replace(/^mcp__/, "")}〕\n`);
+        turn.sse?.thinking(`\n〔🔧 ${toolName(cb.name)}〕\n`);
+        // 记下这个 content block 是哪个工具:参数分成许多片 input_json_delta 跟在后面,
+        // 要按 index 攒;返回值那条 user 事件则靠 tool_use_id 对回来。
+        if (TOOLVIS.on && typeof e.index === "number") {
+          turn.toolBlocks.set(e.index, { id: cb.id || "", name: toolName(cb.name), json: "" });
+          if (cb.id) turn.toolNames.set(cb.id, toolName(cb.name));
+        }
         // 归档不再触发换窗口(2026-07-20 所有者定:换窗只认「换窗口」指令)。
         // 这里只把归档记成增量基线,守卫别紧跟着再催一遍。
         if (cb.name.endsWith("__archive_session")) ctxArchivedAt = Math.max(ctxArchivedAt, ctxTokens);
@@ -230,6 +256,29 @@ function handleEvent(ev) {
     if (e.type === "content_block_delta") {
       if (d.type === "text_delta" && d.text) { turn.fullText += d.text; turn.sse?.text(d.text); }
       else if (d.type === "thinking_delta") { turn.sse?.thinking(d.thinking || d.text || ""); }
+      // 工具参数是一片片流过来的,攒到 content_block_stop 再一次吐出去
+      // (半路吐会把一个 JSON 劈成许多行,而且攒不全就没法打码)。
+      else if (d.type === "input_json_delta" && typeof d.partial_json === "string") {
+        const b = turn.toolBlocks.get(e.index);
+        if (b) b.json += d.partial_json;
+      }
+    }
+    if (e.type === "content_block_stop") {
+      const b = turn.toolBlocks.get(e.index);
+      if (b) { turn.sse?.thinking(formatArgs(b.json, TOOLVIS)); turn.toolBlocks.delete(e.index); }
+    }
+    return;
+  }
+  // 工具**返回值**:CLI 把工具回执当成下一轮的用户输入,以一条 `user` 事件回到 stdout,
+  // 所以它不在 stream_event 里 —— 2026-08-31 之前这类事件连 handleEvent 都进不来。
+  // ⚠️ 只认 tool_result 块:真正的用户消息长得也像 user 事件(pickToolResults 里钉了单测)。
+  if (ev.type === "user") {
+    if (!TOOLVIS.on) return;
+    for (const r of pickToolResults(ev)) {
+      const name = turn.toolNames.get(r.id) || "";
+      // 只显示我们自己插过标记的那些(mcp__*),别把 CLI 内建工具的回执也倒出来
+      if (!name) continue;
+      turn.sse?.thinking(formatResult(r.text, { ...TOOLVIS, isError: r.isError }));
     }
     return;
   }
@@ -292,7 +341,8 @@ function pump() {
   // 所以「没报模型」永远不会触发重开——这是防两个桥把她拽回旧模型的那道锁。
   if (proc && (item.system !== spawnedSystem || item.model !== spawnedModel)) { try { proc.kill(); } catch {} proc = null; }
   ensureProc(item.system, item.model);
-  turn = { sse: item.sse, fullText: "", newWindow: !!item.newWindow, isKA: !!item.isKA, isSystem: !!item.isSystem, lastCallUsage: null, apiError: "" };
+  // toolBlocks/toolNames 是**每轮**的:index 会跨轮重用,跨轮留着会把上一轮的参数吐到这一轮。
+  turn = { sse: item.sse, fullText: "", newWindow: !!item.newWindow, isKA: !!item.isKA, isSystem: !!item.isSystem, lastCallUsage: null, apiError: "", toolBlocks: new Map(), toolNames: new Map() };
   const content = item.images?.length ? [{ type: "text", text: item.text }, ...item.images] : item.text;
   const p = proc;
   const wait = Math.max(0, procReadyAt - Date.now());

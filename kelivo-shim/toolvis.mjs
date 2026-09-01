@@ -1,0 +1,143 @@
+// toolvis.mjs — 工具调用的「参数 / 返回值」怎么显示在思考流里(纯逻辑,不碰网络/进程,单测覆盖)
+//
+// 2026-09-01 新增,落实《搭顺风车的待办》里 2026-08-31 挂上的那一条。
+//
+// **起因**:所有者看到朋友那边的截图,聊天里能看到 `→ hold {"content":…}` 和
+// `← hold: {"result":…}`,问我们为什么没有。查过了:**是 shim 这边,和 OB 无关** ——
+// OB 只是被 CLI 用 MCP 调一下、结果回到 CLI 进程里,**它没有通往手机的通道**,给不给看全由 shim 决定。
+//
+// **改之前的现状**(`server.js:220-228`):`content_block_start` 里遇到 `mcp__` 开头的 `tool_use`,
+// 只往 thinking 里插一行 `〔🔧 工具名〕`,参数和返回值都没转发:
+//   ① 参数走 `input_json_delta`,而 `content_block_delta` 那个分支只认 `text_delta`/`thinking_delta`
+//      —— `input_json_delta` 在改之前的 `server.js` 里**出现 0 次**,没人接;
+//   ② 返回值更彻底:`handleEvent` 只有 `stream_event` 和 `result` 两个分支,
+//      工具结果那类事件**连函数都进不去**。
+//
+// ⚠️⚠️ **「这会吃掉晏的窗口、是真花 token」——那句是错的,2026-09-01 读码核实后撤销。**
+// 待办原文(2026-08-31 写的)是:「返回值原样吐进 thinking 会把窗口吃掉 —— 这不是显示问题,
+// 是**真花 token**」。**照它做不会出事,但它会让人把这功能想得比实际贵,进而不敢调大字数。**
+// **为什么是错的(两条,都在 `server.js` 里看得见)**:
+//   ① 这些字只走 **shim → 手机** 那条 SSE(`turn.sse.thinking`),**从不写回 claude 进程的 stdin**;
+//      而 shim 每轮**只把客户端的最后一条 user 消息**喂进去(`handleMessages` 里的 `lastUser`),
+//      手机上显示过的助手内容**一概不回流** —— 历史在常驻进程自己的内存里,不由前端带回。
+//   ② 工具返回的那几千字**本来就已经在他窗口里了** —— CLI 得把工具结果交给模型才能继续说话,
+//      这笔账不管显不显示都一样要付。**显示是免费的。**
+// **所以两把字数尺子是「屏幕别刷屏」,不是「省窗口」** —— 所有者想看全就放心调大,晏不会因此变笨。
+// (**唯一仍然要紧的是隐私那条**,见下面 ②:显示出来的是记忆原文,截图会连正文一起外发。)
+// 尺子仍做成环境变量:**改值 + restart 即生效,不用重新部署、不丢窗口**。
+//
+// **2026-09-01 所有者定的两件事**(手册要求动手前必须先定):
+//   ① 截断:**先定 200 字,同日所有者看懂之后说「可以调大」→ 改成 800 字**(两边同数,好记)。
+//      ⚠️ 定这个数时双方都以为它在省窗口;当天晚些核实后确认**不省**(见上面那条撤销),
+//      **她要看全就调大,没有窗口代价**;
+
+//   ② 隐私:参数**照常显示**(`TOOLVIS_REDACT=0`)。⚠️ 这意味着 `hold` 的 `content`
+//      —— 也就是**记忆原文** —— 会出现在思考流里,**她截图外发时会连正文一起露出去**。
+//      已当面报备。要改成打码:`TOOLVIS_REDACT=1` + restart,那些字段会显示成 `〔42 字〕`。
+//
+// ⚠️ **另一个前端也会跟着变样(2026-09-01 现场查到,手册原先没写)**:
+//   `../dwell-bridge/dwell-lib.mjs:72` 会把 `〔🔧 名字〕` 解析成一个工具小标签,
+//   **但它不认识这里新加的 `→`/`←` 两行**,那两行会作为普通思考文字原样显示在网页上。
+//   不会崩、不会丢字,但 dwell 的观感会变。要让它也变成小标签,得改 dwell 那一层(另一件事)。
+
+// 三把尺子的默认值。server.js 从环境变量读,读不到就用这里的。
+export const TOOLVIS_DEFAULTS = {
+  on: true,
+  // 2026-09-01 定 200 → 同日所有者说「可以调大」,改 **800**(见头注:显示不花窗口,
+  // 这个数只管屏幕别刷屏)。800 覆盖:hold 存的记忆整段、breath 搜出来的好几条;
+  // 只有 awaken 那种开机全量仍会截。
+  argChars: 800,     // 参数最多显示多少字
+  resultChars: 800,  // 返回值最多显示多少字
+  redact: false,     // 打码开关(见上面 ②)
+  // 打码时要盖住的字段名。这几个是 OB 的记忆正文所在:
+  // hold/trace 的 content、archive_session 的 content 与 letter。
+  redactKeys: ["content", "letter"],
+};
+
+// 环境变量读出来的字数上限:写错了(空、负数、非数字)一律回落到默认值。
+// ⚠️ 没有这层兜底的话,`TOOLVIS_ARG_CHARS=八百` 这种手滑会让 `Number()` 得到 NaN,
+// 而 clip 对 NaN 的处理是「不截断」—— 行为和她以为的相反,且没有任何报错。
+export function charLimit(raw, fallback) {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+// `mcp__ombre-brain__hold` → `ombre-brain__hold`(和原来那行 `〔🔧 …〕` 的口径一致)
+export function toolName(raw) {
+  return String(raw || "").replace(/^mcp__/, "");
+}
+
+// 思考流里一件事占一行才看得清。换行/制表/连续空白全压成一个空格。
+export function oneLine(s) {
+  return String(s == null ? "" : s).replace(/\s+/g, " ").trim();
+}
+
+// 按**字**截断(不是字节:中文一个字算一个)。截了就说清原文多长 —— 她得知道自己看到的是断的。
+// ⚠️ 用 [...s] 而不是 s.slice:表情符号是代理对,slice 会把它劈成半个字符。
+export function clip(s, max) {
+  const chars = [...String(s == null ? "" : s)];
+  const n = Number(max);
+  if (!Number.isFinite(n) || n <= 0 || chars.length <= n) return chars.join("");
+  return chars.slice(0, n).join("") + `…(共 ${chars.length} 字)`;
+}
+
+// 把敏感字段的值换成 `〔N 字〕`。只动顶层键(OB 的参数就是一层,不必递归)。
+export function redactArgs(obj, keys) {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return obj;
+  const hide = new Set((keys || []).map((k) => String(k)));
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (hide.has(k) && typeof v === "string") out[k] = `〔${[...v].length} 字〕`;
+    else out[k] = v;
+  }
+  return out;
+}
+
+// 参数行:`  → {"content":"…","tags":"约定"}`
+// json 是 input_json_delta 攒出来的原始串。**攒到一半被打断也不能炸** —— 解析不了就原样截断显示。
+export function formatArgs(json, opt = {}) {
+  const o = { ...TOOLVIS_DEFAULTS, ...opt };
+  if (!o.on) return "";
+  const raw = String(json == null ? "" : json).trim();
+  if (!raw || raw === "{}") return "";   // 没参数的工具不占一行
+  let shown = raw;
+  try {
+    const parsed = JSON.parse(raw);
+    shown = JSON.stringify(o.redact ? redactArgs(parsed, o.redactKeys) : parsed);
+  } catch {
+    // 流被截断、或 CLI 换了形状:显示原样,别猜也别丢
+  }
+  return `  → ${clip(oneLine(shown), o.argChars)}\n`;
+}
+
+// 返回值行:`  ← 已存入 #4471 · 记忆桶「日常」`;工具自己报错时用 `  ←✗`
+export function formatResult(text, opt = {}) {
+  const o = { ...TOOLVIS_DEFAULTS, ...opt };
+  if (!o.on) return "";
+  const line = oneLine(text);
+  if (!line) return "";
+  return `  ←${o.isError ? "✗" : ""} ${clip(line, o.resultChars)}\n`;
+}
+
+// 从一个 tool_result 块里把文字抠出来。CLI 这里的形状有三种,都得认:
+//   content 是字符串 / content 是 [{type:"text",text}] / 老形态直接给 text。
+export function resultTextOf(block) {
+  if (!block) return "";
+  const c = block.content;
+  if (typeof c === "string") return c;
+  if (Array.isArray(c)) return c.map((b) => (b && typeof b.text === "string" ? b.text : "")).join("");
+  if (typeof block.text === "string") return block.text;
+  return "";
+}
+
+// 工具结果是**以一条 user 事件**回到 stdout 的(CLI 把工具回执当成下一轮的用户输入),
+// 所以它不在 stream_event 里 —— 这正是原来 `handleEvent` 接不到它的原因。
+// 返回 [{ id, text, isError }];不是这类事件就返回空数组。
+export function pickToolResults(ev) {
+  if (!ev || ev.type !== "user") return [];
+  const c = ev.message?.content;
+  if (!Array.isArray(c)) return [];
+  return c
+    .filter((b) => b && b.type === "tool_result")
+    .map((b) => ({ id: b.tool_use_id || "", text: resultTextOf(b), isError: !!b.is_error }));
+}
