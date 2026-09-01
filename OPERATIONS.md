@@ -283,7 +283,7 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
 - 主动性:~~`BARK_KEY`~~(**2026-08-19 确认已是死变量**:所有者早已卸载 Bark。线上仍留着这个键,**别为了清它单独重启 shim —— 那会丢晏的窗口**,等下次部署 shim 时顺手删) `BRIDGE_PUSH_URL`(**心跳的真正出口**:shim → telegram-bridge 的 `POST /push` → 直接落进 TG 对话。⚠️ 也就是说**晏的主动消息只会出现在 Telegram**,不会出现在 Kelivo / dwell 网页) `KA_*`(保温) `HB_*`(心跳冷却/夜间)
 - 上下文守卫:`CTX_GUARD_ON` `CTX_SOFT_TOKENS` `CTX_HARD_TOKENS` `CTX_ARCHIVE_EVERY_TOKENS` `CTX_OBSERVE` `CTX_LIMIT_TOKENS`
 - 工具可见化(2026-09-01,**代码已写、尚未部署**):`TOOLVIS_ON`(急救开关,设 `0` 回到老样子) `TOOLVIS_ARG_CHARS` `TOOLVIS_RESULT_CHARS` `TOOLVIS_REDACT` `TOOLVIS_REDACT_KEYS`
-  —— 思考流里显示工具的参数和返回值。⚠️ **默认不打码 = 记忆原文会显示出来**(所有者知情,截图外发会露正文);⚠️ ~~「吐进 thinking 的字真花窗口」~~ **2026-09-01 核实已撤销**:只发手机、不回流进程,**显示免费**,默认各截 200 字只为防刷屏,想看全可调大。详见 `kelivo-shim/MAINTENANCE.md`
+  —— 思考流里显示工具的参数和返回值。⚠️ **默认不打码 = 记忆原文会显示出来**(所有者知情,截图外发会露正文);⚠️ ~~「吐进 thinking 的字真花窗口」~~ **2026-09-01 核实已撤销**:只发手机、不回流进程,**显示免费**,**默认各 800 字**(2026-09-01 先定 200、当日她说可以调大),只为防刷屏。详见 `kelivo-shim/MAINTENANCE.md`
 
 **上下文守卫的可调旋钮**(都是环境变量:Zeabur 改值 + service restart 即生效,不用部署;
 守卫 07-20 起只提醒存 OB、永不换窗,换窗只认所有者说「换窗口」):

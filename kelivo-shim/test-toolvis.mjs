@@ -67,8 +67,8 @@ eq(formatResult("字".repeat(5000), { resultChars: 5 }), "  ← 字字字字字�
 eq(formatResult("a\nb\nc"), "  ← a b c\n", "多行返回压成一行");
 eq(formatResult("x", { on: false }), "", "总开关关掉就什么都不出");
 // 默认那把尺子本身也钉住,免得以后有人手滑改大了没人发现
-eq(TOOLVIS_DEFAULTS.resultChars, 200, "默认截 200 字(2026-09-01 所有者定)");
-eq(TOOLVIS_DEFAULTS.argChars, 200, "参数同样 200 字");
+eq(TOOLVIS_DEFAULTS.resultChars, 800, "默认截 800 字(2026-09-01 所有者先定 200、当日说「可以调大」改的)");
+eq(TOOLVIS_DEFAULTS.argChars, 800, "参数同样 800 字");
 eq(TOOLVIS_DEFAULTS.redact, false, "默认不打码(2026-09-01 所有者定,已报备截图外发的风险)");
 
 // ---- resultTextOf:CLI 那三种形状都得认 ----
