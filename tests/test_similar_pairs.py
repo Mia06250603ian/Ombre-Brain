@@ -129,6 +129,32 @@ def test_每个桶的边数封顶(tmp_path):
         assert (a, b) in allowed
 
 
+def test_封顶时快办法和退路结果一致(tmp_path, monkeypatch):
+    """⚠️ 2026-09-01 自审抓到的偏差,这条钉住它。
+
+    封顶的语义是「一条边只要在**任意一端**的前 top_k 里就留下」。
+    numpy 那条路最初只收上三角,等于只认下标小的那一端 ——
+    「只有 j 觉得 i 像」的边被整个丢掉,而纯 Python 退路(先全算完再封顶)不会。
+    两条路径必须给同一个答案。
+    """
+    vectors = random_vectors(80, 8, seed=17)     # 低维 = 大家都挺像,封顶才真的削到东西
+    engine = make_engine(tmp_path, vectors)
+    fast = engine.similar_pairs(vectors, min_sim=0.3, top_k=3)
+
+    real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __builtins__.__import__
+
+    def no_numpy(name, *args, **kwargs):
+        if name == "numpy":
+            raise ImportError("numpy disabled for this test")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", no_numpy)
+    slow = engine.similar_pairs(vectors, min_sim=0.3, top_k=3)
+
+    assert as_set(fast) == as_set(slow)
+    assert len(fast) < len(engine.similar_pairs(vectors, min_sim=0.3)), "这批数据没被封顶,测试没测到东西"
+
+
 def test_桶不足两个时不连边(tmp_path):
     engine = make_engine(tmp_path, {})
     assert engine.similar_pairs({}) == []

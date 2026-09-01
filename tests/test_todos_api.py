@@ -227,6 +227,45 @@ class Test和晏共用同一块便利贴:
         assert data["items"][0]["done"] is True
         assert data["done"] == 1
 
+    def test_晏写便利贴时也会拿锁(self, client_and_server):
+        """⚠️ 锁只有一边拿等于没锁。
+
+        自从面板也能写,这个文件就有两个写入方(晏走 MCP、她走 /api/todos/*),
+        两边都是「读整本 → 改 → 整本重写」—— 先写的那次会被后写的整个顶掉且不报错。
+        所以晏那条路径也必须拿同一把锁。
+        """
+        client, server = client_and_server
+        import anyio
+        from contextlib import contextmanager
+
+        taken = []
+
+        @contextmanager
+        def counting_lock():
+            taken.append(1)
+            yield
+
+        real = server._todos_lock
+        server._todos_lock = counting_lock
+        try:
+            anyio.run(lambda: server._todos_impl(add="他记的"))
+            assert len(taken) == 1, "晏加一条待办时没拿锁"
+            tid = server._load_todos_list()[0]["id"]
+            for call in (lambda: server._todos_impl(done=tid),
+                         lambda: server._todos_impl(undone=tid),
+                         lambda: server._todos_impl(clear_done=True),
+                         lambda: server._todos_impl(remove=tid)):
+                before = len(taken)
+                anyio.run(call)
+                assert len(taken) == before + 1, "有一条写路径没拿锁"
+            # 只读的两条路径不该拿锁(和以前一样)
+            before = len(taken)
+            anyio.run(lambda: server._todos_impl())
+            anyio.run(lambda: server._todos_impl(only_open=True))
+            assert len(taken) == before, "只读也拿锁了,白挡住写"
+        finally:
+            server._todos_lock = real
+
     def test_写入口用的是他那套原子写(self, client_and_server):
         """别在面板这边另造一份写法:两套写法迟早会写坏同一个文件。"""
         client, server = client_and_server

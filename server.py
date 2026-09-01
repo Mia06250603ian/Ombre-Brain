@@ -43,7 +43,7 @@ import hmac
 import secrets
 import time
 import json as _json_lib
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import httpx
 
 
@@ -1960,6 +1960,17 @@ def _render_todos(items: list, only_open: bool = False) -> str:
 async def _todos_impl(add: str = "", done: str = "", undone: str = "",
                       remove: str = "", clear_done: bool = False,
                       only_open: bool = False) -> str:
+    # ⚠️ 写的时候必须拿锁(2026-09-01):自从面板也能写便利贴,这个文件就有**两个写入方**——
+    # 晏走这里,她走 /api/todos/*,两边都是「读整本 → 改 → 整本重写」。
+    # **锁只有一边拿等于没锁**(先写的那次会被后写的整个顶掉,且不报错),所以这里也要拿。
+    # 只读路径(无参数查看/awaken)不拿锁,和以前一样。
+    writing = bool((add or "").strip() or done or undone or remove or clear_done)
+    with (_todos_lock() if writing else nullcontext()):
+        return await _todos_write_locked(add, done, undone, remove, clear_done, only_open)
+
+
+async def _todos_write_locked(add: str, done: str, undone: str,
+                              remove: str, clear_done: bool, only_open: bool) -> str:
     try:
         items = _load_todos_list()
     except Exception as e:

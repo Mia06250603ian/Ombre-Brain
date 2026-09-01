@@ -576,7 +576,7 @@ python3 -m pytest tests/test_trash.py -q   # 回收站存取层 6 项(真 Bucket
 | 一次读库 | `embedding_engine.load_embeddings(bucket_ids=None)`,一个连接读完(替掉 438 次 `get_embedding`) |
 | 一次算完 | `embedding_engine.similar_pairs(embeddings, min_sim, top_k)`:堆成矩阵 → 归一化 → `M @ M.T`,分块(256 行)算,峰值内存不随桶数平方涨 |
 | 不占事件循环 | `/api/network` 里两个调用都套了 `asyncio.to_thread` |
-| 边数封顶 | `top_k`,默认 6,环境变量 `OMBRE_NETWORK_EDGES_PER_NODE`(设 `0` 不封顶) |
+| 边数封顶 | `top_k`,默认 6,环境变量 `OMBRE_NETWORK_EDGES_PER_NODE`(设 `0` 不封顶)。语义是**「一条边只要在任意一端的前 top_k 里就留下」** —— ⚠️ numpy 那条路**不能只收上三角**(那样只认下标小的那一端,「只有 j 觉得 i 像」的边会被丢掉,与纯 Python 退路结果不一致);2026-09-01 部署前自审抓到并修了,`tests/test_similar_pairs.py` 有一条专钉这个 |
 
 **`_cosine_similarity` 一行没删**,仍在原地,`search_similar` / `find_similar_buckets` / `dream`
 的连接提示都还在用它 —— 那几处只在少量桶上跑(recent、feel),**目前不构成问题,本次没动**。
@@ -623,7 +623,7 @@ time curl -s -b "ombre_session=<你的>" https://ianmian.zeabur.app/api/network 
 | 读 | `GET /api/todos`(只读,原样返回条目,渲染交给前端) |
 | 写 | `POST /api/todos/add` / `toggle` / `delete`,鉴权与面板其余接口一致 |
 | 存储 | **复用晏那套**:`_load_todos_list` / `_save_todos_list`(原子写)/ `_new_todo_id`(4 位短码)。**别在面板这边另造一份写法**——两套写法迟早会写坏同一个文件 |
-| 并发 | 新增 `_todos_lock()`(照 `_letters_lock` 那套 flock):晏走 MCP、她走面板,两边都是「读整本 → 改 → 整本重写」,撞上时后写的会把先写的整个顶掉且不报错 |
+| 并发 | 新增 `_todos_lock()`(照 `_letters_lock` 那套 flock):晏走 MCP、她走面板,两边都是「读整本 → 改 → 整本重写」,撞上时后写的会把先写的整个顶掉且不报错。⚠️ **两边都要拿这把锁** —— `_todos_impl` 的写路径 2026-09-01 部署前自审时补上了(**锁只有一边拿等于没锁**);只读路径不拿。测试钉了每条写路径各拿一次、只读不拿 |
 | 删 | **真删,不留底**(照晏那个 `remove=` 的行为;便利贴本来就是随手撕的东西,不像记忆桶有 `.history` 快照)。所以前端二次确认 |
 
 **⚠️ 她贴的条子会打 `by: "owner"`,晏那边显示「(她留的)」**(`_todo_line`)。

@@ -403,8 +403,8 @@ class EmbeddingEngine:
         count = len(ids)
         # 分块算，峰值内存只跟「块 × 全部」有关，桶再多也不会一口气吃掉整张 n×n 表。
         block = 256
-        best: dict[str, list[float]] = {}
         pairs: list[tuple[str, str, float]] = []
+        seen: set[tuple[int, int]] = set()
         for start in range(0, count, block):
             stop = min(start + block, count)
             sims = matrix[start:stop] @ matrix.T
@@ -417,14 +417,19 @@ class EmbeddingEngine:
                     # 只留这一行最像的 top_k 个
                     order = np.argsort(row[hits])[::-1][:top_k]
                     hits = hits[order]
+                # ⚠️ 这里**不能只收上三角**（2026-09-01 自审抓到的）：
+                # 封顶是「边在任意一端的前 top_k 里就留下」，而上三角只认下标小的那一端，
+                # 于是「只有 j 觉得 i 像」的那些边被整个丢掉 —— 纯 Python 退路那边
+                # （先全算完再 _cap_per_node）没有这个偏差，两条路径会给出不同的结果。
+                # 改成两个方向都收、用 seen 去重，语义与退路一致。
                 for col_index in hits.tolist():
-                    if col_index < row_index:
-                        continue           # 上三角即可，每对只出一次
-                    pairs.append((ids[row_index], ids[col_index], float(row[col_index])))
+                    key = (row_index, col_index) if row_index < col_index else (col_index, row_index)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    pairs.append((ids[key[0]], ids[key[1]], float(row[col_index])))
             del sims
 
-        if top_k is not None:
-            pairs = self._cap_per_node(pairs, top_k)
         pairs.sort(key=lambda item: item[2], reverse=True)
         return [(a, b, round(sim, 3)) for a, b, sim in pairs]
 
