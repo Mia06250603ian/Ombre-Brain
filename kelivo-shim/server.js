@@ -8,7 +8,7 @@ import { kaDecide, kaPrompt, kaSilent } from "./keepalive.mjs";
 import { ctxReading, ctxDecide, ctxCompacted, ctxSoftNote, ctxHardNote, ctxFinalNote, ctxPct, ctxSoftShouldReset } from "./ctxguard.mjs";
 import { pickApiError, apiErrorKind, resultOutcome } from "./apierror.mjs";
 import { buildPromptArgs, helpMentionsReplace, BASE_PROMPT_DEFAULT, ANCHOR_TAIL_REPLACE, SOUL_ANCHOR_DEFAULT } from "./sysprompt.mjs";
-import { formatArgs, formatResult, pickToolResults, toolName, TOOLVIS_DEFAULTS } from "./toolvis.mjs";
+import { formatArgs, formatResult, pickToolResults, toolName, charLimit, TOOLVIS_DEFAULTS } from "./toolvis.mjs";
 
 const PORT = process.env.PORT || 8080;
 const SHIM_KEY = process.env.SHIM_KEY || "";            // Kelivo 要填的 API Key,自己编
@@ -44,8 +44,9 @@ const AI_NAME = process.env.AI_NAME || "TA";             // AI 的名字
 // 急救开关:`TOOLVIS_ON=0` + restart,立刻回到 2026-08-31 之前的行为(只剩那行工具名)。
 const TOOLVIS = {
   on: process.env.TOOLVIS_ON !== "0",
-  argChars: Number(process.env.TOOLVIS_ARG_CHARS || TOOLVIS_DEFAULTS.argChars),
-  resultChars: Number(process.env.TOOLVIS_RESULT_CHARS || TOOLVIS_DEFAULTS.resultChars),
+  // charLimit:值写错(非数字/负数)就回落默认,别静默变成「完全不截断」
+  argChars: charLimit(process.env.TOOLVIS_ARG_CHARS, TOOLVIS_DEFAULTS.argChars),
+  resultChars: charLimit(process.env.TOOLVIS_RESULT_CHARS, TOOLVIS_DEFAULTS.resultChars),
   // 默认不打码 = `hold` 的 content(记忆原文)会显示出来。所有者 2026-09-01 知情选的;
   // 她要是嫌截图外发会露正文,设 `TOOLVIS_REDACT=1` + restart,那些字段变成 `〔N 字〕`。
   redact: process.env.TOOLVIS_REDACT === "1",

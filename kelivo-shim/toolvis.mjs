@@ -54,6 +54,14 @@ export const TOOLVIS_DEFAULTS = {
   redactKeys: ["content", "letter"],
 };
 
+// 环境变量读出来的字数上限:写错了(空、负数、非数字)一律回落到默认值。
+// ⚠️ 没有这层兜底的话,`TOOLVIS_ARG_CHARS=八百` 这种手滑会让 `Number()` 得到 NaN,
+// 而 clip 对 NaN 的处理是「不截断」—— 行为和她以为的相反,且没有任何报错。
+export function charLimit(raw, fallback) {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
 // `mcp__ombre-brain__hold` → `ombre-brain__hold`(和原来那行 `〔🔧 …〕` 的口径一致)
 export function toolName(raw) {
   return String(raw || "").replace(/^mcp__/, "");

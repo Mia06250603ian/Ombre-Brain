@@ -2,7 +2,7 @@
 // 全绿输出 "ALL PASS";不碰网络、不碰 claude 进程。
 import {
   TOOLVIS_DEFAULTS, toolName, oneLine, clip, redactArgs,
-  formatArgs, formatResult, resultTextOf, pickToolResults,
+  formatArgs, formatResult, resultTextOf, pickToolResults, charLimit,
 } from "./toolvis.mjs";
 
 let n = 0, bad = 0;
@@ -29,6 +29,14 @@ eq(clip("", 5), "", "空串不炸");
 // 表情符号是代理对,用 slice 会劈出半个字符 —— 这条钉住必须用 [...s]
 ok(!clip("🦀🦀🦀", 2).includes("�"), "截表情符号不能劈出乱码");
 eq(clip("🦀🦀🦀", 2), "🦀🦀…(共 3 字)", "表情按一个字算");
+
+// ---- charLimit:环境变量写错时必须回落默认,别静默变成「不截断」----
+eq(charLimit("500", 800), 500, "正常数字照用");
+eq(charLimit("八百", 800), 800, "写成中文 → 回落默认(否则 NaN 会让它完全不截)");
+eq(charLimit("", 800), 800, "空值回落默认");
+eq(charLimit(undefined, 800), 800, "没设回落默认");
+eq(charLimit("-1", 800), 800, "负数回落默认");
+eq(charLimit("0", 800), 800, "0 也回落(想彻底不截请用 TOOLVIS_ON=0,别靠 0)");
 
 // ---- redactArgs:打码只盖该盖的 ----
 eq(JSON.stringify(redactArgs({ content: "她说想吃火锅", tags: "约定" }, ["content"])),
