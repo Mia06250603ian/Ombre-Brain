@@ -20,6 +20,14 @@ const TRASH0 = () => [
    version:'20260825-093000_delete',snapshots:1,content_preview:'那天我有点难过,但没说。'},
 ];
 let TRASH = TRASH0();
+// 便利贴:晏自己记的(没有 by)+ 她从面板贴的(by:'owner')+ 一条已完成的。
+// 三种都要有,才测得出纸片的三种样子。写操作会改状态,/__reset 一并复位。
+const TODOS0 = () => [
+  {id:'a1b2', text:'把上次那个链接发给她', done:false, created:'2026-08-30T21:00:00'},
+  {id:'c3d4', text:'记得吃药', done:false, created:'2026-08-31T09:00:00', by:'owner'},
+  {id:'e5f6', text:'已经做完的一件事', done:true, created:'2026-08-29T12:00:00'},
+];
+let TODOS = TODOS0();
 
 const FULL = {b01:'相遇那天的全文。',b02:'规则全文',b03:'松绑全文',b04:'旧事全文',b05:'自省全文',b06:'无域全文'};
 
@@ -57,7 +65,7 @@ http.createServer((q, r) => {
   });
   if (p === '/api/config') return json(r, {config:{}, keys:[]});
   // 测试专用:恢复是会改状态的,深浅色两轮跑同一个假 OB,中间要能复位
-  if (p === '/__reset') { TRASH = TRASH0(); return json(r, {ok:true}); }
+  if (p === '/__reset') { TRASH = TRASH0(); TODOS = TODOS0(); return json(r, {ok:true}); }
   if (p === '/api/trash') return json(r, TRASH);
   if (/^\/api\/trash\/[^/]+\/restore$/.test(p) && q.method === 'POST') {
     const id = p.split('/')[3];
@@ -65,6 +73,32 @@ http.createServer((q, r) => {
     if (i < 0) return json(r, {error:'not_found', detail:'回收站里没有这一条'}, 404);
     const [t] = TRASH.splice(i, 1);
     return json(r, {ok:true, id:t.id, name:t.name, version:t.version});
+  }
+  if (p === '/api/todos') return json(r, {
+    items: TODOS,
+    open: TODOS.filter(t => !t.done).length,
+    done: TODOS.filter(t => t.done).length,
+  });
+  if (p.startsWith('/api/todos/') && q.method === 'POST') {
+    let raw = ''; q.on('data', c => raw += c); q.on('end', () => {
+      let body = {}; try { body = JSON.parse(raw); } catch { return json(r, {error:'bad json'}, 400); }
+      const act = p.slice('/api/todos/'.length);
+      if (act === 'add') {
+        const text = String(body.text || '').trim();
+        if (!text) return json(r, {error:'内容不能为空'}, 400);
+        TODOS.push({id:'99zz', text, done:false, created:'2026-09-01T10:00:00', by:'owner'});
+      } else if (act === 'toggle') {
+        const hit = TODOS.find(t => t.id === String(body.id || '').replace(/^#/, '').toLowerCase());
+        if (!hit) return json(r, {error:'没找到'}, 404);
+        hit.done = !!body.done;
+      } else if (act === 'delete') {
+        const i = TODOS.findIndex(t => t.id === String(body.id || '').replace(/^#/, '').toLowerCase());
+        if (i < 0) return json(r, {error:'没找到'}, 404);
+        TODOS.splice(i, 1);
+      }
+      json(r, {ok:true, items:TODOS});
+    });
+    return;
   }
   if (p === '/api/status') return json(r, {buckets:B.length, embeddings:B.length, disk:'—'});
   if (p === '/api/host-vault') return json(r, {entries:[]});
