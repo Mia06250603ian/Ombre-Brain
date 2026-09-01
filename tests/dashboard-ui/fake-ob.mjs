@@ -25,6 +25,7 @@ let TRASH = TRASH0();
 const TODOS0 = () => [
   {id:'a1b2', text:'把上次那个链接发给她', done:false, created:'2026-08-30T21:00:00'},
   {id:'c3d4', text:'记得吃药', done:false, created:'2026-08-31T09:00:00', by:'owner'},
+  {id:'g7h8', text:'跟她说一声周末的事', done:false, created:'2026-08-30T23:10:00'},   // 和 a1b2 同一天:测按天分组
   {id:'e5f6', text:'已经做完的一件事', done:true, created:'2026-08-29T12:00:00'},
 ];
 let TODOS = TODOS0();

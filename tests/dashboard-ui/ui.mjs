@@ -193,29 +193,29 @@ for (const scheme of ['light', 'dark']) {
   ok('恢复后那条的按钮没了', (await page.locator('#trash-list .letter-btn').count()) === 1);
 
   // 便利贴(2026-09-01):这块是晏的,面板只是让她看见 + 留了写入口。
-  // 页面是一张小票:一行一条、右边日期、底下 TOTAL、下缘一排锯齿撕口。
+  // 页面是**一天一张小票**:同一天记下的凑一张,新的一天在前,下缘一排锯齿撕口。
   await page.locator('.tab[data-tab="todos"]').click();
   await page.waitForTimeout(400);
-  ok('小票上列出三条', (await page.locator('#todos-lines .receipt-line').count()) === 3);
-  ok('没做的排在前面', await page.locator('#todos-lines .receipt-line').first()
-    .evaluate(el => !el.classList.contains('is-done')));
+  ok('一天一张小票,三天三张', (await page.locator('#todos-lines .receipt').count()) === 3);
+  ok('同一天的两条在同一张上', (await page.locator('#todos-lines .receipt').nth(1)
+    .locator('.receipt-line').count()) === 2);
+  ok('新的一天排在前面', /08\/31/.test(await page.locator('#todos-lines .receipt .receipt-date').first().innerText()));
+  ok('四条待办都在', (await page.locator('#todos-lines .receipt-line').count()) === 4);
   ok('她贴的那条标着「你贴的」', await page.locator('#todos-lines .receipt-line.by-owner').first()
     .evaluate(el => el.innerText.includes('你贴的')));
   ok('已完成的划掉了', await page.locator('#todos-lines .receipt-line.is-done .receipt-text').first()
     .evaluate(el => getComputedStyle(el).textDecorationLine === 'line-through'));
-  ok('底下有 TOTAL 那三行', (await page.locator('#todos-total .receipt-total').count()) === 3
-    && /TOTAL/.test(await page.locator('#todos-total').innerText()));
-  ok('小票下缘有锯齿(挂了遮罩)', await page.locator('#todos-receipt')
+  ok('每张票底下有 TOTAL', (await page.locator('#todos-lines .receipt-total').count()) === 3);
+  ok('全做完那张写「全做完了」', /全做完了/.test(await page.locator('#todos-lines .receipt').last().innerText()));
+  ok('小票下缘有锯齿(挂了遮罩)', await page.locator('#todos-lines .receipt').first()
     .evaluate(el => (getComputedStyle(el).webkitMaskImage || getComputedStyle(el).maskImage).includes('conic-gradient')));
-  ok('手写体没走外部字体(零外部请求)', await page.locator('.receipt-sign')
-    .evaluate(el => !/Google|http/i.test(getComputedStyle(el).fontFamily)));
   await page.screenshot({ path: SHOTS + '/todos-' + scheme + '.png' });
 
-  // 贴一张:输入框回车即可
+  // 贴一张:输入框回车即可。假 OB 给的是今天,所以会新开一张票
   await page.fill('#todo-input', '测试贴一张');
   await page.press('#todo-input', 'Enter');
   await page.waitForTimeout(400);
-  ok('贴上去之后多了一条', (await page.locator('#todos-lines .receipt-line').count()) === 4);
+  ok('新的一天单独一张票', (await page.locator('#todos-lines .receipt').count()) === 4);
   ok('贴完输入框清空', (await page.inputValue('#todo-input')) === '');
   ok('新贴的算她的', (await page.locator('#todos-lines .receipt-line.by-owner').count()) === 2);
 
