@@ -63,7 +63,7 @@ eq(formatResult(""), "", "空返回不占行");
 eq(formatResult("   "), "", "只有空白也不占行");
 eq(formatResult("boom", { isError: true }), "  ←✗ boom\n", "工具报错用 ←✗ 区分");
 eq(formatResult("字".repeat(5000), { resultChars: 5 }), "  ← 字字字字字…(共 5000 字)\n",
-   "⚠️ awaken 那种几千字必须截 —— 这不是显示问题,是真花窗口");
+   "awaken 那种几千字必须截 —— 是防刷屏(不是省窗口:2026-09-01 核实显示不回流,见 toolvis.mjs 头注)");
 eq(formatResult("a\nb\nc"), "  ← a b c\n", "多行返回压成一行");
 eq(formatResult("x", { on: false }), "", "总开关关掉就什么都不出");
 // 默认那把尺子本身也钉住,免得以后有人手滑改大了没人发现
