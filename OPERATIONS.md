@@ -9,7 +9,7 @@
 > (拆分前两份「开场必读」合计 385 KB、约 7~9 万 token,其中八成是历史。)
 >
 > **凡是提到 shim「第 N 次部署」的地方,那次的完整记录都在 `kelivo-shim/DEPLOY-LOG.md`**
-> (**37 条记录、覆盖第 2~38 次**(2026-08-30 现场量);⚠️ **「第一次」(2026-07-12 初次搭建)没有独立条目**,
+> (**38 条记录、覆盖第 2~39 次**(2026-09-01 现场量);⚠️ **「第一次」(2026-07-12 初次搭建)没有独立条目**,
 > 那次记在 `TIMELINE.md` 的 07-12。按「第 N 次」搜即可。
 > **此处 2026-08-21 核过:原文写「48 次全在」是错的**——逐条数下来最新只到第三十四次,
 > 照旧数去搜「第四十次」会搜空、误以为记录丢了)。提到某天发生了什么,去 `TIMELINE.md` 按日期搜。
@@ -282,7 +282,7 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
 - 感官:`TIME_HINT` `WEATHER_CITY` `PERIOD_CONFIG`
 - 主动性:~~`BARK_KEY`~~(**2026-08-19 确认已是死变量**:所有者早已卸载 Bark。线上仍留着这个键,**别为了清它单独重启 shim —— 那会丢晏的窗口**,等下次部署 shim 时顺手删) `BRIDGE_PUSH_URL`(**心跳的真正出口**:shim → telegram-bridge 的 `POST /push` → 直接落进 TG 对话。⚠️ 也就是说**晏的主动消息只会出现在 Telegram**,不会出现在 Kelivo / dwell 网页) `KA_*`(保温) `HB_*`(心跳冷却/夜间)
 - 上下文守卫:`CTX_GUARD_ON` `CTX_SOFT_TOKENS` `CTX_HARD_TOKENS` `CTX_ARCHIVE_EVERY_TOKENS` `CTX_OBSERVE` `CTX_LIMIT_TOKENS`
-- 工具可见化(2026-09-01,**代码已写、尚未部署**):`TOOLVIS_ON`(急救开关,设 `0` 回到老样子) `TOOLVIS_ARG_CHARS` `TOOLVIS_RESULT_CHARS` `TOOLVIS_REDACT` `TOOLVIS_REDACT_KEYS`
+- 工具可见化(**2026-09-01 第三十九次已上线**;线上五个都不设 = 走默认「开 / 800 / 800 / 不打码」):`TOOLVIS_ON`(急救开关,设 `0` 回到老样子) `TOOLVIS_ARG_CHARS` `TOOLVIS_RESULT_CHARS` `TOOLVIS_REDACT` `TOOLVIS_REDACT_KEYS`
   —— 思考流里显示工具的参数和返回值。⚠️ **默认不打码 = 记忆原文会显示出来**(所有者知情,截图外发会露正文);⚠️ ~~「吐进 thinking 的字真花窗口」~~ **2026-09-01 核实已撤销**:只发手机、不回流进程,**显示免费**,**默认各 800 字**(2026-09-01 先定 200、当日她说可以调大),只为防刷屏。详见 `kelivo-shim/MAINTENANCE.md`
 
 **上下文守卫的可调旋钮**(都是环境变量:Zeabur 改值 + service restart 即生效,不用部署;
