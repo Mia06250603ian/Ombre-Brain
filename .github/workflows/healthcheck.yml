@@ -45,6 +45,12 @@ on:
       - '.github/scripts/test_healthcheck.py'
       - '.github/workflows/healthcheck.yml'
 
+# 只读自己的运行历史,用来现场量巡逻间隔(见 healthcheck.py 的 auth_window_hours)。
+# **不是新密钥**:GITHUB_TOKEN 是每次运行临时发的,跑完即废,不用配、也不用转。
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   healthcheck:
     runs-on: ubuntu-latest
@@ -76,4 +82,6 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           # 演习开关。**只有网页上手动勾选才会是 true**,定时那趟永远是空。
           HEALTHCHECK_TEST_ALARM: ${{ inputs.test_alarm }}
+          # 量巡逻间隔用。临时令牌,跑完即废,**不是要你配的 secret**。
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 .github/scripts/healthcheck.py

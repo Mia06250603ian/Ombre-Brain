@@ -46,9 +46,22 @@ TIMEOUT = 20
 RETRIES = 3          # 瞬时抖动不许惊动她 —— 今天那场故障本身就是「抖一下」,别让狗被同一件事骗到
 BACKOFF = 5
 
-# 上游认证类报错「多新才算数」。2 小时是这么定的:狗每小时跑一次,
-# 取两倍节拍,保证一次故障至少被完整看到一轮,又不会把昨天的旧账翻出来叫。
-AUTH_ERROR_RECENT_HOURS = 2
+# 上游认证类报错「多新才算数」。
+#
+# ⚠️ **2026-09-02 改成现场量,原来是写死的 2 小时。**
+# 原文的理由是「狗每小时跑一次,取两倍节拍」——**那个前提是假的**:
+# cron 当天 04:31 改成 `0 * * * *`,到 09:20 之间**应该跑 5 趟,实际只跑了 1 趟**
+# (GitHub 的免费定时任务会大量丢弃和延迟高频 cron,写 `0 * * * *` 不等于真每小时)。
+# 前提一假,这个窗口就会**漏掉真故障**:两次巡逻间隔 5 小时,而只认 2 小时内的报错,
+# 中间那 3 小时发生的认证错会被当成「不是最近发生的」放过去 —— 正是 08-11 那种静默。
+#
+# 所以窗口不再写死,**按上一趟到这一趟的真实间隔现场算**(见 auth_window_hours):
+#   窗口 = 实测间隔 × 1.5,夹在 [2, 12] 小时之间。
+# 量不到就退回 2 小时(见下),**宁可漏报不可误报**——量不到就不许自作主张放宽。
+AUTH_ERROR_FALLBACK_HOURS = 2
+# 上限。间隔真退化到一天一次时也不把窗口开到一整天:开得越大,
+# 「昨天断过、今天已经好了」被当成现在有问题的概率越大(铁律①)。
+AUTH_ERROR_MAX_HOURS = 12
 
 # 什么算「认证类」。08-11 那次的指纹是 `401 authentication_error`,
 # 代理随后一律回 `503 auth_unavailable`;09-02 试续签失败时是 `Invalid bearer token`。
@@ -121,6 +134,47 @@ def age_hours(iso):
         return (datetime.now(timezone.utc) - t).total_seconds() / 3600.0
     except Exception:
         return None
+
+
+def auth_window_hours():
+    """现场量「上一趟巡逻是多久以前」,据此定告警窗口。返回 (窗口小时数, 说明文字)。
+
+    **为什么要现场量**:见文件开头 AUTH_ERROR_FALLBACK_HOURS 那段 ——
+    写死的节拍会随 GitHub 的调度脾气变成谎话,而这条狗的漏报正来自那个谎话。
+    手册第 7 节刚因为「拿推算当实测」栽过一次(把 8 小时当成刷新周期,真值是 4 小时),
+    同一个教训:**能量就别猜。**
+
+    只用 Actions 自带的 GITHUB_TOKEN(每次运行自动发,**不是新密钥**,也不用配),
+    读一次本工作流的运行历史。**任何一步不顺就退回默认值** —— 铁律②:
+    狗不能因为多看了一眼就把自己看挂了。
+    """
+    tok = os.environ.get("GITHUB_TOKEN", "").strip()
+    repo = os.environ.get("GITHUB_REPOSITORY", "").strip()
+    if not tok or not repo:
+        # 本地跑、或没给 token:不猜,用默认。
+        return AUTH_ERROR_FALLBACK_HOURS, "没量到间隔(不在 Actions 里跑),用默认"
+    api = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
+    me = os.environ.get("GITHUB_RUN_ID", "").strip()
+    try:
+        _, txt = fetch(
+            f"{api}/repos/{repo}/actions/workflows/healthcheck.yml/runs"
+            "?status=completed&per_page=10",
+            headers={"Authorization": f"Bearer {tok}",
+                     "Accept": "application/vnd.github+json"})
+        runs = (jload(txt) or {}).get("workflow_runs") or []
+        for r in runs:
+            if str(r.get("id")) == me:
+                continue          # 别把自己当成上一趟
+            gap = age_hours(r.get("run_started_at") or r.get("created_at"))
+            if gap is None or gap <= 0:
+                break
+            win = max(AUTH_ERROR_FALLBACK_HOURS,
+                      min(AUTH_ERROR_MAX_HOURS, gap * 1.5))
+            return win, f"距上一趟巡逻 {gap:.1f} 小时(实测)"
+    except Exception as e:
+        # ⚠️ 只打类型名。**别打异常原文** —— 里面带着完整 URL,而 header 里有 token。
+        return AUTH_ERROR_FALLBACK_HOURS, f"量间隔失败({type(e).__name__}),用默认"
+    return AUTH_ERROR_FALLBACK_HOURS, "没量到间隔,用默认"
 
 
 def looks_like_auth_error(err):
@@ -229,11 +283,18 @@ else:
     # 当初不敢叫它,理由写在本节开头:「lastApiError 会一直留着,今天看到的就是昨天的 529」。
     # **那个顾虑只对「陈旧」和「不该管的错」成立,不对「刚刚发生的认证错」成立。**
     # 所以这里加两道闸,把误报的两个来源分别堵掉,而不是把整条信号放开:
-    #   ① **只看最近 AUTH_ERROR_RECENT_HOURS 小时内的**(靠 lastApiError.at);更早的照旧只打印。
+    #   ① **只看最近一个「窗口」内的**(靠 lastApiError.at);更早的照旧只打印。
+    #      ⚠️ 窗口不是写死的 2 小时了(2026-09-02 改),**按上一趟巡逻到现在的真实间隔现场算** ——
+    #      原来那个 2 小时假定「每小时跑一次」,而实测不是,会漏掉真故障。见 auth_window_hours。
     #   ② **只认认证类**(见 AUTH_ERROR_MARKS)。529 overloaded、网络抖动会自愈,
     #      报了就是狼来了 —— 照旧只打印。
     # 为什么值得为它破例:08-11 那场三小时的静默里,**全系统唯一亮过的灯就是它**,
     # 而当时这只狗看着它、没叫。见 OPERATIONS.md《订阅 OAuth 过期(2026-08-11 事故,必读)》。
+    win, why_win = auth_window_hours()
+    # 这行是白拿的巡逻节拍记录:**每趟都会打印实测间隔**,
+    # 攒几天就知道 GitHub 到底给不给我们「每小时」,不用另做一套观测(也不用定时唤醒会话去数)。
+    print(f"  ⓘ 体检节拍:{why_win} → 认证告警窗口取 {win:.1f} 小时")
+    notes.append(f"巡逻间隔 {why_win},告警窗口 {win:.1f} 小时")
     e = d.get("lastApiError")
     if not e:
         print("  ⓘ 最近一次上游报错:无")
@@ -241,8 +302,8 @@ else:
         at, kind = e.get("at", "?"), e.get("kind", "")
         hrs = age_hours(e.get("at"))
         ago = "时间读不出来" if hrs is None else f"{hrs:.1f} 小时前"
-        if looks_like_auth_error(e) and hrs is not None and hrs <= AUTH_ERROR_RECENT_HOURS:
-            check(f"晏 · 上游认证没断(最近 {AUTH_ERROR_RECENT_HOURS} 小时)", False,
+        if looks_like_auth_error(e) and hrs is not None and hrs <= win:
+            check(f"晏 · 上游认证没断(最近 {win:.1f} 小时)", False,
                   f"{ago}报 {kind!r} —— 八成是订阅 OAuth 失效了,"
                   f"看 OPERATIONS.md《订阅 OAuth 过期》")
         else:
