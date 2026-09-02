@@ -33,6 +33,11 @@ on:
   schedule:
     - cron: '0 * * * *'      # 每小时整点(UTC;每小时跑与时区无关)
   workflow_dispatch:          # 网页上的手动按钮(本文件进了 main 才会出现)
+    inputs:
+      test_alarm:
+        description: '演习:故意让这次体检不过,验证邮件和 Telegram 真能到手'
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
@@ -64,4 +69,6 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # 演习开关。**只有网页上手动勾选才会是 true**,定时那趟永远是空。
+          HEALTHCHECK_TEST_ALARM: ${{ inputs.test_alarm }}
         run: python3 .github/scripts/healthcheck.py

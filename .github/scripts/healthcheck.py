@@ -140,6 +140,10 @@ def notify_telegram(text):
         print("  ⓘ 没配 TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID,跳过 Telegram 推送")
         print("     (这是**刻意的优雅降级**:没配也能跑,邮件那条腿不受影响)")
         return
+    # Telegram 单条上限 4096 字符。真炸开时 problems 可能很长,
+    # **宁可截断也不能整条发不出去** —— 发不出去等于没告警。
+    if len(text) > 3900:
+        text = text[:3900] + "\n…(太长已截断,详情看 GitHub Actions 那次运行)"
     body = json.dumps({"chat_id": chat, "text": text,
                        "disable_web_page_preview": True}).encode()
     for i in range(2):
@@ -253,6 +257,15 @@ print("\n" + "=" * 60)
 for n in notes:
     print("  · " + n)
 print("=" * 60)
+
+# ---- 演习(2026-09-02 新增):故意让这次不过,验证两条腿真能到她手上 ----
+# **为什么值得有这个开关**:这只狗的两条腿(邮件 / Telegram)平时永远不触发,
+# 于是「配错了」和「配对了」看起来一模一样 —— 直到真出事那天才发现叫不出来。
+# 08-19 建它时就写了「**验收重在失败路径**:一个永远绿的看门狗比没有更糟」,这是同一条原则。
+# **只有网页上手动勾选才会触发**;定时那趟这个变量是空的,永远不会自己演习。
+if os.environ.get("HEALTHCHECK_TEST_ALARM", "").strip().lower() == "true":
+    print("\n[演习] 这是手动触发的演习,不是真故障 —— 下面这条是假的。")
+    problems.append("【演习】这是一次人为触发的告警测试,系统本身没有问题")
 
 if problems:
     print(f"\n❌ 体检不通过,{len(problems)} 项有问题:")

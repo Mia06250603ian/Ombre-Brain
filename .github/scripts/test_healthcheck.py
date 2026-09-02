@@ -74,6 +74,22 @@ for name, payload, want_code, want_text in CASES:
         print("     ---- 实际输出 ----")
         print("     " + "\n     ".join(out.strip().splitlines()[-14:]))
 
+# 演习开关:勾了必须变红(否则「验证告警能不能到手」这件事本身就是假的);
+# 不勾则必须一点影响都没有(否则定时那趟会天天演习)。
+import os
+os.environ["HEALTHCHECK_TEST_ALARM"] = "true"
+code, out = run({"lastApiError": None})
+ok = code == 1 and "【演习】" in out
+print(("  ✅ " if ok else "  ❌ ") + "演习开关打开时:全绿也照样报警")
+fail += 0 if ok else 1
+
+os.environ["HEALTHCHECK_TEST_ALARM"] = "false"
+code, out = run({"lastApiError": None})
+ok = code == 0 and "【演习】" not in out
+print(("  ✅ " if ok else "  ❌ ") + "演习开关关着时:一点影响都没有")
+fail += 0 if ok else 1
+os.environ.pop("HEALTHCHECK_TEST_ALARM", None)
+
 # 顺带确认:失败时会走 Telegram 那一步,且没配 secret 时是优雅跳过、不炸
 code, out = run({"lastApiError": {"at": iso(0.1), "kind": "401 authentication_error", "text": "x"}})
 ok = "[5] Telegram 推送" in out and "跳过 Telegram 推送" in out
