@@ -7,28 +7,42 @@
 #     08-19 Node 250ms 闸门 → 空回
 #   要治的从来不是「它会坏」,而是「坏了没人吭声」。
 #
-# 怎么报警:脚本非 0 退出 → 这次运行变红 → **GitHub 自动给仓库主人发邮件**。
-#   **刻意不走 Telegram**:出事时往往正是 Telegram 那条路不通(08-19 就是),
-#   而且往 Actions 里塞 bot token 等于多一处密钥。
-#   所有检查都用**无鉴权的只读口,零密钥**。
+# 怎么报警:**两条腿(2026-09-02 起)**。
+#   ① 邮件:脚本非 0 退出 → 这次运行变红 → **GitHub 自动给仓库主人发邮件**。
+#   ② Telegram:失败时额外推一条 `⚠️[体检] …`(要 TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
+#      两个 secret;**没配就自动跳过**,不影响体检本身)。
+#   ⚠️ 原文写「刻意不走 Telegram」,那两条顾虑(出事时 TG 那条路可能正好不通、多一处密钥)
+#      **至今依然成立**。翻案只因为一条:**所有者说她不看邮件** —— 送不到手上的告警等于零。
+#      所以是**并联**不是替换:邮件仍是主判据,TG 推送失败不影响结论。详见脚本开头。
+#   除这一处外,所有检查仍用**无鉴权只读口**;**别把要管理密码的 auth-files 加进来**。
 #
 # 跑在 GitHub 上而不是那台机器上 —— 这是**刻意的**:
 #   看门狗必须站在被看的东西外面。整台机器挂了的时候,跑在机器里的狗也一起哑了。
 #
-# 节拍:先每天一次(北京时间 10:00),**用来观察会不会误报**。
-#   确认几天不乱叫之后,把 cron 改成 '0 * * * *' 就是每小时 —— 那样才抓得住
-#   08-11 那种「断三小时」。**先慢后快,是因为一个乱叫的看门狗比没有更糟。**
+# 节拍:**2026-09-02 起每小时一次**(原来是每天北京时间 10:00 一次)。
+#   这一步是原文自己写好等着的:「确认几天不乱叫之后,把 cron 改成 '0 * * * *'
+#   ——**那样才抓得住 08-11 那种「断三小时」**」。观察期内没误报,故照办。
+#   ⚠️ **万一开始乱叫,先把 cron 改回 '0 2 * * *' 降频,别删掉整个工作流** ——
+#   乱叫的狗比没有更糟,但没有狗比乱叫的更糟。
+#   ⚠️ GitHub 的定时任务**尽力而为**:高峰期会延迟十几分钟、偶尔跳过一次。
+#   抓「一个月一次」的订阅到期绰绰有余,别把它当秒表。
 # ============================================================
-name: Daily Healthcheck
+name: Hourly Healthcheck
 
 on:
   schedule:
-    - cron: '0 2 * * *'      # UTC 02:00 = 北京时间 10:00
+    - cron: '0 * * * *'      # 每小时整点(UTC;每小时跑与时区无关)
   workflow_dispatch:          # 网页上的手动按钮(本文件进了 main 才会出现)
+    inputs:
+      test_alarm:
+        description: '演习:故意让这次体检不过,验证邮件和 Telegram 真能到手'
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
       - '.github/scripts/healthcheck.py'
+      - '.github/scripts/test_healthcheck.py'
       - '.github/workflows/healthcheck.yml'
 
 jobs:
@@ -41,7 +55,20 @@ jobs:
         with:
           python-version: '3.12'
 
+      # 狗的自检。**刻意只在改动/手动那两种触发下跑,定时那趟不跑** ——
+      # 每小时都跑等于给自己加了一个新的故障源:测试自己写挂了,就会变成每小时一次的误报。
+      - name: 自检(只在改动时)
+        if: github.event_name != 'schedule'
+        run: python3 .github/scripts/test_healthcheck.py
+
       # 脚本只用标准库,**刻意不装任何依赖** ——
       # 看门狗要是会被某个包的升级搞挂,那它反而成了新的故障源(07-29 就是依赖引发的)。
+      # 这两个 secret **没配也能跑**(脚本会自己跳过 Telegram 那条腿,只发邮件)。
+      # 值从 Zeabur 的 telegram-bridge 服务里复制,**别让它经过任何会话或日志**。
       - name: 体检
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # 演习开关。**只有网页上手动勾选才会是 true**,定时那趟永远是空。
+          HEALTHCHECK_TEST_ALARM: ${{ inputs.test_alarm }}
         run: python3 .github/scripts/healthcheck.py
