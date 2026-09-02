@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """离线验证新加的那条告警:喂假的 /debug,看它该叫时叫、不该叫时闭嘴。
 不联网(urlopen 全被替换掉),不碰线上。"""
-import io, json, runpy, sys, urllib.request
+import io, json, os, runpy, sys, urllib.request
 from datetime import datetime, timedelta, timezone
 
-SCRIPT = "/home/user/Ombre-Brain/.github/scripts/healthcheck.py"
+# ⚠️ **必须相对本文件定位,不能写死绝对路径。**
+# 2026-09-02 就是这么翻的车:原来写的是开发机上的 `/home/user/Ombre-Brain/...`,
+# 本地跑得好好的,一进 GitHub 的机器就 FileNotFoundError(那边的工作目录是
+# `/home/runner/work/...`)。**本地能跑不等于 CI 能跑。**
+SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "healthcheck.py")
 
 
 def iso(hours_ago):
@@ -76,7 +80,6 @@ for name, payload, want_code, want_text in CASES:
 
 # 演习开关:勾了必须变红(否则「验证告警能不能到手」这件事本身就是假的);
 # 不勾则必须一点影响都没有(否则定时那趟会天天演习)。
-import os
 os.environ["HEALTHCHECK_TEST_ALARM"] = "true"
 code, out = run({"lastApiError": None})
 ok = code == 1 and "【演习】" in out

@@ -65,7 +65,12 @@ jobs:
       # 看门狗要是会被某个包的升级搞挂,那它反而成了新的故障源(07-29 就是依赖引发的)。
       # 这两个 secret **没配也能跑**(脚本会自己跳过 Telegram 那条腿,只发邮件)。
       # 值从 Zeabur 的 telegram-bridge 服务里复制,**别让它经过任何会话或日志**。
+      # ⚠️ `if: always()` 是刻意的:**自检挂了也要照样体检**。
+      # 2026-09-02 实撞——自检因为一个写死的路径失败,把真正的体检整个挡在了后面,
+      # 那一趟等于没有看门狗。**狗不能被自己的测试绊住**(同铁律②)。
+      # 自检失败仍然会让整次运行变红,该发的邮件一封不少。
       - name: 体检
+        if: always()
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
