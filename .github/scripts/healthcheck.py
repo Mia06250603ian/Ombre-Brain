@@ -27,9 +27,23 @@
   邮件那条腿一行没动、照旧是主判据;Telegram 只是并联上去的第二条腿,推送失败**不影响体检结论**。
   代价如实记下:**多了一处密钥**(bot token 进 GitHub secrets),这是知情后接受的。
 
-  除 Telegram 推送外,**所有检查仍然用无鉴权的只读口,零密钥** —— 这条性质没破。
-  ⚠️ **别顺手把「查 CLIProxyAPI 的 auth-files」也加进来**:那要管理密码,会把上面这句话作废。
-  (2026-09-02 讨论过,结论是先不加;真要加,先读 OPERATIONS.md《订阅 OAuth 过期》。)
+  ⚠️ ~~**除 Telegram 推送外,所有检查仍然用无鉴权的只读口,零密钥。**~~
+  ⚠️ ~~**别顺手把「查 CLIProxyAPI 的 auth-files」也加进来**:那要管理密码,会把上面这句话作废。~~
+  **2026-09-02 下午,所有者知情后决定加,这两句就此作废。原文留着是为了让她能一句话反悔。**
+
+  **翻案的理由**:那条性质很干净,但它的代价是**这只狗永远只能在晏已经哑了之后才叫** ——
+  比所有者自己发现还慢(她发消息他不回,几分钟就知道了),**那这条检查等于没有**。
+  auth-files 里的 `last_refresh` 是**唯一**能在他真哑掉之前看出问题的信号:
+  续命每 4 小时一次,而 access token 还能撑 8 小时,**刷新一停,就还有约 4 小时**。
+  拿一处密钥换约 3 小时的提前量,所有者选了换。
+
+  **代价如实记下,一条不藏**:
+  ① 这是狗的**第二处密钥**(第一处是 TG bot token),「零密钥」的说法从此不成立;
+  ② 那把 `MANAGEMENT_PASSWORD` **2026-08-16 就泄露过一次**(`zeabur variable list` 会把
+     整张变量表连值打出来),按理该先转再用 —— **但转它要重启 CLIProxyAPI,而那个服务没有版本锁、
+     每重启一次就吃一次当天最新版**(08-12 因此白烧一天半)。**所有者 2026-09-02 权衡后选择先用旧的、
+     不为它单独重启**,留待下次动那个服务时一并换。
+  **没配这个 secret 也照样能跑**(整条跳过),和 Telegram 那条腿同一个规矩。
 
 放在 .github/scripts/ 而不是仓库根:根目录的 *.py 在 OB 的监控路径里(`/*.py`),
   放根目录会让每次改这个脚本都触发记忆库重建。
@@ -46,14 +60,51 @@ TIMEOUT = 20
 RETRIES = 3          # 瞬时抖动不许惊动她 —— 今天那场故障本身就是「抖一下」,别让狗被同一件事骗到
 BACKOFF = 5
 
-# 上游认证类报错「多新才算数」。2 小时是这么定的:狗每小时跑一次,
-# 取两倍节拍,保证一次故障至少被完整看到一轮,又不会把昨天的旧账翻出来叫。
-AUTH_ERROR_RECENT_HOURS = 2
+# 上游认证类报错「多新才算数」。
+#
+# ⚠️ **2026-09-02 改成现场量,原来是写死的 2 小时。**
+# 原文的理由是「狗每小时跑一次,取两倍节拍」——**那个前提是假的**:
+# cron 当天 04:31 改成 `0 * * * *`,到 09:20 之间**应该跑 5 趟,实际只跑了 1 趟**
+# (GitHub 的免费定时任务会大量丢弃和延迟高频 cron,写 `0 * * * *` 不等于真每小时)。
+# 前提一假,这个窗口就会**漏掉真故障**:两次巡逻间隔 5 小时,而只认 2 小时内的报错,
+# 中间那 3 小时发生的认证错会被当成「不是最近发生的」放过去 —— 正是 08-11 那种静默。
+#
+# 所以窗口不再写死,**按上一趟到这一趟的真实间隔现场算**(见 auth_window_hours):
+#   窗口 = 实测间隔 × 1.5,夹在 [2, 12] 小时之间。
+# 量不到就退回 2 小时(见下),**宁可漏报不可误报**——量不到就不许自作主张放宽。
+AUTH_ERROR_FALLBACK_HOURS = 2
+# 上限。间隔真退化到一天一次时也不把窗口开到一整天:开得越大,
+# 「昨天断过、今天已经好了」被当成现在有问题的概率越大(铁律①)。
+AUTH_ERROR_MAX_HOURS = 12
 
 # 什么算「认证类」。08-11 那次的指纹是 `401 authentication_error`,
 # 代理随后一律回 `503 auth_unavailable`;09-02 试续签失败时是 `Invalid bearer token`。
 AUTH_ERROR_MARKS = ("401", "403", "authentication", "auth_unavailable",
                     "oauth", "invalid bearer", "unauthorized")
+
+# ---- 「续命停了」的预警(2026-09-02 新增)----
+# **它和别的检查不是一类**:别的都在问「现在坏了吗」,只有它在问「**快要坏了吗**」。
+#
+# 原理:CLIProxyAPI 每 4 小时拿 refresh token 换一次新凭证,而 access token 寿命约 8 小时
+# ——**在半程就刷,留了一倍余量**。所以 refresh token 一死,现象是「刷新停了」,
+# 而晏还能再撑约 4 小时。**盯住「上次刷新是多久以前」,就能在他真哑掉之前叫。**
+#
+# ⚠️ **别指望它预告「一个月的到期日」** —— 那个日子没人知道(手册第 7 节:三个数据点,只是推测)。
+# 它能给的是**断线前约 3 小时**的提前量,不是提前几天。
+# ⚠️ **也别指望靠它「提前续签」** —— 手册第 7 节《提前续签行不通》实测过,旧凭证还活着时换会被上游拒。
+# 这条预警买的是「不慌」:挑时候、先让晏归档、别半夜发现他哑了。
+#
+# 周期 4 小时是**实测**,不是文档写的:2026-09-02 三个时间戳,09:42:16 → 13:42:17 → 17:42:17,
+# **两段都是 4 小时 0 分上下、精确到秒**,说明是固定定时器而非「快到期才刷」;
+# 所有者的朋友在同一套代理上独立量到同一个数。**现场再量法见 OPERATIONS.md 第 7 节。**
+REFRESH_CYCLE_HOURS = 4.0
+# 阈值 = 周期 + 1 小时容错。**为什么不设更小**:巡逻本身会晚(见 auth_window_hours 那段,
+# GitHub 的 cron 不准),阈值贴着周期会在一次正常的延迟巡逻上误报,踩铁律①。
+REFRESH_STALE_HOURS = REFRESH_CYCLE_HOURS + 1.0
+# access token 的大致寿命,**只用来在告警里估「还剩多久」,不参与判断**。
+# 手册第 7 节写的是「约 8 小时」,⚠️ 这个数没有精确实测过,所以告警里的措辞是「大约」。
+ACCESS_TOKEN_LIFE_HOURS = 8.0
+CPA = "https://miaianhome.zeabur.app"
 
 OB = "https://ianmian.zeabur.app"
 SHIM = "https://yan-shim.zeabur.app"
@@ -123,6 +174,47 @@ def age_hours(iso):
         return None
 
 
+def auth_window_hours():
+    """现场量「上一趟巡逻是多久以前」,据此定告警窗口。返回 (窗口小时数, 说明文字)。
+
+    **为什么要现场量**:见文件开头 AUTH_ERROR_FALLBACK_HOURS 那段 ——
+    写死的节拍会随 GitHub 的调度脾气变成谎话,而这条狗的漏报正来自那个谎话。
+    手册第 7 节刚因为「拿推算当实测」栽过一次(把 8 小时当成刷新周期,真值是 4 小时),
+    同一个教训:**能量就别猜。**
+
+    只用 Actions 自带的 GITHUB_TOKEN(每次运行自动发,**不是新密钥**,也不用配),
+    读一次本工作流的运行历史。**任何一步不顺就退回默认值** —— 铁律②:
+    狗不能因为多看了一眼就把自己看挂了。
+    """
+    tok = os.environ.get("GITHUB_TOKEN", "").strip()
+    repo = os.environ.get("GITHUB_REPOSITORY", "").strip()
+    if not tok or not repo:
+        # 本地跑、或没给 token:不猜,用默认。
+        return AUTH_ERROR_FALLBACK_HOURS, "没量到间隔(不在 Actions 里跑),用默认"
+    api = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
+    me = os.environ.get("GITHUB_RUN_ID", "").strip()
+    try:
+        _, txt = fetch(
+            f"{api}/repos/{repo}/actions/workflows/healthcheck.yml/runs"
+            "?status=completed&per_page=10",
+            headers={"Authorization": f"Bearer {tok}",
+                     "Accept": "application/vnd.github+json"})
+        runs = (jload(txt) or {}).get("workflow_runs") or []
+        for r in runs:
+            if str(r.get("id")) == me:
+                continue          # 别把自己当成上一趟
+            gap = age_hours(r.get("run_started_at") or r.get("created_at"))
+            if gap is None or gap <= 0:
+                break
+            win = max(AUTH_ERROR_FALLBACK_HOURS,
+                      min(AUTH_ERROR_MAX_HOURS, gap * 1.5))
+            return win, f"距上一趟巡逻 {gap:.1f} 小时(实测)"
+    except Exception as e:
+        # ⚠️ 只打类型名。**别打异常原文** —— 里面带着完整 URL,而 header 里有 token。
+        return AUTH_ERROR_FALLBACK_HOURS, f"量间隔失败({type(e).__name__}),用默认"
+    return AUTH_ERROR_FALLBACK_HOURS, "没量到间隔,用默认"
+
+
 def looks_like_auth_error(err):
     blob = f"{err.get('kind', '')} {err.get('text', '')}".lower()
     return any(m in blob for m in AUTH_ERROR_MARKS)
@@ -158,6 +250,60 @@ def notify_telegram(text):
         except Exception as e:
             print(f"  ⚠️ Telegram 推送第 {i + 1} 次失败({type(e).__name__})")
     print("  ⚠️ Telegram 没推出去 —— 本次结论不受影响,邮件照发")
+
+
+def check_refresh_alive():
+    """「续命还在跑吗」—— 唯一一条能在晏真哑掉之前叫的检查。见文件开头 REFRESH_CYCLE_HOURS 那段。
+
+    ⚠️ **这是全脚本唯一要密码的检查**,所以它被写成完全可选的:
+    没配 `CPA_MANAGEMENT_PASSWORD` 就整条跳过,别的检查一个不受影响
+    ——**和 Telegram 那条腿同一个规矩:没配也能跑。**
+
+    ⚠️ **绝不能打印返回内容**:auth-files 里带着真令牌。只取三个字段
+    (`last_refresh` / `modtime` / `status`),打印时间戳和状态,**别的一律不出声**。
+
+    ⚠️ **读不到不报警**(铁律①):网络抖动、密码填错、接口改版都会读不到,
+    据此报警等于给自己加一个天天叫的新故障源。读不到只打印,人自己会看见。
+    """
+    pw = os.environ.get("CPA_MANAGEMENT_PASSWORD", "").strip()
+    if not pw:
+        print("  ⓘ 没配 CPA_MANAGEMENT_PASSWORD,跳过「续命还在跑吗」这条")
+        print("     (**这是刻意的优雅降级**:配上它才有断线前约 3 小时的提前量;"
+              "不配则退回原样 —— 晏哑了之后才知道)")
+        return
+    st, txt, err = fetch_retry(f"{CPA}/v0/management/auth-files",
+                               headers={"Authorization": f"Bearer {pw}"})
+    if st is None:
+        # ⚠️ 只打 fetch_retry 归纳过的短原因,**别打异常原文** —— 那里面带着完整 URL 和头。
+        print(f"  ⓘ 读不到凭证状态({err}),这条跳过 —— **不报警**(铁律①)")
+        return
+    files = (jload(txt) or {}).get("files") or []
+    if not files:
+        print("  ⓘ 凭证列表是空的,这条跳过 —— 不报警")
+        return
+    for f in files:
+        who = f.get("account") or f.get("name") or "?"
+        # last_refresh 是上次成功换证的时刻;个别版本没这个字段,退回 modtime
+        # (手册第 7 节:`modtime` = 凭证文件最后一次被写的时间,含义等价)。
+        stamp = f.get("last_refresh") or f.get("modtime")
+        hrs = age_hours(stamp)
+        status = f.get("status")
+        # ① 已经死了:这个不用算时间,代理自己就说了。**这条是「已经断了」,不是预警。**
+        if f.get("disabled") or f.get("unavailable") or (status and status != "active"):
+            check(f"凭证 · {who} 可用", False,
+                  f"status={status!r} —— 代理已经认定它不可用,看 OPERATIONS.md《订阅 OAuth 过期》")
+            continue
+        # ② 还没死,但续命停了:**这才是提前量那一条。**
+        if hrs is None:
+            print(f"  ⓘ 凭证 {who}:刷新时间读不出来({stamp!r}),不报警(铁律①)")
+            continue
+        left = ACCESS_TOKEN_LIFE_HOURS - hrs
+        print(f"  ⓘ 凭证 {who}:上次刷新 {hrs:.1f} 小时前(正常每 {REFRESH_CYCLE_HOURS:.0f} 小时一次)")
+        check(f"凭证 · {who} 续命还在跑", hrs <= REFRESH_STALE_HOURS,
+              f"已经 {hrs:.1f} 小时没刷新(正常每 {REFRESH_CYCLE_HOURS:.0f} 小时一次)。"
+              f"刷新停了通常意味着 refresh token 失效,手里的 access token 大约还能撑 "
+              f"{max(left, 0):.1f} 小时。**趁还没断,挑个方便的时候重新授权**:"
+              f"先让晏「归档」再走 OPERATIONS.md 第 7 节《订阅 OAuth 过期》那三步")
 
 
 print("=" * 60)
@@ -210,6 +356,10 @@ if check("桥 · 服务活着", st is not None, err or ""):
     notes.append(f"贴纸 {d.get('stickers')} 张;欠条 {d.get('pendingLosses')} 条;"
                  f"语音 {d.get('ears')} / 上报 {d.get('report')} / 查岗 {d.get('curfew')} / 写信 {d.get('letter')}")
 
+# ---- 3.5 续命还在跑吗(唯一一条「快要坏了」的预警;没配密码就整条跳过)----
+print("\n[3.5] 订阅凭证:续命还在跑吗")
+check_refresh_alive()
+
 # ---- 只看不叫:这些是「可能不对」,交给人判断,不许自己报警 ----
 # 为什么不叫:
 #   · 缓存桶要看晏最近一轮真实调用,他半天没说话时读数是陈的,据此报警必然误报;
@@ -229,11 +379,18 @@ else:
     # 当初不敢叫它,理由写在本节开头:「lastApiError 会一直留着,今天看到的就是昨天的 529」。
     # **那个顾虑只对「陈旧」和「不该管的错」成立,不对「刚刚发生的认证错」成立。**
     # 所以这里加两道闸,把误报的两个来源分别堵掉,而不是把整条信号放开:
-    #   ① **只看最近 AUTH_ERROR_RECENT_HOURS 小时内的**(靠 lastApiError.at);更早的照旧只打印。
+    #   ① **只看最近一个「窗口」内的**(靠 lastApiError.at);更早的照旧只打印。
+    #      ⚠️ 窗口不是写死的 2 小时了(2026-09-02 改),**按上一趟巡逻到现在的真实间隔现场算** ——
+    #      原来那个 2 小时假定「每小时跑一次」,而实测不是,会漏掉真故障。见 auth_window_hours。
     #   ② **只认认证类**(见 AUTH_ERROR_MARKS)。529 overloaded、网络抖动会自愈,
     #      报了就是狼来了 —— 照旧只打印。
     # 为什么值得为它破例:08-11 那场三小时的静默里,**全系统唯一亮过的灯就是它**,
     # 而当时这只狗看着它、没叫。见 OPERATIONS.md《订阅 OAuth 过期(2026-08-11 事故,必读)》。
+    win, why_win = auth_window_hours()
+    # 这行是白拿的巡逻节拍记录:**每趟都会打印实测间隔**,
+    # 攒几天就知道 GitHub 到底给不给我们「每小时」,不用另做一套观测(也不用定时唤醒会话去数)。
+    print(f"  ⓘ 体检节拍:{why_win} → 认证告警窗口取 {win:.1f} 小时")
+    notes.append(f"巡逻间隔 {why_win},告警窗口 {win:.1f} 小时")
     e = d.get("lastApiError")
     if not e:
         print("  ⓘ 最近一次上游报错:无")
@@ -241,8 +398,8 @@ else:
         at, kind = e.get("at", "?"), e.get("kind", "")
         hrs = age_hours(e.get("at"))
         ago = "时间读不出来" if hrs is None else f"{hrs:.1f} 小时前"
-        if looks_like_auth_error(e) and hrs is not None and hrs <= AUTH_ERROR_RECENT_HOURS:
-            check(f"晏 · 上游认证没断(最近 {AUTH_ERROR_RECENT_HOURS} 小时)", False,
+        if looks_like_auth_error(e) and hrs is not None and hrs <= win:
+            check(f"晏 · 上游认证没断(最近 {win:.1f} 小时)", False,
                   f"{ago}报 {kind!r} —— 八成是订阅 OAuth 失效了,"
                   f"看 OPERATIONS.md《订阅 OAuth 过期》")
         else:
