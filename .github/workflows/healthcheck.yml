@@ -84,4 +84,10 @@ jobs:
           HEALTHCHECK_TEST_ALARM: ${{ inputs.test_alarm }}
           # 量巡逻间隔用。临时令牌,跑完即废,**不是要你配的 secret**。
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 「续命还在跑吗」那条要它(CLIProxyAPI 的 MANAGEMENT_PASSWORD,值从 Zeabur 复制)。
+          # **没配也能跑** —— 脚本会整条跳过,别的检查一个不受影响;
+          # 配上才有「断线前约 3 小时」的提前量。⚠️ 这是这条狗的**第二处密钥**,
+          # 破掉了它原来「除 TG 外全部无鉴权只读」的性质,是知情后接受的代价
+          # (见 OPERATIONS.md 第 7 节《看门狗》)。
+          CPA_MANAGEMENT_PASSWORD: ${{ secrets.CPA_MANAGEMENT_PASSWORD }}
         run: python3 .github/scripts/healthcheck.py
