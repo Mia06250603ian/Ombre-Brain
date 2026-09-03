@@ -86,6 +86,9 @@ const CONFIG = {
   visibleGlyphs:  300,
   tagGroupMax:    28,              // 一个标签底下超过这么多桶就当它太泛,不连线(「日常」那种)
   tagEdgesPerNode: 4,              // 每个桶最多留几条「共享标签」的线
+  // ⚠️ 横向铺开的力度(2026-09-03 所有者:「乱码都集中在中间」)。
+  // 0 = 不铺(会塌回中间那一坨),1 = 完全按名次铺平(簇会被抹掉,不要)。做法见 makeGraph 末尾。
+  spreadX:        0.62,
   driftSpeed:     0.004725,        // 上飘速度(0 = 不飘)
   interactRadius: 110,             // 手指/鼠标多近才算「凑近了」(px)
   neighborCount:  4,               // 凑近时照亮最近几颗
@@ -225,18 +228,15 @@ const CONFIG = {
   }
   #hint.gone { opacity:0; }
 
-  /* 左下角读数 / 右下角三颗按钮 */
+  /* 右下角三颗按钮。
+     ⚠️ 左下角原来还有一块「30 FPS | 1.00×」的读数(`#meter`),
+     **2026-09-03 所有者点名删掉了**(「下方的 30fps 1.00x 那一行能不能删掉」)。
+     它是给开发看的,对她没用。**别照旧文加回来**;演练里量「动画在转 / 缩放生效」
+     改成读 `window.__drift` 的 `frames()` 和 `scale()`,不再依赖屏幕上有这块读数。 */
   .hud {
     position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 14px); z-index:3;
     font-family:"SFMono-Regular",Menlo,Consolas,monospace; font-size:10px; letter-spacing:.08em;
   }
-  #meter {
-    left:14px; display:flex; align-items:center; gap:8px; height:34px; padding:0 11px;
-    border:1px solid var(--drift-line); border-radius:7px; background:var(--drift-panel);
-    color:var(--drift-dim); pointer-events:none;
-  }
-  #meter b { color:var(--drift-ink); font-weight:500; }
-  #meter i { padding-left:8px; border-left:1px solid var(--drift-line); font-style:normal; letter-spacing:0; }
   #controls { right:14px; display:flex; gap:5px; }
   #controls button {
     width:38px; height:38px; display:grid; place-items:center;
@@ -395,7 +395,6 @@ const CONFIG = {
 
 <p id="hint">点一个字,看它牵着谁</p>
 
-<div id="meter" class="hud"><b id="mFps">–</b> FPS <i id="mZoom">1.00×</i></div>
 <div id="controls" class="hud">
   <button type="button" data-action="in"    aria-label="放大">＋</button>
   <button type="button" data-action="out"   aria-label="缩小">－</button>
@@ -615,6 +614,22 @@ function makeGraph(items, relations){
   // 最后把 y 铺匀,免得上飘时一阵密一阵疏
   nodes.slice().sort((l, r) => l.y - r.y).forEach(function(n, i, all){ n.y = (i + .5) / all.length; });
 
+  // ⚠️⚠️ x 也要铺开(2026-09-03 所有者:「**乱码都集中在中间**」)。
+  // **病根**:上面「相似的拽到一起」+ 十轮松弛是**只拉不推到边**的,
+  // 400 个桶带 2300+ 条边,x 会整体塌向中间 —— 现场量过:**80% 的字符挤在屏幕中间 37% 的宽度里**
+  // (p10 = 屏宽 25%、p90 = 62%,两侧几乎是空的)。**y 没这个毛病,因为上面那行按名次铺平过。**
+  // **做法**:按名次算一个「铺满全宽」的理想位置,再和现在的位置**按比例混**。
+  // ⚠️ **不能像 y 那样直接铺平**(`spreadX = 1`)—— 那会把「相似的挨在一起」整个抹掉,
+  //    簇就没了。混合是保序的:**簇还在,只是整体摊开到全宽**。
+  // 调 `CONFIG.spreadX`:0 = 回到原来那坨,1 = 完全铺平(不要)。
+  if (CONFIG.spreadX > 0) {
+    const byX = nodes.slice().sort((l, r) => l.x - r.x);
+    byX.forEach(function(n, i, all){
+      const even = .018 + (i + .5) / all.length * .964;      // 铺满 [.018,.982],和 clamp 的边界一致
+      n.x = n.x * (1 - CONFIG.spreadX) + even * CONFIG.spreadX;
+    });
+  }
+
   // 世界铺多大 = 总字符数 / 一屏想看见多少(下限 1:世界不能比一屏还小)
   return { nodes:nodes, edges:edges,
            worldScale:Math.max(1, Math.sqrt(total / CONFIG.visibleGlyphs)) };
@@ -659,10 +674,8 @@ function boot(items, relations){
   let scale = 1, panX = 0, panY = 0;
   let pointer = null, drag = null, pinch = null;
   const touches = new Map();
-  let running = true, lastFrame = 0, frames = 0, fpsAt = performance.now();
+  let running = true, lastFrame = 0, frames = 0;   // frames 只累加,给演练当「动画真的在转」的观察口
   let lockedIndex = null, feedbacks = [];
-
-  const fpsEl = document.getElementById('mFps'), zoomEl = document.getElementById('mZoom');
 
   const clampScale = v => clamp(v, minScale, 3.2);
   function clampPan(){
@@ -864,13 +877,7 @@ function boot(items, relations){
       return true;
     });
 
-    if (zoomEl) zoomEl.textContent = scale.toFixed(2) + '×';
     frames++;
-    if (now - fpsAt > 500) {
-      const fps = Math.round(frames * 1000 / (now - fpsAt));
-      frames = 0; fpsAt = now;
-      if (fpsEl) fpsEl.textContent = String(clamp(fps, 1, 120));
-    }
   }
 
   function loop(now){
@@ -1049,6 +1056,7 @@ function boot(items, relations){
     },
     clear: function(){ lockedIndex = null; closeCard(); },
     scale: () => scale,
+    frames: () => frames,      // 只增不减:演练拿它判「动画真的在转」(原来是读屏幕上那块 FPS)
   };
 
   resize();

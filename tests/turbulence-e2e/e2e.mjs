@@ -87,8 +87,26 @@ const painted = await pg.evaluate(() => {
   return n;
 });
 ok(painted > 5000, `场上确实画了东西(${painted} 个像素和底色不同)`, painted);
+// ⚠️ 横向要铺开(2026-09-03 所有者:「乱码都集中在中间」)。改之前现场量:
+// 中间那 80% 的字只占屏宽的 **37%**(p10 = 25%、p90 = 62%),两边是空的;
+// 病根是「相似的拽到一起」+ 松弛只拉不推,x 会整体塌向中间(y 不会,它按名次铺平过)。
+// 现在 makeGraph 末尾按名次把 x 混着摊开(`CONFIG.spreadX`)。**这条钉的是「铺没铺开」,
+// 不是具体数值** —— 调 spreadX 不会把它弄红,但塌回中间就会。
+const spreadPct = await pg.evaluate(() => {
+  const d = window.__drift, W = innerWidth, xs = [];
+  for (let i = 0; i < d.glyphs; i++) { const pt = d.point(i); if (pt) xs.push(pt.x); }
+  xs.sort((a, b) => a - b);
+  const q = f => xs[Math.floor(f * (xs.length - 1))];
+  return Math.round((q(.9) - q(.1)) / W * 100);
+});
+ok(spreadPct >= 55, `字符横向铺开了(中间 80% 的字占屏宽 ${spreadPct}%,要 ≥55%)`, spreadPct);
+// ⚠️ 2026-09-03 所有者把左下角那块「30 FPS | 1.00×」的读数删了(「那一行能不能删掉」),
+// 所以「动画真的在转」改成读观察口里的帧计数,不再依赖屏幕上有那块读数。
+const f0 = await pg.evaluate(() => window.__drift.frames());
 await pg.waitForTimeout(900);
-ok(/^[0-9]+$/.test((await pg.textContent('#mFps')).trim()), 'FPS 读数在跳 = 动画真的在转');
+const f1 = await pg.evaluate(() => window.__drift.frames());
+ok(f1 > f0, `动画真的在转(900ms 里画了 ${f1 - f0} 帧)`, f1 - f0);
+ok(await pg.evaluate(() => !document.getElementById('meter')), '左下角那块 FPS 读数已经删掉了');
 
 console.log('D. 点中一颗 → 卡片浮出来,正文是取回来的全文');
 await pg.evaluate(() => window.__drift.lockAt(0));
@@ -225,7 +243,9 @@ ok(s1 > s0, `＋ 放大了(${s0.toFixed(2)} → ${s1.toFixed(2)})`);
 await pg.click('#controls button[data-action="reset"]');
 const s2 = await pg.evaluate(() => window.__drift.scale());
 ok(Math.abs(s2 - 1) < 0.001, '↺ 复位回 1.00×');
-ok((await pg.textContent('#mZoom')).includes('×'), '右下角读数带倍数');
+// ⚠️ ~~原来这条读的是屏幕上 #mZoom 那块「1.00×」~~ —— 那块已按所有者要求删掉,
+// 改成直接量倍数本身(本来就该量这个)。
+ok(typeof (await pg.evaluate(() => window.__drift.scale())) === 'number', '倍数读得出来');
 
 console.log('G. 只读 + 零外部请求(这一页的底线)');
 const external = requests.filter(r => !r.url.startsWith(OB) && !r.url.startsWith('data:') && !r.url.startsWith('about:'));
