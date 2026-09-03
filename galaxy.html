@@ -70,6 +70,23 @@ body{font-family:"Noto Serif SC","Songti SC",serif;color:#F3EAF5}
   transition:opacity 2s ease}
 #veil.gone{opacity:0}
 
+/* 左上角的出口:回记忆库后台。
+   ⚠️ **这颗必须有** —— 这一页能被加到手机主屏,那种模式下 Safari 那圈壳没了、
+   连返回按钮都没有,没它就只能杀掉重开。
+   ⚠️ **所有者 2026-09-03 点名要「更隐蔽一点」**:所以不做成按钮,只留一个很淡的箭头
+   (透明度 .26),碰到才亮起来。**别给它加底色/描边做成胶囊**——乱流页那颗才是胶囊,
+   这一页她要的是藏着。⚠️ 点击热区仍然是 44×44(看着小不等于难按)。
+   ⚠️ 用 `<a>` 不用 JS 跳转:点了才走,不带来任何请求。
+   z-index 低于 #veil(30),所以开场那层幕布落下之前它不会先冒出来。 */
+#exit{position:fixed;z-index:11;
+  top:calc(env(safe-area-inset-top) + 10px);left:calc(env(safe-area-inset-left, 0px) + 8px);
+  width:44px;height:44px;display:flex;align-items:center;justify-content:center;
+  color:rgba(225,205,240,.26);text-decoration:none;
+  transition:color .35s ease}
+#exit:hover,#exit:focus-visible{color:rgba(240,225,250,.8);outline:none}
+#exit svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;
+  stroke-linecap:round;stroke-linejoin:round}
+
 .head{position:fixed;top:0;left:0;right:0;z-index:10;text-align:center;
   padding:calc(env(safe-area-inset-top) + 16px) 16px 0;pointer-events:none;
   opacity:0;transition:opacity 1.6s ease .6s}
@@ -166,6 +183,10 @@ body{font-family:"Noto Serif SC","Songti SC",serif;color:#F3EAF5}
 <canvas id="gl"></canvas>
 <div id="veil"></div>
 <div id="labels"></div>
+
+<a id="exit" href="/dashboard" aria-label="回记忆库后台" title="回记忆库后台">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+</a>
 
 <div class="head" id="head">
   <h1 id="hTitle"></h1>
