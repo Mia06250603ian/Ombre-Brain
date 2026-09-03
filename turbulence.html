@@ -293,10 +293,14 @@ const CONFIG = {
      约 35px ≈ 11.6pt,取 11px。⚠️ 现场再量法:截图里找卡片白区的左右边界,除以 3。
      ⚠️ 侧边露出来之后,边缘高光那圈环**四边都看得见了**(原来只露顶边和两个顶角)—— 本来就是画满环的,不用改。 */
   #card {
-    position:fixed; left:11px; right:11px; bottom:0; z-index:4;
-    max-height:66vh; padding:20px 18px calc(env(safe-area-inset-bottom,0px) + 18px);
+    position:fixed; left:11px; right:11px; z-index:4;
+    /* ⚠️ **卡片是浮起来的,不再贴着屏幕底**(2026-09-03 所有者要「四个角保持一致」,
+       贴底的话下面两个角根本露不出来)。~~原来 bottom:0 + 底部内边距吃 safe-area~~。 */
+    bottom:calc(env(safe-area-inset-bottom,0px) + 11px);
+    max-height:66vh; padding:20px 18px 18px;
     display:none; grid-template-rows:auto 1fr; gap:11px;
-    border-top:1px solid transparent; border-radius:16px 16px 0 0;
+    /* ⚠️ 四个角**一样圆**(她的原话:「卡片四个角保持一致」)。~~原来 `16px 16px 0 0`~~。 */
+    border-top:1px solid transparent; border-radius:var(--sq); --sq:16px;
     background-color:var(--drift-card); background-image:var(--card-sheen);
     backdrop-filter:blur(30px) saturate(1.4); -webkit-backdrop-filter:blur(30px) saturate(1.4);
     box-shadow:var(--card-depth);
@@ -314,6 +318,35 @@ const CONFIG = {
       -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
       -webkit-mask-composite:xor; mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
       mask-composite:exclude;
+    }
+  }
+  /* ── iOS 那种**连续圆角**(超椭圆 / squircle)。2026-09-03 所有者:「把卡片改成 iOS 风格的
+     连续圆角…没有明显的四分之一圆弧感…四个角保持一致」。
+     ⚠️⚠️ **这件事 09-03 早些时候做过一次、被她当场回退**(TIMELINE 第二十五件)——
+     ~~那次只把**上两角**做成超椭圆、下缘保持直角(当时卡片贴着屏幕底)~~,四个角不一致才是被否的原因。
+     **这次不同**:卡片已经浮起来、四个角都露在屏幕里,四角同一条曲线。
+     ⚠️ **必须两条路一起给**(和后台 1.8 同一套做法,那边是拿事故换来的):
+       ① `corner-shape: squircle` —— **只有 Chrome 139+ 认,Safari 至今不认**;
+       ② `-webkit-mask-box-image` 切一张**超椭圆**(n=4,`|x/r|⁴+|y/r|⁴=1`,12 段/角)——
+          WebKit 十几年的老属性,**她 iPhone 上真正吃到的是这条**。
+     **两条给的是同一条曲线**;曲线本身是采样出来的折线,两位小数,肉眼看不出折点。
+     ⚠️ **别把兜底那段当冗余删掉**,删了她手机上就退回普通圆弧。 */
+  @supports (corner-shape: squircle) {
+    #card, #card::before, #card::after { corner-shape:squircle; }
+  }
+  @supports not (corner-shape: squircle) {
+    /* ⚠️ 半径必须归零:mask 只能"减",留着圆角切出来的还是那段圆弧 */
+    #card {
+      border-radius:0; border-color:transparent;
+      -webkit-mask-box-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,0.0 60.0,0.0 74.5,0.2 80.3,0.7 84.7,1.6 88.3,2.8 91.2,4.4 93.6,6.4 95.6,8.8 97.2,11.7 98.4,15.3 99.3,19.7 99.8,25.5 100.0,40.0 100.0,60.0 99.8,74.5 99.3,80.3 98.4,84.7 97.2,88.3 95.6,91.2 93.6,93.6 91.2,95.6 88.3,97.2 84.7,98.4 80.3,99.3 74.5,99.8 60.0,100.0 40.0,100.0 25.5,99.8 19.7,99.3 15.3,98.4 11.7,97.2 8.8,95.6 6.4,93.6 4.4,91.2 2.8,88.3 1.6,84.7 0.7,80.3 0.2,74.5 0.0,60.0 0.0,40.0 0.2,25.5 0.7,19.7 1.6,15.3 2.8,11.7 4.4,8.8 6.4,6.4 8.8,4.4 11.7,2.8 15.3,1.6 19.7,0.7 25.5,0.2 40.0,0.0 Z' fill='black'/%3E%3C/svg%3E") 40% fill / var(--sq) stretch;
+    }
+    /* 边缘高光换成**同一条超椭圆描出来的环**:原来那圈是 mask-composite 拼的矩形环,
+       在这条路下会被切角,**四个角上会露出两条直线撞在一起**(后台那次实拍到的)。
+       ⚠️ 描边宽度按「40 单位画到 --sq px」算:16px → 40/16 = 2.5;**换半径就要换这张环**。 */
+    #card::before {
+      inset:0; padding:0; border-radius:0; background:var(--card-rim);
+      -webkit-mask:none; mask:none; -webkit-mask-composite:source-over; mask-composite:add;
+      -webkit-mask-box-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,1.2 60.0,1.2 74.0,1.4 79.7,1.9 84.0,2.8 87.4,3.9 90.2,5.5 92.6,7.4 94.5,9.8 96.1,12.6 97.2,16.0 98.1,20.3 98.6,26.0 98.8,40.0 98.8,60.0 98.6,74.0 98.1,79.7 97.2,84.0 96.1,87.4 94.5,90.2 92.6,92.6 90.2,94.5 87.4,96.1 84.0,97.2 79.7,98.1 74.0,98.6 60.0,98.8 40.0,98.8 26.0,98.6 20.3,98.1 16.0,97.2 12.6,96.1 9.8,94.5 7.4,92.6 5.5,90.2 3.9,87.4 2.8,84.0 1.9,79.7 1.4,74.0 1.2,60.0 1.2,40.0 1.4,26.0 1.9,20.3 2.8,16.0 3.9,12.6 5.5,9.8 7.4,7.4 9.8,5.5 12.6,3.9 16.0,2.8 20.3,1.9 26.0,1.4 40.0,1.2 Z' fill='none' stroke='black' stroke-width='2.50'/%3E%3C/svg%3E") 40% / var(--sq) stretch;
     }
   }
   /* 卡里的内容压在高光之上(高光只在边上,本来也不碍着字) */

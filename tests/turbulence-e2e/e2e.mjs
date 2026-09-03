@@ -192,6 +192,59 @@ const cardBox = await pg.evaluate(() => {
 ok(cardBox.left >= 8 && cardBox.right >= 8,
    `卡片左右都留了空,不顶满屏(左 ${cardBox.left.toFixed(0)}px / 右 ${cardBox.right.toFixed(0)}px)`);
 ok(cardBox.w < cardBox.vw, `卡片比屏窄(${cardBox.w.toFixed(0)} < ${cardBox.vw})`);
+// iOS 那种连续圆角(超椭圆)。⚠️ 09-03 早些时候做过一次被她回退,那次是**只做上两角**;
+// 现在卡片浮起来了,四个角必须同一条曲线(她的原话:「卡片四个角保持一致」)。
+const sq = await pg.evaluate(() => {
+  const n = document.getElementById('card'), s = getComputedStyle(n), ps = getComputedStyle(n, '::before');
+  const r = ['TopLeft','TopRight','BottomRight','BottomLeft'].map(k => s['border' + k + 'Radius']);
+  const box = n.getBoundingClientRect();
+  return { r, same:new Set(r).size === 1,
+           shape:s.cornerShape || '',
+           mask:(s.webkitMaskBoxImage || s.maskBorderSource || ''),
+           rimMask:(ps.webkitMaskBoxImage || ps.maskBorderSource || ''),
+           blur:(s.backdropFilter || s.webkitBackdropFilter || ''),
+           bottomGap:innerHeight - box.bottom };
+});
+ok(sq.same, `四个角一模一样(${sq.r.join(' / ')})`);
+ok(/squircle/.test(sq.shape) || /svg/.test(sq.mask),
+   sq.shape ? `走的是原生 corner-shape(${sq.shape})` : '走的是超椭圆 mask 那条兜底路(她 iPhone 上吃到的正是这条)');
+// ⚠️ 兜底那条路必须**连边缘高光一起换成描出来的环**,不然四个角会露出两条直线撞在一起(后台那次实拍到的)
+ok(!/svg/.test(sq.mask) || /svg/.test(sq.rimMask), '兜底路上边缘高光也换成了同一条超椭圆描的环');
+// ⚠️ 后台那次的教训:mask 和玻璃同时用,得确认玻璃没被 mask 弄没
+ok(/blur/.test(sq.blur), '连续圆角这条路上玻璃还在(模糊没被 mask 弄掉)', sq.blur);
+ok(sq.bottomGap > 4, `卡片是浮起来的,底下也留了空(${sq.bottomGap.toFixed(0)}px)—— 不浮起来下面两个角就露不出来`);
+// ⚠️⚠️ **容器里的 chromium 认 corner-shape,她的 iPhone Safari 不认** —— 所以上面那条量到的是原生那路。
+// **真正到她手机上的是 mask 兜底那条**,这儿把它真演一遍:关掉原生、把兜底那段声明原样贴上再量。
+// (同后台 1.8 第二十件的做法;那次就是靠这一步才发现「四个角会露出两条直线撞在一起」。)
+const fb = await pg.evaluate(() => {
+  let css = '';
+  for (const sheet of document.styleSheets) {
+    for (const rule of sheet.cssRules) {
+      if (rule.conditionText && /corner-shape/.test(rule.conditionText) && /^not/.test(rule.conditionText.trim())) {
+        css = [...rule.cssRules].map(r => r.cssText).join('\n');
+      }
+    }
+  }
+  if (!css) return { found:false };
+  const st = document.createElement('style');
+  st.id = '__fallbackProbe';
+  st.textContent = '#card, #card::before, #card::after { corner-shape:normal !important; }\n' + css;
+  document.head.appendChild(st);
+  const n = document.getElementById('card'), s = getComputedStyle(n), ps = getComputedStyle(n, '::before');
+  return { found:true, r:s.borderTopLeftRadius,
+           mask:(s.webkitMaskBoxImage || s.maskBorderSource || ''),
+           rimMask:(ps.webkitMaskBoxImage || ps.maskBorderSource || ''),
+           rimBg:ps.backgroundImage,
+           blur:(s.backdropFilter || s.webkitBackdropFilter || '') };
+});
+ok(fb.found, '兜底那段声明在页面里找得到(@supports not (corner-shape))');
+ok(parseFloat(fb.r) === 0, `兜底路上半径归零了(${fb.r})—— 不归零切出来的还是那段圆弧`);
+ok(/svg/.test(fb.mask), '兜底路上卡片被超椭圆 mask 切出形状');
+ok(/svg/.test(fb.rimMask) && /gradient/.test(fb.rimBg), '兜底路上边缘高光是同一条曲线描出来的环');
+ok(/blur/.test(fb.blur), '⚠️ 兜底路上玻璃还在(mask 没把模糊弄掉)', fb.blur);
+// ⚠️ 收拾干净:**把探针那段样式撤掉就行,别 reload** —— 一 reload 卡片就关了、请求数也会变,
+// 后面「不轮询」「关联列表」那几条会跟着假红(2026-09-03 我就是这么先弄红过一次)。
+await pg.evaluate(() => document.getElementById('__fallbackProbe')?.remove());
 // 日期:/api/buckets 是给 created 的,卡上就该有(2026-09-03 夹具漏了这个字段,她一眼看出来)
 ok(/月/.test(await pg.textContent('#cTags')), '日期显示出来了', await pg.textContent('#cTags'));
 // 「正文的部分是有一个和底色相近的玻璃质感框的」—— 正文是唯一保留框的一块,而且是玻璃不是描边

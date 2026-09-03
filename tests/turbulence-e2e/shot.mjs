@@ -20,6 +20,23 @@ for (const scheme of ['light', 'dark']) {
   await pg.waitForTimeout(600);
   await pg.screenshot({ path:`${OUT}-${scheme}.png` });
   console.log(`${OUT}-${scheme}.png`);
+  // ⚠️ 容器里的 chromium 认原生 corner-shape,**她的 iPhone Safari 不认** ——
+  // 再拍一张「关掉原生、走超椭圆 mask 兜底」的,那张才是她手机上真正看到的。
+  if (process.env.FALLBACK !== '0') {
+    await pg.evaluate(() => {
+      let css = '';
+      for (const sheet of document.styleSheets)
+        for (const rule of sheet.cssRules)
+          if (rule.conditionText && /corner-shape/.test(rule.conditionText) && /^not/.test(rule.conditionText.trim()))
+            css = [...rule.cssRules].map(r => r.cssText).join('\n');
+      const st = document.createElement('style');
+      st.textContent = '#card, #card::before, #card::after { corner-shape:normal !important; }\n' + css;
+      document.head.appendChild(st);
+    });
+    await pg.waitForTimeout(300);
+    await pg.screenshot({ path:`${OUT}-${scheme}-fallback.png` });
+    console.log(`${OUT}-${scheme}-fallback.png(兜底那条路 = 她 iPhone 上的样子)`);
+  }
   await ctx.close();
 }
 await b.close();
