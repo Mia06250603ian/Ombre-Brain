@@ -177,6 +177,97 @@ for (const scheme of ['light', 'dark']) {
   // 那是去追 iOS 平面质感的那一版,所有者随后说「我就是想要玻璃质感啊你改改没了」。
   // 现在浅色的卡片和药丸**又是玻璃了**,由下面那组「磨砂」断言统一钉着。
 
+  // ══ 玻璃材质那一轮的断言(2026-09-03 新增)══════════════════════════════
+  // 所有者:「**I don't want a translucent card. I want a monochrome glass material.**」
+  // 下面这几条钉的是「材质是不是真的成立」,而不是某个具体像素值 —— 调参数不会把它们弄红。
+
+  // ① 整页零彩色。所有者原话「整个网页必须是 MONOCHROME…黑白灰玻璃,不是彩色玻璃」。
+  //    扫全部元素的字色/底色/描边 + 渐变里的每一个色标,三通道必须相等。
+  const colored = await page.evaluate(() => {
+    const bad = [];
+    const chk = (el, prop, v) => {
+      for (const m of v.matchAll(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([0-9.]+))?\)/g)) {
+        const [r, g, b, a] = [+m[1], +m[2], +m[3], m[4] === undefined ? 1 : parseFloat(m[4])];
+        if (a > 0.001 && !(r === g && g === b)) bad.push((el.className || el.tagName) + ' ' + prop + ' ' + m[0]);
+      }
+    };
+    for (const el of document.querySelectorAll('*')) {
+      const cs = getComputedStyle(el);
+      for (const p of ['color', 'backgroundColor', 'backgroundImage', 'borderTopColor',
+                       'borderBottomColor', 'boxShadow', 'fill', 'stroke']) chk(el, p, cs[p] || '');
+      for (const pe of ['::before', '::after']) {
+        const ps = getComputedStyle(el, pe);
+        for (const p of ['backgroundColor', 'backgroundImage', 'boxShadow']) chk(el, pe + p, ps[p] || '');
+      }
+    }
+    return bad.slice(0, 5);
+  });
+  ok('整页零彩色(黑白灰透明)', colored.length === 0, colored.join(' | '));
+
+  // ② 场景层:玻璃背后要有「东西」。body::before 是明暗形状、body::after 是颗粒。
+  //    ⚠️ 撤掉它 = 玻璃又回到「漂在一张纯色底上」,她点名不要那个。
+  const scene = await page.evaluate(() => {
+    const b = getComputedStyle(document.body, '::before');
+    const a = getComputedStyle(document.body, '::after');
+    return {
+      shapes: (b.backgroundImage.match(/radial-gradient/g) || []).length,
+      fixed: b.position === 'fixed',
+      grain: a.backgroundImage.includes('url(') && parseFloat(a.opacity) > 0,
+    };
+  });
+  ok('背后有明暗形状(≥5 团)', scene.shapes >= 5, scene.shapes);
+  ok('场景层是固定的(玻璃在它上面滑过)', scene.fixed);
+  ok('有颗粒层', scene.grain);
+
+  // ③ 三档玻璃必须**真的不一样**(所有者:「不要所有元素使用完全相同的 opacity/blur/border」)。
+  const tiers = await page.evaluate(() => {
+    const pick = sel => {
+      const cs = getComputedStyle(document.querySelector(sel));
+      const f = cs.backdropFilter || cs.webkitBackdropFilter || '';
+      return {
+        blur: parseFloat((f.match(/blur\(([\d.]+)px\)/) || [0, 0])[1]),
+        a: parseFloat((cs.backgroundColor.match(/,\s*([0-9.]+)\)$/) || [0, 1])[1]),
+      };
+    };
+    return { g1: pick('.bucket-row'), g2: pick('.header'), g3: pick('.filter-btn:not(.active)') };
+  });
+  ok('三档玻璃的模糊各不相同',
+    new Set([tiers.g1.blur, tiers.g2.blur, tiers.g3.blur]).size === 3, JSON.stringify(tiers));
+  ok('三档玻璃的通透度各不相同',
+    new Set([tiers.g1.a, tiers.g2.a, tiers.g3.a]).size === 3, JSON.stringify(tiers));
+  ok('微玻璃最淡、主玻璃最厚', tiers.g3.a < tiers.g1.a, JSON.stringify(tiers));
+
+  // ④ 玻璃**不是单一颜色**:面上必须叠着渐变(一角亮、对角略暗)。
+  ok('卡片内部有明暗变化(不是单一色)', await page.locator('.bucket-row').first().evaluate(
+    el => (getComputedStyle(el).backgroundImage.match(/gradient/g) || []).length >= 2));
+
+  // ⑤ 边缘是**渐变高光**,不是一条 CSS 描边:走 ::before + mask 抠出来的 1px 环。
+  const rim = await page.locator('.bucket-row').first().evaluate(el => {
+    const ps = getComputedStyle(el, '::before');
+    return { grad: /gradient/.test(ps.backgroundImage), masked: /(content-box|exclude|xor)/.test(
+      (ps.webkitMaskComposite || '') + (ps.maskComposite || '') + (ps.webkitMask || '') + (ps.mask || '')) };
+  });
+  ok('边缘是渐变高光,不是纯描边', rim.grad && rim.masked, JSON.stringify(rim));
+  // 描边本身要淡 —— 所有者:「不要让边框太明显」
+  ok('描边很淡(兜底用的)', await page.locator('.bucket-row').first().evaluate(el => {
+    const m = getComputedStyle(el).borderTopColor.match(/,\s*([0-9.]+)\)$/);
+    return !m || parseFloat(m[1]) <= 0.12;
+  }));
+
+  // ⑥ 厚度:内侧要有极柔的明暗。⚠️ 是**柔**的(模糊半径 ≥6px),不是 08-31 被否掉的那道 1px 硬白杠;
+  //    所以它写在 ::after 上,元件自己的 box-shadow 仍然不许有 inset(上面那条断言没变)。
+  const depth = await page.locator('.bucket-row').first().evaluate(
+    el => getComputedStyle(el, '::after').boxShadow);
+  ok('玻璃有厚度(内侧明暗)', /inset/.test(depth), depth);
+  ok('厚度是柔的,不是一道硬线',
+    (depth.match(/(\d+(?:\.\d+)?)px/g) || []).some(v => parseFloat(v) >= 6), depth);
+
+  // ⑦ 阴影要克制 —— 所有者:「不要滥用阴影…更希望看到玻璃内部的明暗变化」。
+  ok('卡片阴影很克制(模糊 ≤8px)', await page.locator('.bucket-row').first().evaluate(el => {
+    const nums = (getComputedStyle(el).boxShadow.match(/(-?\d+(?:\.\d+)?)px/g) || []).map(parseFloat);
+    return nums.length === 0 || Math.max(...nums.map(Math.abs)) <= 8;
+  }, ), await page.locator('.bucket-row').first().evaluate(el => getComputedStyle(el).boxShadow));
+
   // 页面不许横向滚动(手机上最容易翻车的一条)
   ok('没有横向滚动', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
 
