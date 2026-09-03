@@ -146,7 +146,18 @@ const CONFIG = {
     --drift-faint:  var(--color-gray-500);
     --drift-line:   var(--color-gray-300);
     --drift-panel:  rgba(255,255,255,.9);
-    --drift-card:   rgba(250,249,245,.94);
+    /* ⚠️ 详情卡是**玻璃**(2026-09-03 所有者:「这个页面也改成玻璃质感」)。
+       ~~原来 `rgba(250,249,245,.94)` 几乎不透,底下的字符雨一点都透不上来 = 一张白纸~~。
+       现在压到看得见字符雨、又不糊正文的程度;再配 sheen/rim/depth 三件(见 #card)。
+       ⚠️ **别调回 .9 以上**,一实就没玻璃了(和后台 1.8「实色卡片是没有玻璃的」同一条)。 */
+    --drift-card:   rgba(252,251,247,.60);
+    --card-sheen:
+      radial-gradient(130% 90% at 6% -24%, rgba(255,255,255,.55), rgba(255,255,255,.12) 40%, transparent 68%),
+      linear-gradient(180deg, rgba(255,255,255,.22) 0%, transparent 20%);
+    --card-rim: linear-gradient(122deg,
+      rgba(255,255,255,.95) 0%, rgba(255,255,255,.45) 22%,
+      rgba(19,19,19,.05) 60%, rgba(255,255,255,.5) 100%);
+    --card-depth: inset 0 14px 22px -18px rgba(255,255,255,.9), inset 0 -1px 0 rgba(19,19,19,.04);
     /* 正文那块玻璃:比卡片底再亮一档,浅色靠白、深色靠白的一点点透明度 */
     --drift-sheet:  rgba(255,255,255,.62);
     --drift-input:  rgba(20,20,19,.03);
@@ -165,7 +176,15 @@ const CONFIG = {
       --drift-faint:  #8b939d;
       --drift-line:   #252b32;
       --drift-panel:  rgba(4,7,11,.9);
-      --drift-card:   rgba(4,7,11,.94);
+      /* 深色玻璃:底本来就深,面要更透才看得出后面有字符雨(同后台 1.8 深色那条) */
+      --drift-card:   rgba(6,10,16,.52);
+      --card-sheen:
+        radial-gradient(130% 90% at 6% -24%, rgba(255,255,255,.10), rgba(255,255,255,.03) 40%, transparent 68%),
+        linear-gradient(180deg, rgba(255,255,255,.05) 0%, transparent 22%);
+      --card-rim: linear-gradient(122deg,
+        rgba(255,255,255,.42) 0%, rgba(255,255,255,.14) 24%,
+        rgba(0,0,0,.22) 60%, rgba(255,255,255,.2) 100%);
+      --card-depth: inset 0 14px 24px -18px rgba(255,255,255,.28), inset 0 -1px 0 rgba(0,0,0,.5);
       --drift-sheet:  rgba(255,255,255,.045);
       --drift-input:  rgba(255,255,255,.03);
     }
@@ -259,14 +278,43 @@ const CONFIG = {
   }
   #controls button:active { transform:scale(.97); }
 
-  /* 点中一颗之后从底下浮上来的那张卡 */
+  /* 点中一颗之后从底下浮上来的那张卡。
+     ⚠️ 这是**玻璃**(2026-09-03 所有者:「这个页面也改成玻璃质感」),六件事凑齐:
+     半透明面(--drift-card)+ 光泽(--card-sheen)+ 模糊放大到 30px + 边缘高光(::before)
+     + 厚度(::after)+ 背后真有东西(这一页满屏的字符雨)。做法和后台 1.8 那套一致。
+     ⚠️ `background-color` 走面、`background-image` 走光泽,别用 `background` 简写把两者合掉。 */
   #card {
     position:fixed; left:0; right:0; bottom:0; z-index:4;
     max-height:66vh; padding:20px 18px calc(env(safe-area-inset-bottom,0px) + 18px);
     display:none; grid-template-rows:auto 1fr; gap:11px;
-    border-top:1px solid var(--drift-line); border-radius:16px 16px 0 0;
-    background:var(--drift-card); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
+    border-top:1px solid transparent; border-radius:16px 16px 0 0;
+    background-color:var(--drift-card); background-image:var(--card-sheen);
+    backdrop-filter:blur(30px) saturate(1.4); -webkit-backdrop-filter:blur(30px) saturate(1.4);
+    box-shadow:var(--card-depth);
     animation:rise .18s cubic-bezier(.23,1,.32,1) both;
+  }
+  /* 边缘高光:一圈渐变的 1px 环(mask 抠出来的),不是描边;支持不了 mask 就退回上面那圈透明 border。
+     ⚠️ 只有顶边和两个顶角露在屏幕里(底部弹层),环画满也无妨,顶部读起来就是玻璃的那道"唇"。 */
+  #card::before, #card::after { content:''; position:absolute; pointer-events:none; }
+  #card::before {
+    inset:0; border-radius:inherit; z-index:0;
+  }
+  @supports ((-webkit-mask-composite:xor) or (mask-composite:exclude)) {
+    #card::before {
+      inset:-1px; padding:1px; background:var(--card-rim);
+      -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite:xor; mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      mask-composite:exclude;
+    }
+  }
+  /* 卡里的内容压在高光之上(高光只在边上,本来也不碍着字) */
+  #card > * { position:relative; z-index:1; }
+  /* 玻璃透不了时(不支持 backdrop-filter / 系统开了「降低透明度」)退回实色,不然糊字 */
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
+    #card { background-color:var(--drift-panel); background-image:none; }
+  }
+  @media (prefers-reduced-transparency:reduce) {
+    #card { background-color:var(--drift-panel); background-image:none; }
   }
   /* ⚠️ 这三个 min-width/minmax(0,…) 是**堵溢出**的,别删(2026-09-03 所有者报的:
      标题是 `session_2026-07-01_…` 那种超长名字时,整张卡被撑出屏幕、右上角的 ✕ 被挤没了)。

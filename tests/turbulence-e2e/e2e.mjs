@@ -174,6 +174,21 @@ ok(bodyBox.bw === '0px', '正文那块是玻璃,不是描边框', bodyBox.bw);
 ok(/^rgba\(255, 255, 255/.test(bodyBox.bg), '正文那块的底是「把卡片底再提亮一点」的一层白', bodyBox.bg);
 ok(bodyBox.r >= 10 && bodyBox.pad >= 10, `正文那块有圆角(${bodyBox.r}px)和内边距(${bodyBox.pad}px)`);
 ok(/blur/.test(bodyBox.blur), '正文那块真的开了玻璃模糊', bodyBox.blur);
+// 整张卡本身也是玻璃(2026-09-03 所有者:「这个页面也改成玻璃质感」)。
+// ⚠️ ~~原来 --drift-card 是 .94 几乎不透 = 一张白纸~~ —— 现在压到透得出字符雨、又开了模糊。
+const cardGlass = await pg.$eval('#card', n => {
+  const s = getComputedStyle(n);
+  const m = s.backgroundColor.match(/rgba?\([^)]*,\s*([0-9.]+)\)\s*$/);
+  const ps = getComputedStyle(n, '::before');
+  return { alpha: m ? parseFloat(m[1]) : 1,
+           blur: (s.backdropFilter || s.webkitBackdropFilter || ''),
+           sheen: /gradient/.test(s.backgroundImage),
+           rim: /gradient/.test(ps.backgroundImage) || /(exclude|xor)/.test((ps.webkitMaskComposite||'')+(ps.maskComposite||'')) };
+});
+ok(cardGlass.alpha <= 0.85, `详情卡是半透明的(面 alpha ${cardGlass.alpha},透得出字符雨)`, cardGlass.alpha);
+ok(/blur/.test(cardGlass.blur), '详情卡开了玻璃模糊', cardGlass.blur);
+ok(cardGlass.sheen, '详情卡的面上叠了光泽(不是单一色)');
+ok(cardGlass.rim, '详情卡的边缘是渐变高光,不是硬描边');
 // ⚠️ 别钉「几条」「第一条是谁」—— 假 OB 的边一改这些就红,而那不是 bug
 // (2026-09-03 给夹具加了条超长标题的桶,顺序就变了)。钉真正该成立的性质:
 const near = await pg.$$eval('#cNear button', bs => bs.map(x => x.textContent));
