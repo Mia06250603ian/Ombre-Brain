@@ -132,6 +132,38 @@ for (const scheme of ['light', 'dark']) {
   ok('药丸一行横滑', await page.locator('.filters').evaluate(el =>
     getComputedStyle(el).flexWrap === 'nowrap' && el.scrollWidth > el.clientWidth));
 
+  // ⚠️ 药丸不许再做肥(2026-09-03 所有者拿她朋友那版并排比:「我们这一页的胶囊是不是也太胖了」)。
+  // 量出来的:同一张 1206px @3x 截图上我们那颗「全部」105px(=35pt),她朋友那版 90px(=30pt)。
+  // 钉「≤31px」是留了一点余量的上限,不是钉某个具体数。
+  ok('筛选药丸不肥', await page.locator('.filter-btn').first().evaluate(
+    el => el.getBoundingClientRect().height <= 31),
+    await page.locator('.filter-btn').first().evaluate(el => el.getBoundingClientRect().height.toFixed(1) + 'px'));
+  ok('排序胶囊跟着同档', await page.locator('.sort-pill').first().evaluate(
+    el => el.getBoundingClientRect().height <= 31));
+
+  // 卡片底行的「域」是**小胶囊**不是一串纯文字(2026-09-03 所有者:「还有别人的正文胶囊」)
+  const chips = await page.locator('.bucket-row .dchip');
+  ok('卡片底行的域做成了胶囊', await chips.count() > 0, String(await chips.count()));
+  ok('域胶囊真的是胶囊(圆角 ≥ 半个高)', await chips.first().evaluate(el => {
+    const r = parseFloat(getComputedStyle(el).borderTopLeftRadius);
+    return r >= el.getBoundingClientRect().height / 2 - 0.5;
+  }));
+  // ⚠️ 第一版把上限写成 `max-width:46%`,百分比是相对那个被挤扁的容器算的 → 全被截成「社…」
+  ok('短域名不许被截成省略号', await chips.first().evaluate(el => el.scrollWidth <= el.clientWidth + 1),
+    await chips.first().evaluate(el => el.textContent + ' ' + el.scrollWidth + '/' + el.clientWidth));
+  ok('域胶囊比筛选药丸再小一档', await page.evaluate(() => {
+    const c = document.querySelector('.bucket-row .dchip'), f = document.querySelector('.filter-btn');
+    return c.getBoundingClientRect().height < f.getBoundingClientRect().height;
+  }));
+
+  // 右上角那几颗也收窄了(她指的是**宽度**:我们约 50pt,她朋友那版约 35pt)
+  const ico = await page.locator('.hbtn-ico').first().evaluate(el => {
+    const r = el.getBoundingClientRect(); return { w:r.width, h:r.height };
+  });
+  ok('右上角图标胶囊不肥', ico.w <= 44, `${ico.w.toFixed(0)}×${ico.h.toFixed(0)}`);
+  // ⚠️⚠️ 她 2026-09-03 拿图指名要过「不要这种圆形,想要这种椭圆」——收窄可以,**收成正圆不行**
+  ok('但仍是横椭圆,没收成正圆', ico.w > ico.h + 6, `${ico.w.toFixed(0)}×${ico.h.toFixed(0)}`);
+
   // 磨砂:必须真的挂上 backdrop-filter,且底是半透明的。
   // ⚠️ 2026-09-03 起**分两档**:~~原来四个选择器在两套配色下都要求是玻璃~~ ——
   // 浅色改成 iOS 那种「平灰底 + 纯白卡片」之后,**卡片和药丸在浅色下是实色,不再是玻璃**
