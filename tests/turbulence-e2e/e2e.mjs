@@ -162,6 +162,128 @@ ok(openCss.bg === tagCss.bg, '它的底和「恋爱」那颗标签一模一样',
 ok(openCss.fg === tagCss.fg, '它的字色和「恋爱」那颗标签一模一样', openCss.fg + ' vs ' + tagCss.fg);
 ok(openCss.href === '/dashboard#bucket=b01',
    '⚠️ 它不是装饰:href 真的指向后台里的那一条', openCss.href);
+// 胶囊:①不许再做肥 ②材质要和后台那套玻璃一样(2026-09-03 所有者两条一起提的)
+const pill = await pg.evaluate(() => {
+  const read = sel => {
+    const n = document.querySelector(sel), s = getComputedStyle(n), ps = getComputedStyle(n, '::before');
+    return { h:n.getBoundingClientRect().height,
+             blur:(s.backdropFilter || s.webkitBackdropFilter || ''),
+             sheen:/gradient/.test(s.backgroundImage),
+             depth:/inset/.test(s.boxShadow),
+             rim:/gradient/.test(ps.backgroundImage) ||
+                 /(exclude|xor)/.test((ps.webkitMaskComposite || '') + (ps.maskComposite || '')) };
+  };
+  return { tag:read('#cTags .c-tag'), open:read('#cOpen') };
+});
+ok(pill.tag.h <= 22, `分类标签不肥(高 ${pill.tag.h.toFixed(1)}px,原来约 27px;她朋友那版 ≈17.7px)`);
+ok(/blur/.test(pill.tag.blur), '胶囊开了玻璃模糊(和后台那套 g3 微玻璃同一档)', pill.tag.blur);
+ok(pill.tag.sheen, '胶囊的面上叠了光泽,不是单一色块');
+ok(pill.tag.rim, '胶囊的边缘是渐变高光,不是硬描边');
+ok(pill.tag.depth, '胶囊有厚度(内侧那道极柔的明暗)');
+// ⚠️ 两颗必须长得一模一样(1.12:标签和「在面板里打开」不许另配第二套)
+ok(pill.open.blur === pill.tag.blur && pill.open.sheen === pill.tag.sheen &&
+   pill.open.rim === pill.tag.rim && pill.open.depth === pill.tag.depth,
+   '「在面板里打开」和标签是同一套玻璃,没有第二套');
+// 卡片不通栏(2026-09-03 所有者:「对比一下 p2 的宽度,我们的目前有点太安卓了」)
+const cardBox = await pg.evaluate(() => {
+  const r = document.getElementById('card').getBoundingClientRect();
+  return { left:r.left, right:innerWidth - r.right, w:r.width, vw:innerWidth };
+});
+ok(cardBox.left >= 8 && cardBox.right >= 8,
+   `卡片左右都留了空,不顶满屏(左 ${cardBox.left.toFixed(0)}px / 右 ${cardBox.right.toFixed(0)}px)`);
+ok(cardBox.w < cardBox.vw, `卡片比屏窄(${cardBox.w.toFixed(0)} < ${cardBox.vw})`);
+// 手机上唯一的即时反馈是「按下态」(2026-09-03 所有者:安卓味)。⚠️ 全页曾经一条 :active 都没有,
+// 而手机没有悬停 —— 点下去到内容变之间屏幕一动不动。这几处都是能点的,一个都不许漏。
+const press = await pg.evaluate(() => {
+  const want = ['#exit', '#cClose', '#cOpen', '#cNear button'];
+  const missing = [], colored = [];
+  for (const sel of want) {
+    let hit = false;
+    for (const sheet of document.styleSheets)
+      for (const rule of sheet.cssRules || []) {
+        if (!rule.selectorText || !/:active/.test(rule.selectorText)) continue;
+        if (!rule.selectorText.split(',').some(s => s.trim().startsWith(sel))) continue;
+        hit = true;
+        // 反馈只走透明度/缩放:底色或描边 = 安卓那套涟漪色块
+        if (/background|border-color/.test(rule.style.cssText)) colored.push(sel);
+      }
+    if (!hit) missing.push(sel);
+  }
+  return { missing, colored };
+});
+ok(press.missing.length === 0, '能点的几处都有按下态(手机上没有悬停,这是唯一的即时反馈)', press.missing.join('|'));
+ok(press.colored.length === 0, '按下反馈只走透明度/缩放,没有加底色或描边(那是安卓那套)', press.colored.join('|'));
+// 中文不拉字距(英文那几处刻意留着 —— 拉开正是它们好看的原因)
+const ls = await pg.evaluate(() => {
+  const zh = ['#hStat', '#legend', '#hint', '#cNear > b'].map(sel => {
+    const n = document.querySelector(sel);
+    return { sel, v:n ? parseFloat(getComputedStyle(n).letterSpacing) || 0 : -1 };
+  });
+  const en = parseFloat(getComputedStyle(document.getElementById('hTitle')).letterSpacing) || 0;
+  return { zh, en };
+});
+ok(ls.zh.every(x => x.v === 0), '中文那几行不拉字距(拉了会显散,像安卓的系统字)',
+   ls.zh.filter(x => x.v !== 0).map(x => x.sel + '=' + x.v).join('|'));
+ok(ls.en > 3, `英文标题的字距刻意留着(实得 ${ls.en.toFixed(1)}px)—— 别跟着一起清掉`);
+// 卡片弹出别太快(iOS 的弹层 .3~.4s;~~原来 .18s~~ 是「啪」一下)
+const rise = await pg.$eval('#card', n => parseFloat(getComputedStyle(n).animationDuration) || 0);
+ok(rise >= 0.28, `卡片弹出 ${rise.toFixed(2)}s,不是「啪」一下(别调回 .2s 以下)`);
+// 卡片里滚到底不许带动整页
+ok(await pg.$eval('#cScroll', n => /contain|none/.test(getComputedStyle(n).overscrollBehavior)),
+   '卡片内容滚到底就停住,不把滚动传给底下的页面');
+// iOS 那种连续圆角(超椭圆)。⚠️ 09-03 早些时候做过一次被她回退,那次是**只做上两角**;
+// 现在卡片浮起来了,四个角必须同一条曲线(她的原话:「卡片四个角保持一致」)。
+const sq = await pg.evaluate(() => {
+  const n = document.getElementById('card'), s = getComputedStyle(n), ps = getComputedStyle(n, '::before');
+  const r = ['TopLeft','TopRight','BottomRight','BottomLeft'].map(k => s['border' + k + 'Radius']);
+  const box = n.getBoundingClientRect();
+  return { r, same:new Set(r).size === 1,
+           shape:s.cornerShape || '',
+           mask:(s.webkitMaskBoxImage || s.maskBorderSource || ''),
+           rimMask:(ps.webkitMaskBoxImage || ps.maskBorderSource || ''),
+           blur:(s.backdropFilter || s.webkitBackdropFilter || ''),
+           bottomGap:innerHeight - box.bottom };
+});
+ok(sq.same, `四个角一模一样(${sq.r.join(' / ')})`);
+ok(/squircle/.test(sq.shape) || /svg/.test(sq.mask),
+   sq.shape ? `走的是原生 corner-shape(${sq.shape})` : '走的是超椭圆 mask 那条兜底路(她 iPhone 上吃到的正是这条)');
+// ⚠️ 兜底那条路必须**连边缘高光一起换成描出来的环**,不然四个角会露出两条直线撞在一起(后台那次实拍到的)
+ok(!/svg/.test(sq.mask) || /svg/.test(sq.rimMask), '兜底路上边缘高光也换成了同一条超椭圆描的环');
+// ⚠️ 后台那次的教训:mask 和玻璃同时用,得确认玻璃没被 mask 弄没
+ok(/blur/.test(sq.blur), '连续圆角这条路上玻璃还在(模糊没被 mask 弄掉)', sq.blur);
+ok(sq.bottomGap > 4, `卡片是浮起来的,底下也留了空(${sq.bottomGap.toFixed(0)}px)—— 不浮起来下面两个角就露不出来`);
+// ⚠️⚠️ **容器里的 chromium 认 corner-shape,她的 iPhone Safari 不认** —— 所以上面那条量到的是原生那路。
+// **真正到她手机上的是 mask 兜底那条**,这儿把它真演一遍:关掉原生、把兜底那段声明原样贴上再量。
+// (同后台 1.8 第二十件的做法;那次就是靠这一步才发现「四个角会露出两条直线撞在一起」。)
+const fb = await pg.evaluate(() => {
+  let css = '';
+  for (const sheet of document.styleSheets) {
+    for (const rule of sheet.cssRules) {
+      if (rule.conditionText && /corner-shape/.test(rule.conditionText) && /^not/.test(rule.conditionText.trim())) {
+        css = [...rule.cssRules].map(r => r.cssText).join('\n');
+      }
+    }
+  }
+  if (!css) return { found:false };
+  const st = document.createElement('style');
+  st.id = '__fallbackProbe';
+  st.textContent = '#card, #card::before, #card::after { corner-shape:normal !important; }\n' + css;
+  document.head.appendChild(st);
+  const n = document.getElementById('card'), s = getComputedStyle(n), ps = getComputedStyle(n, '::before');
+  return { found:true, r:s.borderTopLeftRadius,
+           mask:(s.webkitMaskBoxImage || s.maskBorderSource || ''),
+           rimMask:(ps.webkitMaskBoxImage || ps.maskBorderSource || ''),
+           rimBg:ps.backgroundImage,
+           blur:(s.backdropFilter || s.webkitBackdropFilter || '') };
+});
+ok(fb.found, '兜底那段声明在页面里找得到(@supports not (corner-shape))');
+ok(parseFloat(fb.r) === 0, `兜底路上半径归零了(${fb.r})—— 不归零切出来的还是那段圆弧`);
+ok(/svg/.test(fb.mask), '兜底路上卡片被超椭圆 mask 切出形状');
+ok(/svg/.test(fb.rimMask) && /gradient/.test(fb.rimBg), '兜底路上边缘高光是同一条曲线描出来的环');
+ok(/blur/.test(fb.blur), '⚠️ 兜底路上玻璃还在(mask 没把模糊弄掉)', fb.blur);
+// ⚠️ 收拾干净:**把探针那段样式撤掉就行,别 reload** —— 一 reload 卡片就关了、请求数也会变,
+// 后面「不轮询」「关联列表」那几条会跟着假红(2026-09-03 我就是这么先弄红过一次)。
+await pg.evaluate(() => document.getElementById('__fallbackProbe')?.remove());
 // 日期:/api/buckets 是给 created 的,卡上就该有(2026-09-03 夹具漏了这个字段,她一眼看出来)
 ok(/月/.test(await pg.textContent('#cTags')), '日期显示出来了', await pg.textContent('#cTags'));
 // 「正文的部分是有一个和底色相近的玻璃质感框的」—— 正文是唯一保留框的一块,而且是玻璃不是描边
@@ -267,17 +389,51 @@ ok(await pg.evaluate(() => window.__drift.locked()) === null, '✕ 之后锁定�
 // 图例跟着「有没有点中一颗」走,所以关掉卡片它也要收回去
 ok(await pg.$eval('#legend', n => !n.classList.contains('on')), '✕ 之后图例也收回去了');
 
-console.log('F. 缩放按钮');
+console.log('F. 缩放(按钮已删,靠滚轮/捏合)');
+// ⚠️ ~~原来这段点的是右下角 ＋ / － / ↺ 三颗按钮~~ —— **2026-09-03 所有者点名删了那三颗**
+// (「先把右下角这仨玩意删了」)。⚠️ 删的只是按钮,**缩放本身还在**,所以这段改成直接推滚轮量。
+// 同理 ~~更早那版读屏幕上 #mZoom 那块「1.00×」~~ 也早已改成量倍数本身。
+ok(await pg.$('#controls') === null, '右下角那三颗按钮不在了(别加回来)');
+ok(await pg.$$eval('button', bs => bs.every(b => !['in','out','reset'].includes(b.dataset.action || ''))),
+  '整页再没有 in/out/reset 那三颗');
 const s0 = await pg.evaluate(() => window.__drift.scale());
-await pg.click('#controls button[data-action="in"]');
+await pg.mouse.move(500, 400);
+await pg.mouse.wheel(0, -240);                       // 往上推 = 放大
+await pg.waitForTimeout(120);
 const s1 = await pg.evaluate(() => window.__drift.scale());
-ok(s1 > s0, `＋ 放大了(${s0.toFixed(2)} → ${s1.toFixed(2)})`);
-await pg.click('#controls button[data-action="reset"]');
+ok(s1 > s0, `滚轮往上 = 放大(${s0.toFixed(2)} → ${s1.toFixed(2)})`);
+await pg.mouse.wheel(0, 240);                        // 推回去 = 缩小
+await pg.waitForTimeout(120);
 const s2 = await pg.evaluate(() => window.__drift.scale());
-ok(Math.abs(s2 - 1) < 0.001, '↺ 复位回 1.00×');
-// ⚠️ ~~原来这条读的是屏幕上 #mZoom 那块「1.00×」~~ —— 那块已按所有者要求删掉,
-// 改成直接量倍数本身(本来就该量这个)。
-ok(typeof (await pg.evaluate(() => window.__drift.scale())) === 'number', '倍数读得出来');
+ok(s2 < s1, `滚轮往下 = 缩小(${s1.toFixed(2)} → ${s2.toFixed(2)})`);
+ok(typeof s2 === 'number', '倍数读得出来');
+
+// 双击画布 = 回到原样。⚠️ 这是 ↺ 删掉之后**唯一**的复位路(2026-09-03 所有者要的),别让它悄悄没掉。
+// 先把视图弄乱:放大 + 拖偏,再双击,量倍数和位置有没有一起回去。
+await pg.mouse.move(500, 400);
+await pg.mouse.wheel(0, -600);
+await pg.mouse.move(500, 400); await pg.mouse.down();
+await pg.mouse.move(560, 450, { steps:6 }); await pg.mouse.up();
+await pg.waitForTimeout(120);
+const messy = await pg.evaluate(() => ({ s:window.__drift.scale(), p:window.__drift.pan() }));
+ok(messy.s > 1.05 && (Math.abs(messy.p.x) > 4 || Math.abs(messy.p.y) > 4),
+  `先把视图弄乱了(${messy.s.toFixed(2)}× / 偏 ${messy.p.x.toFixed(0)},${messy.p.y.toFixed(0)})`);
+await pg.mouse.dblclick(300, 250);
+await pg.waitForTimeout(120);
+const back = await pg.evaluate(() => ({ s:window.__drift.scale(), p:window.__drift.pan() }));
+ok(Math.abs(back.s - 1) < 0.001, `双击 → 倍数回到 1.00×(实得 ${back.s.toFixed(3)})`);
+ok(Math.abs(back.p.x) < 0.001 && Math.abs(back.p.y) < 0.001,
+  `双击 → 位置也回正中(实得 ${back.p.x.toFixed(1)},${back.p.y.toFixed(1)})`);
+// 单击不许复位,否则点一颗字看正文就会把视图打回去
+await pg.mouse.wheel(0, -240); await pg.waitForTimeout(120);
+const zoomed = await pg.evaluate(() => window.__drift.scale());
+await pg.mouse.click(300, 250);
+await pg.waitForTimeout(400);                 // 等过双击判定窗口(320ms)
+ok(Math.abs(await pg.evaluate(() => window.__drift.scale()) - zoomed) < 0.001,
+  '单击不复位(隔开的两下不算双击)');
+await pg.evaluate(() => window.__drift.clear());
+await pg.mouse.dblclick(300, 250);            // 收拾干净,后面几段从 1.00× 开始
+await pg.waitForTimeout(120);
 
 console.log('G. 只读 + 零外部请求(这一页的底线)');
 const external = requests.filter(r => !r.url.startsWith(OB) && !r.url.startsWith('data:') && !r.url.startsWith('about:'));
@@ -381,6 +537,35 @@ await pg3.waitForTimeout(500);
 const after = await pg3.evaluate(() => [...document.getElementById('canvas').getContext('2d').getImageData(2,2,1,1).data].slice(0,3));
 ok(before[0] < 20 && after[0] > 200,
    `切到浅色,画布当场跟着换了(${before.join(',')} → ${after.join(',')})`, before + ' → ' + after);
+
+console.log('L. 画布按屏幕的倍数画(2026-09-03 所有者:「感觉数据乱流很模糊 是我的错觉吗?」)');
+// ⚠️ 不是错觉:~~原来触屏上把画布压到 1.5 倍~~,她 3 倍屏上就是**一半分辨率**。
+// 这一段专门在「3 倍屏 + 触屏」下量后备画布,别在桌面那个 pg 上量(那边 dpr=1,量不出来)。
+{
+  const mctx = await b.newContext({ viewport:{ width:390, height:844 }, deviceScaleFactor:3,
+                                    hasTouch:true, isMobile:true, colorScheme:'dark' });
+  const mp = await mctx.newPage();
+  await mp.goto(`${OB}/turbulence`);
+  await mp.waitForFunction('document.getElementById("gate").classList.contains("on")', null, { timeout:30000 });
+  await mp.fill('#gPass', PASS);
+  await mp.tap('#gGo');
+  await mp.waitForFunction('window.__drift', null, { timeout:30000 });
+  await mp.waitForTimeout(400);
+  const cv = await mp.evaluate(() => {
+    const c = document.getElementById('canvas');
+    return { back:c.width, css:Math.round(c.getBoundingClientRect().width), dpr:devicePixelRatio };
+  });
+  const ratio = cv.back / cv.css;
+  ok(cv.dpr === 3, `这一段确实跑在 3 倍屏上(${cv.dpr}×)`, cv.dpr);
+  ok(ratio >= 2, `画布至少按 2 倍画(实得 ${ratio.toFixed(2)}×,后备 ${cv.back}px / CSS ${cv.css}px)—— 低于 2 就是她说的那种糊`);
+  // 触屏上不许再锁回 30fps(2026-09-03 所有者:安卓味)。⚠️ 钉的是「明显高于 30」,不是某个具体数 ——
+  // 容器的机器和她手机不是一回事,写死 60 会变成量机器不是量代码。
+  const f0 = await mp.evaluate(() => window.__drift.frames());
+  await mp.waitForTimeout(2000);
+  const fps = (await mp.evaluate(() => window.__drift.frames()) - f0) / 2;
+  ok(fps > 40, `触屏上不再锁 30fps(实测 ${fps.toFixed(0)} fps;门槛 15ms = 上限 60)`, fps);
+  await mctx.close();
+}
 
 console.log('I. 控制台');
 ok(errs.length === 0, '整场零 JS 报错', errs.join(' | '));

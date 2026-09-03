@@ -158,6 +158,16 @@ const CONFIG = {
       rgba(255,255,255,.95) 0%, rgba(255,255,255,.45) 22%,
       rgba(19,19,19,.05) 60%, rgba(255,255,255,.5) 100%);
     --card-depth: inset 0 14px 22px -18px rgba(255,255,255,.9), inset 0 -1px 0 rgba(19,19,19,.04);
+    /* 胶囊(分类标签 +「在面板里打开」)的玻璃,照后台 1.8 的 **g3 微玻璃**那一档来
+       (2026-09-03 所有者:「我想要胶囊和现在上线的前端一样的玻璃质感」)。
+       ⚠️ **底色和字色一个数没动**,仍是 rgba(--drift-signal,.13) + rgb(--drift-signal);
+       这里加的只有材质三件(光泽 / 边缘高光 / 厚度)+ 模糊。 */
+    --pill-blur:  blur(14px) saturate(1.25);
+    --pill-sheen: linear-gradient(172deg, rgba(255,255,255,.42) 0%, rgba(255,255,255,0) 46%, rgba(19,19,19,.035) 100%);
+    --pill-rim:   linear-gradient(150deg,
+      rgba(255,255,255,.80) 0%, rgba(255,255,255,.22) 34%,
+      rgba(19,19,19,.05) 70%, rgba(255,255,255,.34) 100%);
+    --pill-depth: inset 0 8px 14px -14px rgba(255,255,255,.85);
     /* 正文那块玻璃:比卡片底再亮一档,浅色靠白、深色靠白的一点点透明度 */
     --drift-sheet:  rgba(255,255,255,.62);
     --drift-input:  rgba(20,20,19,.03);
@@ -185,6 +195,12 @@ const CONFIG = {
         rgba(255,255,255,.42) 0%, rgba(255,255,255,.14) 24%,
         rgba(0,0,0,.22) 60%, rgba(255,255,255,.2) 100%);
       --card-depth: inset 0 14px 24px -18px rgba(255,255,255,.28), inset 0 -1px 0 rgba(0,0,0,.5);
+      --pill-blur:  blur(14px) saturate(1.3);
+      --pill-sheen: linear-gradient(172deg, rgba(255,255,255,.07) 0%, rgba(255,255,255,0) 46%, rgba(0,0,0,.05) 100%);
+      --pill-rim:   linear-gradient(150deg,
+        rgba(255,255,255,.24) 0%, rgba(255,255,255,.07) 34%,
+        rgba(0,0,0,.10) 70%, rgba(255,255,255,.11) 100%);
+      --pill-depth: inset 0 8px 16px -14px rgba(255,255,255,.16);
       --drift-sheet:  rgba(255,255,255,.045);
       --drift-input:  rgba(255,255,255,.03);
     }
@@ -228,12 +244,30 @@ const CONFIG = {
     transition: opacity .35s ease;
   }
   #exit:hover, #exit:focus-visible { opacity: 1; outline: none; }
+  /* ⚠️ **按下态:手机上这是唯一的即时反馈**(2026-09-03 所有者说这一页「安卓味好重」,
+     扫下来最要命的一条就是**全页一条 `:active` 都没有**)。手机没有悬停,
+     `:hover` 那几条在她手机上等于不存在 —— 点下去到内容变之间**屏幕一动不动**。
+     ⚠️ 反馈只走**透明度和极轻的缩放**,不加底色、不加描边(那是安卓那套涟漪/色块的味道);
+     ⚠️ 缩放一律 `.97`、时长 `.06s`,**按下要立刻到位**,松手才走回弹的缓动。
+     ⚠️ 开了「减少动态效果」时只留透明度,不缩放。 */
+  #exit, #cClose, #cOpen, #cNear button {
+    transition:opacity .18s ease, transform .18s cubic-bezier(.23,1,.32,1), color .18s ease;
+  }
+  #exit:active, #cClose:active, #cOpen:active, #cNear button:active {
+    transform:scale(.97); opacity:.62; transition-duration:.06s;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #exit:active, #cClose:active, #cOpen:active, #cNear button:active { transform:none; }
+  }
   #exit svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 
-  #head p#hStat { margin-top:7px; font-size:10px; letter-spacing:.1em; color:var(--drift-faint); }
+  /* ⚠️ **中文不拉字距**(2026-09-03 所有者:安卓味):中文本来就是等宽方块字,
+     再拉字距就显散、像安卓的系统字。**英文那几处刻意留着**(`D r i f t` 的 .34em、
+     `CORE` 的 .14em、口令门标题)—— 拉开正是它们好看的原因,别一起清掉。 */
+  #head p#hStat { margin-top:7px; font-size:10px; letter-spacing:0; color:var(--drift-faint); }
   #legend {
     margin-top:9px; display:flex; flex-direction:column; align-items:center; gap:3px;
-    font-size:9.5px; letter-spacing:.06em; color:var(--drift-faint);
+    font-size:9.5px; letter-spacing:0; color:var(--drift-faint);      /* 图例两行是中文,同上 */
   }
   #legend span { display:inline-flex; align-items:center; gap:7px; }
   #legend i { width:26px; height:0; border-top:1px solid currentColor; display:inline-block; }
@@ -252,46 +286,46 @@ const CONFIG = {
   #hint {
     position:fixed; left:0; right:0; z-index:2; text-align:center; pointer-events:none;
     bottom:calc(env(safe-area-inset-bottom,0px) + 62px);
-    font-size:11px; letter-spacing:.16em; color:var(--drift-faint);
+    font-size:11px; letter-spacing:0; color:var(--drift-faint);       /* 「点一个字,看它牵着谁」是中文,同上 */
     transition:opacity .8s ease;
   }
   #hint.gone { opacity:0; }
 
-  /* 右下角三颗按钮。
-     ⚠️ 左下角原来还有一块「30 FPS | 1.00×」的读数(`#meter`),
-     **2026-09-03 所有者点名删掉了**(「下方的 30fps 1.00x 那一行能不能删掉」)。
-     它是给开发看的,对她没用。**别照旧文加回来**;演练里量「动画在转 / 缩放生效」
-     改成读 `window.__drift` 的 `frames()` 和 `scale()`,不再依赖屏幕上有这块读数。 */
-  .hud {
-    position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 14px); z-index:3;
-    font-family:"SFMono-Regular",Menlo,Consolas,monospace; font-size:10px; letter-spacing:.08em;
-  }
-  #controls { right:14px; display:flex; gap:5px; }
-  #controls button {
-    width:38px; height:38px; display:grid; place-items:center;
-    border:1px solid var(--drift-line); border-radius:7px; background:var(--drift-panel);
-    color:var(--drift-dim); font-size:15px; font-family:inherit; cursor:pointer;
-    transition:transform .14s cubic-bezier(.23,1,.32,1), border-color .14s ease, color .14s ease;
-  }
-  #controls button:hover, #controls button:focus-visible {
-    border-color:rgba(var(--drift-signal),.5); color:var(--drift-ink); outline:none;
-  }
-  #controls button:active { transform:scale(.97); }
+  /* ⚠️ 屏幕角落这两块**都已经被所有者点名删掉了,别照旧文加回来**:
+     ① 左下角「30 FPS | 1.00×」的读数(`#meter`),2026-09-03 删
+        (「下方的 30fps 1.00x 那一行能不能删掉」)—— 给开发看的,对她没用;
+     ② 右下角那三颗按钮(＋ / － / ↺,`#controls` 和它们共用的 `.hud`),2026-09-03 删
+        (「先把右下角这仨玩意删了」)。缩放本身没删:滚轮和双指捏合照旧,
+        **复位改成双击画布**(同日她要的,见下面 `tapAt()` 那段注释)。
+     演练里量「动画在转 / 缩放生效」一律读 `window.__drift` 的 `frames()` 和 `scale()`,
+     不依赖屏幕上有任何一块读数或按钮;并且各钉了一条「它没回来」。 */
 
   /* 点中一颗之后从底下浮上来的那张卡。
      ⚠️ 这是**玻璃**(2026-09-03 所有者:「这个页面也改成玻璃质感」),六件事凑齐:
      半透明面(--drift-card)+ 光泽(--card-sheen)+ 模糊放大到 30px + 边缘高光(::before)
      + 厚度(::after)+ 背后真有东西(这一页满屏的字符雨)。做法和后台 1.8 那套一致。
      ⚠️ `background-color` 走面、`background-image` 走光泽,别用 `background` 简写把两者合掉。 */
+  /* ⚠️ 卡片**不通栏**:左右各留 11px(2026-09-03 所有者拿她朋友那版比:「你对比一下 p2 的宽度,
+     我们的目前有点太安卓了」)。~~原来 left:0;right:0 顶满屏宽~~ —— 通栏正是那股安卓味。
+     **11px 是量出来的**:在她那张 Flux 截图上(1206px 宽 = 402pt @3x)量到卡片左右各缩进
+     约 35px ≈ 11.6pt,取 11px。⚠️ 现场再量法:截图里找卡片白区的左右边界,除以 3。
+     ⚠️ 侧边露出来之后,边缘高光那圈环**四边都看得见了**(原来只露顶边和两个顶角)—— 本来就是画满环的,不用改。 */
   #card {
-    position:fixed; left:0; right:0; bottom:0; z-index:4;
-    max-height:66vh; padding:20px 18px calc(env(safe-area-inset-bottom,0px) + 18px);
+    position:fixed; left:11px; right:11px; z-index:4;
+    /* ⚠️ **卡片是浮起来的,不再贴着屏幕底**(2026-09-03 所有者要「四个角保持一致」,
+       贴底的话下面两个角根本露不出来)。~~原来 bottom:0 + 底部内边距吃 safe-area~~。 */
+    bottom:calc(env(safe-area-inset-bottom,0px) + 11px);
+    max-height:66vh; padding:20px 18px 18px;
     display:none; grid-template-rows:auto 1fr; gap:11px;
-    border-top:1px solid transparent; border-radius:16px 16px 0 0;
+    /* ⚠️ 四个角**一样圆**(她的原话:「卡片四个角保持一致」)。~~原来 `16px 16px 0 0`~~。 */
+    border-top:1px solid transparent; border-radius:var(--sq); --sq:26px;
     background-color:var(--drift-card); background-image:var(--card-sheen);
     backdrop-filter:blur(30px) saturate(1.4); -webkit-backdrop-filter:blur(30px) saturate(1.4);
     box-shadow:var(--card-depth);
-    animation:rise .18s cubic-bezier(.23,1,.32,1) both;
+    /* ⚠️ ~~原来 .18s~~ —— 太快是「啪」一下,显生硬(2026-09-03 所有者:安卓味)。
+       iOS 的弹层大约 .3~.4s、末段缓下来,所以改成 .34s 配一条末段更平的曲线。
+       ⚠️ 别再调回 .2s 以下;开了「减少动态效果」时整条动画本来就关掉(见下面那个 media)。 */
+    animation:rise .34s cubic-bezier(.32,.72,0,1) both;
   }
   /* 边缘高光:一圈渐变的 1px 环(mask 抠出来的),不是描边;支持不了 mask 就退回上面那圈透明 border。
      ⚠️ 只有顶边和两个顶角露在屏幕里(底部弹层),环画满也无妨,顶部读起来就是玻璃的那道"唇"。 */
@@ -305,6 +339,35 @@ const CONFIG = {
       -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
       -webkit-mask-composite:xor; mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
       mask-composite:exclude;
+    }
+  }
+  /* ── iOS 那种**连续圆角**(超椭圆 / squircle)。2026-09-03 所有者:「把卡片改成 iOS 风格的
+     连续圆角…没有明显的四分之一圆弧感…四个角保持一致」。
+     ⚠️⚠️ **这件事 09-03 早些时候做过一次、被她当场回退**(TIMELINE 第二十五件)——
+     ~~那次只把**上两角**做成超椭圆、下缘保持直角(当时卡片贴着屏幕底)~~,四个角不一致才是被否的原因。
+     **这次不同**:卡片已经浮起来、四个角都露在屏幕里,四角同一条曲线。
+     ⚠️ **必须两条路一起给**(和后台 1.8 同一套做法,那边是拿事故换来的):
+       ① `corner-shape: squircle` —— **只有 Chrome 139+ 认,Safari 至今不认**;
+       ② `-webkit-mask-box-image` 切一张**超椭圆**(n=4,`|x/r|⁴+|y/r|⁴=1`,12 段/角)——
+          WebKit 十几年的老属性,**她 iPhone 上真正吃到的是这条**。
+     **两条给的是同一条曲线**;曲线本身是采样出来的折线,两位小数,肉眼看不出折点。
+     ⚠️ **别把兜底那段当冗余删掉**,删了她手机上就退回普通圆弧。 */
+  @supports (corner-shape: squircle) {
+    #card, #card::before, #card::after { corner-shape:squircle; }
+  }
+  @supports not (corner-shape: squircle) {
+    /* ⚠️ 半径必须归零:mask 只能"减",留着圆角切出来的还是那段圆弧 */
+    #card {
+      border-radius:0; border-color:transparent;
+      -webkit-mask-box-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,0.0 60.0,0.0 74.5,0.2 80.3,0.7 84.7,1.6 88.3,2.8 91.2,4.4 93.6,6.4 95.6,8.8 97.2,11.7 98.4,15.3 99.3,19.7 99.8,25.5 100.0,40.0 100.0,60.0 99.8,74.5 99.3,80.3 98.4,84.7 97.2,88.3 95.6,91.2 93.6,93.6 91.2,95.6 88.3,97.2 84.7,98.4 80.3,99.3 74.5,99.8 60.0,100.0 40.0,100.0 25.5,99.8 19.7,99.3 15.3,98.4 11.7,97.2 8.8,95.6 6.4,93.6 4.4,91.2 2.8,88.3 1.6,84.7 0.7,80.3 0.2,74.5 0.0,60.0 0.0,40.0 0.2,25.5 0.7,19.7 1.6,15.3 2.8,11.7 4.4,8.8 6.4,6.4 8.8,4.4 11.7,2.8 15.3,1.6 19.7,0.7 25.5,0.2 40.0,0.0 Z' fill='black'/%3E%3C/svg%3E") 40% fill / var(--sq) stretch;
+    }
+    /* 边缘高光换成**同一条超椭圆描出来的环**:原来那圈是 mask-composite 拼的矩形环,
+       在这条路下会被切角,**四个角上会露出两条直线撞在一起**(后台那次实拍到的)。
+       ⚠️ 描边宽度按「40 单位画到 --sq px」算:16px → 40/16 = 2.5;**换半径就要换这张环**。 */
+    #card::before {
+      inset:0; padding:0; border-radius:0; background:var(--card-rim);
+      -webkit-mask:none; mask:none; -webkit-mask-composite:source-over; mask-composite:add;
+      -webkit-mask-box-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,0.8 60.0,0.8 74.2,0.9 80.0,1.4 84.3,2.3 87.7,3.5 90.6,5.1 93.0,7.0 94.9,9.4 96.5,12.3 97.7,15.7 98.6,20.0 99.1,25.8 99.2,40.0 99.2,60.0 99.1,74.2 98.6,80.0 97.7,84.3 96.5,87.7 94.9,90.6 93.0,93.0 90.6,94.9 87.7,96.5 84.3,97.7 80.0,98.6 74.2,99.1 60.0,99.2 40.0,99.2 25.8,99.1 20.0,98.6 15.7,97.7 12.3,96.5 9.4,94.9 7.0,93.0 5.1,90.6 3.5,87.7 2.3,84.3 1.4,80.0 0.9,74.2 0.8,60.0 0.8,40.0 0.9,25.8 1.4,20.0 2.3,15.7 3.5,12.3 5.1,9.4 7.0,7.0 9.4,5.1 12.3,3.5 15.7,2.3 20.0,1.4 25.8,0.9 40.0,0.8 Z' fill='none' stroke='black' stroke-width='1.54'/%3E%3C/svg%3E") 40% / var(--sq) stretch;
     }
   }
   /* 卡里的内容压在高光之上(高光只在边上,本来也不碍着字) */
@@ -322,7 +385,7 @@ const CONFIG = {
      而标题是 `white-space:nowrap` 的 —— 于是"最小宽度"就是整条标题的长度,撑破容器。
      `minmax(0,1fr)` / `min-width:0` 就是把这个下限解开,让省略号真的生效。 */
   #card.on { display:grid; grid-template-columns:minmax(0,1fr); }
-  @keyframes rise { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes rise { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
   #card header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; min-width:0; }
   #card header > div { min-width:0; }
   #cKind {
@@ -342,7 +405,9 @@ const CONFIG = {
     color:var(--drift-faint); font-size:15px; font-weight:300; cursor:pointer;
   }
   #cClose:hover, #cClose:focus-visible { color:var(--drift-ink); outline:none; }
-  #cScroll { overflow-y:auto; -webkit-overflow-scrolling:touch; min-width:0; }
+  /* ⚠️ `overscroll-behavior:contain`:卡片里滚到底就停住,**别把滚动传给底下的页面**
+     (2026-09-03 所有者提的「安卓味」之一:iOS 的弹层滚到头是停住,网页默认会连整页一起橡皮筋)。 */
+  #cScroll { overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; min-width:0; }
   /* 正文是**唯一**保留框的一块(2026-09-03 所有者:「正文的部分是有一个和底色相近的
      玻璃质感框的」)。⚠️ 关键在「和底色相近」:它不是描边框,是**比卡片底再提亮一点点**的
      一层玻璃 —— 只够把正文和下面的关联列表分开,不够到看起来像另一张卡。
@@ -360,13 +425,16 @@ const CONFIG = {
        ② 日期不是标签,就是一句次要文字,和标签并排。所以这里没有第二个胶囊。
      颜色直接取 --drift-signal(她亲手拖的那个),不另配色。 */
   #cTags { margin-top:6px; display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; }
+  /* ⚠️ 胶囊**不许再做肥**(2026-09-03 所有者:「胶囊不要做那么肥美」,拿她朋友那版比的)。
+     ~~原来 padding:4px 11px / font-size:12.5 / line-height:1.5,量出来约 27px 高~~ ——
+     现在约 **20px**。**参照物是量出来的**:她那张 Flux 截图上那颗「社交」高 53px(1206px 宽 @3x)
+     ≈ 17.7pt;我们留了一点余量好让中文不挤。⚠️ **别再调回 4px 以上的竖向 padding。** */
   #cTags .c-tag {
-    padding:4px 11px; border-radius:var(--r-pill, 999px);
-    background:rgba(var(--drift-signal),.13); color:rgb(var(--drift-signal));
-    font-size:12.5px; font-weight:500; line-height:1.5; letter-spacing:.01em;
+    padding:2px 9px; border-radius:var(--r-pill, 999px);
+    font-size:11.5px; font-weight:500; line-height:1.35; letter-spacing:.01em;
   }
   #cNear { margin-top:17px; }
-  #cNear > b { display:block; margin-bottom:9px; color:rgb(var(--drift-signal)); font-size:11.5px; font-weight:500; letter-spacing:.08em; }
+  #cNear > b { display:block; margin-bottom:9px; color:rgb(var(--drift-signal)); font-size:11.5px; font-weight:500; letter-spacing:0; }   /* 「牵着 N 条记忆」是中文,同上 */
   /* 一行一条的纯文字行:左边灰色的关系名,右边加粗的标题(照她朋友那版)。
      ⚠️ 右边那格必须写 `minmax(0,1fr)`,**不能只写 `1fr`** —— `1fr` 等于 `minmax(auto,1fr)`,
      那个 auto 下限就是内容宽度,`session_2026-07-01_…` 那种长标题照样撑破卡片。 */
@@ -388,8 +456,37 @@ const CONFIG = {
   #cOpen {
     margin-top:18px; display:block; padding:14px; text-align:center;
     border:0; border-radius:var(--r-pill, 999px);
-    background:rgba(var(--drift-signal),.13); color:rgb(var(--drift-signal));
     font-size:14px; font-weight:600; text-decoration:none;
+  }
+  /* 胶囊的**玻璃**(2026-09-03 所有者:「我想要胶囊和现在上线的前端一样的玻璃质感」)。
+     照后台 1.8 的 **g3 微玻璃**那一档来:半透明的面 + 光泽 + mask 抠出来的边缘高光 + 极柔厚度 + 模糊。
+     ⚠️ **底色和字色一个数没动**(仍是 signal 的 .13 底 + signal 的字)——她 09-03 为这套配色否过两版,
+     **这次只换材质,不许趁机另配色**(1.12 那条「不许另配第二套」仍然有效)。
+     ⚠️ 标签和「在面板里打开」**必须长得一模一样**,所以两个选择器永远写在一起,演练逐字段比对。 */
+  #cTags .c-tag, #cOpen {
+    position:relative;
+    background-color:rgba(var(--drift-signal),.13); background-image:var(--pill-sheen);
+    color:rgb(var(--drift-signal));
+    -webkit-backdrop-filter:var(--pill-blur); backdrop-filter:var(--pill-blur);
+    box-shadow:var(--pill-depth);
+  }
+  #cTags .c-tag::before, #cOpen::before { content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none; }
+  @supports ((-webkit-mask-composite:xor) or (mask-composite:exclude)) {
+    #cTags .c-tag::before, #cOpen::before {
+      inset:-1px; padding:1px; background:var(--pill-rim);
+      -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite:xor; mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      mask-composite:exclude;
+    }
+  }
+  /* 玻璃透不了时退回原来那身平底(同 #card 的兜底,不然半透明没了模糊会糊字) */
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
+    #cTags .c-tag, #cOpen { background-image:none; box-shadow:none; }
+    #cTags .c-tag::before, #cOpen::before { display:none; }
+  }
+  @media (prefers-reduced-transparency:reduce) {
+    #cTags .c-tag, #cOpen { background-image:none; box-shadow:none; }
+    #cTags .c-tag::before, #cOpen::before { display:none; }
   }
   /* ⚠️ 2026-09-03 所有者定的:「**改成和恋爱那个按钮一样的,黑白两版本都改成那个样的**」——
      就是上面那颗标签的做法:**同色的极淡底(.13)+ 强调色的字,不描边**。
@@ -406,7 +503,7 @@ const CONFIG = {
   /* 加载中 / 口令门 */
   #loading, #gate {
     position:fixed; inset:0; z-index:6; display:grid; place-items:center; padding:24px;
-    background:var(--drift-bg); color:var(--drift-faint); font-size:12px; letter-spacing:.12em;
+    background:var(--drift-bg); color:var(--drift-faint); font-size:12px; letter-spacing:0;   /* 「正在把记忆铺开…」是中文,同上 */
   }
   #gate { display:none; }
   #gate.on { display:grid; }
@@ -430,7 +527,6 @@ const CONFIG = {
 
   @media (prefers-reduced-motion: reduce) {
     #card { animation:none; }
-    #controls button { transition-property:border-color,color; }
   }
 </style>
 </head>
@@ -458,12 +554,6 @@ const CONFIG = {
 </div>
 
 <p id="hint">点一个字,看它牵着谁</p>
-
-<div id="controls" class="hud">
-  <button type="button" data-action="in"    aria-label="放大">＋</button>
-  <button type="button" data-action="out"   aria-label="缩小">－</button>
-  <button type="button" data-action="reset" aria-label="复位">↺</button>
-</div>
 
 <div id="card">
   <header>
@@ -946,7 +1036,14 @@ function boot(items, relations){
 
   function loop(now){
     // 手机上限到 30fps:这一页会一直转,别让它把电吃光(原版同样的做法)
-    if (running && (!coarse || now - lastFrame >= 32)) { draw(now); lastFrame = now; }
+    /* ⚠️ ~~原来触屏上每 32ms 才画一帧 = 锁在 30fps~~ —— 2026-09-03 所有者说这一页「安卓味好重」,
+       这是其中一条:iOS 全系统 60Hz 起(她那台可能 120Hz),**唯独这片字符雨在 30fps 上跑**,
+       往上飘和连线亮起来都看得出一格一格。现在放到 **60fps**(15ms 的门槛,留一点抖动余量;
+       写 16 会被 16.6ms 的帧偶尔卡掉一帧)。⚠️ **刻意不是完全不限**:她那台若是 ProMotion,
+       不限就会去顶 120fps,电量和发热翻一倍,这一页不值当。
+       ⚠️ **代价只有她手机上量得准**(容器里 7 条假记忆 / 144 个字符,她线上 399 条 + 2393 条关联):
+       隔 3 秒读两次 `window.__drift.frames()` 除以 3 = 帧率;明显掉到 30 以下就把门槛调回 32。 */
+    if (running && (!coarse || now - lastFrame >= 15)) { draw(now); lastFrame = now; }
     requestAnimationFrame(loop);
   }
 
@@ -954,7 +1051,15 @@ function boot(items, relations){
     const b = canvas.getBoundingClientRect();
     W = b.width; H = b.height;
     worldW = W * worldScale; worldH = H * worldScale;
-    const dpr = Math.min(window.devicePixelRatio || 1, coarse ? 1.5 : 2);
+    /* ⚠️ 画布得自己声明按几倍分辨率画,声明低了就是**真糊**,不是错觉。
+       ~~原来触屏上压到 1.5~~ —— 所有者 2026-09-03:「感觉数据乱流很模糊 是我的错觉吗?」
+       **量出来不是**:她 3 倍屏的手机上,画布只画 585px 再拉到 1170px 显示 = 一半分辨率;
+       页面别处(字、卡片、胶囊)都是浏览器按 3 倍渲染的,**唯独满屏字符雨是半分辨率**,
+       那股"不精致"多半就是这么来的。**她选了 2 倍**(585 → 780px),3 倍最利但没法在容器里
+       量准她手机上的代价(这边是 7 条假记忆 144 个字符,她是 399 条 + 2393 条关联)。
+       ⚠️ **真要再往上调,先在她手机上量**:`window.__drift.frames()` 隔 3 秒读两次,除以 3 = 帧率;
+       掉到 24 以下就是吃不消,退回来。⚠️ 触屏那条 30fps 的节流(`loop` 里的 32ms)没动。 */
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width  = Math.max(1, Math.round(W * dpr));
     canvas.height = Math.max(1, Math.round(H * dpr));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -995,6 +1100,26 @@ function boot(items, relations){
     }
     if (lockedIndex !== null) feedbacks.push({ index:lockedIndex, kind:'release', startedAt:performance.now() });
     lockedIndex = null; closeCard();
+  }
+
+  /* 双击/双指之外的那只手指连点两下 = 回到原样(1.00×、正中)。
+     ⚠️ 这是右下角那颗 ↺ 删掉之后唯一的复位路(2026-09-03 所有者要的),**别删**。
+     ⚠️ 鼠标和手指共用这一个漏斗:两边的「算不算一次点」都在 pointerup 里判过
+     (拖过就不算),所以这里不另外挂 dblclick —— 挂了就成了两套判定。
+     ⚠️ **第一下照常生效、不延迟**:要区分单双击就得把开卡片压后 300ms,
+     那是每一次点都变迟钝,不值当。所以连点第二下时卡片可能已经开着,这是知情的取舍。 */
+  const DOUBLE_MS = 320, DOUBLE_SLOP = 28;    // 两下之间最多隔多久、最多差多远才算「双击」
+  let lastTapAt = 0, lastTapX = 0, lastTapY = 0;
+  function resetView(){ scale = 1; panX = 0; panY = 0; }
+  function tapAt(clientX, clientY){
+    const now = performance.now();
+    if (now - lastTapAt <= DOUBLE_MS && Math.hypot(clientX - lastTapX, clientY - lastTapY) <= DOUBLE_SLOP) {
+      lastTapAt = 0;                          // 用掉了,免得连点三下又触发一次
+      resetView();
+      return;
+    }
+    lastTapAt = now; lastTapX = clientX; lastTapY = clientY;
+    toggleAt(clientX, clientY);
   }
 
   canvas.addEventListener('pointerdown', function(e){
@@ -1039,14 +1164,14 @@ function boot(items, relations){
     if (touches.has(e.pointerId)) {
       const wasPinching = touches.size >= 2 || pinch !== null;
       touches.delete(e.pointerId);
-      if (!wasPinching && drag && !drag.moved) toggleAt(e.clientX, e.clientY);
+      if (!wasPinching && drag && !drag.moved) tapAt(e.clientX, e.clientY);
       pinch = null;
       const rest = [...touches.values()][0] || null;
       pointer = rest;
       drag = rest ? { x:rest.x, y:rest.y, panX:panX, panY:panY, moved:true } : null;
       return;
     }
-    if (drag && !drag.moved) toggleAt(e.clientX, e.clientY);
+    if (drag && !drag.moved) tapAt(e.clientX, e.clientY);
     drag = null;
   });
   canvas.addEventListener('pointercancel', function(e){
@@ -1065,13 +1190,8 @@ function boot(items, relations){
     zoomAround(scale + (e.deltaY < 0 ? .12 : -.12), e.clientX - b.left, e.clientY - b.top);
   }, { passive:false });
 
-  document.getElementById('controls').addEventListener('click', function(e){
-    const btn = e.target.closest('button[data-action]');
-    if (!btn) return;
-    if (btn.dataset.action === 'reset') { scale = 1; panX = 0; panY = 0; return; }
-    zoomAround(clampScale(scale + (btn.dataset.action === 'in' ? .22 : -.22)), W / 2, H / 2);
-    if (btn.dataset.action === 'out' && scale <= minScale + .001) { panX = 0; panY = 0; }
-  });
+  // ⚠️ 右下角那三颗按钮(＋ / － / ↺)2026-09-03 按所有者要求删了,**别加回来**。
+  // 缩放本身还在:滚轮(上面那条 wheel)和双指捏合(pointer 那几条)照旧。
 
   // 页面看不见就停手,别在后台白转(省电)
   document.addEventListener('visibilitychange', function(){ running = !document.hidden; });
@@ -1120,6 +1240,7 @@ function boot(items, relations){
     },
     clear: function(){ lockedIndex = null; closeCard(); },
     scale: () => scale,
+    pan: () => ({ x:panX, y:panY }),   // 演练拿它判「双击复位是不是也把位置带回正中」
     frames: () => frames,      // 只增不减:演练拿它判「动画真的在转」(原来是读屏幕上那块 FPS)
   };
 

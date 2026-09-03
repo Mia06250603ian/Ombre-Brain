@@ -132,6 +132,23 @@ for (const scheme of ['light', 'dark']) {
   ok('药丸一行横滑', await page.locator('.filters').evaluate(el =>
     getComputedStyle(el).flexWrap === 'nowrap' && el.scrollWidth > el.clientWidth));
 
+  // ⚠️ 药丸不许再做肥(2026-09-03 所有者拿她朋友那版并排比:「我们这一页的胶囊是不是也太胖了」)。
+  // 量出来的:同一张 1206px @3x 截图上我们那颗「全部」105px(=35pt),她朋友那版 90px(=30pt)。
+  // 钉「≤31px」是留了一点余量的上限,不是钉某个具体数。
+  ok('筛选药丸不肥', await page.locator('.filter-btn').first().evaluate(
+    el => el.getBoundingClientRect().height <= 31),
+    await page.locator('.filter-btn').first().evaluate(el => el.getBoundingClientRect().height.toFixed(1) + 'px'));
+  ok('排序胶囊跟着同档', await page.locator('.sort-pill').first().evaluate(
+    el => el.getBoundingClientRect().height <= 31));
+
+  // 右上角那几颗也收窄了(她指的是**宽度**:我们约 50pt,她朋友那版约 35pt)
+  const ico = await page.locator('.hbtn-ico').first().evaluate(el => {
+    const r = el.getBoundingClientRect(); return { w:r.width, h:r.height };
+  });
+  ok('右上角图标胶囊不肥', ico.w <= 44, `${ico.w.toFixed(0)}×${ico.h.toFixed(0)}`);
+  // ⚠️⚠️ 她 2026-09-03 拿图指名要过「不要这种圆形,想要这种椭圆」——收窄可以,**收成正圆不行**
+  ok('但仍是横椭圆,没收成正圆', ico.w > ico.h + 6, `${ico.w.toFixed(0)}×${ico.h.toFixed(0)}`);
+
   // 磨砂:必须真的挂上 backdrop-filter,且底是半透明的。
   // ⚠️ 2026-09-03 起**分两档**:~~原来四个选择器在两套配色下都要求是玻璃~~ ——
   // 浅色改成 iOS 那种「平灰底 + 纯白卡片」之后,**卡片和药丸在浅色下是实色,不再是玻璃**
@@ -302,16 +319,27 @@ for (const scheme of ['light', 'dark']) {
       // 2026-09-03 就栽过一次:原来量的是 #sort-select,那天它变成了胶囊里的 select。
       sortPill: g('.sort-pill'),
       pill: g('.filter-btn'),
-      scale: ['--r-1','--r-2','--r-3','--r-4','--r-5']
+      scale: ['--r-1','--r-2','--r-3','--r-4','--r-5','--r-6']
         .map(n => getComputedStyle(document.documentElement).getPropertyValue(n).trim()),
     };
   });
-  ok('圆角尺度表五档都在', radii.scale.every(v => /^\d+px$/.test(v)), radii.scale.join('/'));
-  ok('卡片用的是卡片那一档(--r-4)', radii.card === radii.scale[3], radii.card);
+  // ⚠️ 2026-09-03 由五档加到**六档**:新的 `--r-6`(42px)专给记忆卡片,理由见 dashboard.html 里那段注释。
+  ok('圆角尺度表六档都在', radii.scale.every(v => /^\d+px$/.test(v)), radii.scale.join('/'));
+  // ⚠️ 记忆卡片 2026-09-03 一路走到 **--r-6(42px)+ 超椭圆**:20 普通圆弧 → 26 超椭圆(她:「这个圆角
+  // 好安卓」)→ 26 普通圆弧(还是安卓)→ 42 超椭圆。**超椭圆在同一数值下看着更方,所以半径必须给够。**
+  ok('记忆卡片用的是新的第六档(--r-6)', radii.card === radii.scale[5], radii.card);
+  // 卡片收紧过一档,别再涨回去(2026-09-03 所有者选的 C 档)
+  ok('卡片内边距是收紧过的', await page.locator('.bucket-row').first().evaluate(el => {
+    const cs = getComputedStyle(el);
+    return parseFloat(cs.paddingTop) <= 12 && parseFloat(cs.paddingLeft) <= 15;
+  }), await page.locator('.bucket-row').first().evaluate(el => getComputedStyle(el).padding));
+  ok('卡片之间挨得紧', await page.locator('.bucket-list').evaluate(
+    el => parseFloat(getComputedStyle(el).gap) <= 9),
+    await page.locator('.bucket-list').evaluate(el => getComputedStyle(el).gap));
   // 钉「分档」这件事本身:五档必须一档比一档大。比盯着某一个元件稳。
-  ok('五档是递增的', await page.evaluate(() => {
+  ok('六档是递增的', await page.evaluate(() => {
     const v = n => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n));
-    const a = ['--r-1','--r-2','--r-3','--r-4','--r-5'].map(v);
+    const a = ['--r-1','--r-2','--r-3','--r-4','--r-5','--r-6'].map(v);
     return a.every((x, i) => i === 0 || x > a[i - 1]);
   }), radii.scale.join(' < '));
   ok('排序做成了胶囊,不是原生下拉', parseFloat(radii.sortPill) > 100, radii.sortPill);
@@ -509,14 +537,16 @@ for (const scheme of ['light', 'dark']) {
       let rules; try { rules = sheet.cssRules; } catch { continue; }
       for (const r of rules) {
         if (!r.conditionText) continue;
+        // ⚠️ 样本由 `.bucket-row` 换成 `.todo-card`:2026-09-03 起记忆卡片按所有者的选择走**普通圆弧**,
+        // 超椭圆那两条路要靠仍在用它的卡片(便利贴等)来验。
         if (/^\(corner-shape/.test(r.conditionText))
-          for (const i of r.cssRules) if (/\.bucket-row/.test(i.selectorText || '')) out.native = true;
+          for (const i of r.cssRules) if (/\.todo-card/.test(i.selectorText || '')) out.native = true;
         if (/not \(corner-shape/.test(r.conditionText)) {
           out.css += [...r.cssRules].map(i => i.cssText).join('\n');
           for (const i of r.cssRules) {
             const sel = i.selectorText || '';
-            if (/\.bucket-row(,|\s|$)/.test(sel) && /mask-box-image/.test(i.cssText)) out.fallbackCards++;
-            if (/\.bucket-row::before/.test(sel) && /mask-box-image/.test(i.cssText)) out.fallbackRing++;
+            if (/\.todo-card(,|\s|$)/.test(sel) && /mask-box-image/.test(i.cssText)) out.fallbackCards++;
+            if (/\.todo-card::before/.test(sel) && /mask-box-image/.test(i.cssText)) out.fallbackRing++;
           }
         }
       }
@@ -531,7 +561,12 @@ for (const scheme of ['light', 'dark']) {
   await page.addStyleTag({ content: '*, *::before, *::after { corner-shape: round !important; }\n' + sq.css });
   await page.setViewportSize({ width: 430, height: 932 });
   await page.waitForTimeout(250);
-  const fb = await page.locator('.bucket-row').first().evaluate(el => {
+  // ⚠️ **探针换成 `.todo-card`,不再是 `.bucket-row`** —— 2026-09-03 起记忆卡片按所有者的选择
+  // 走**普通圆弧**(她看了四张真图选的:同一数值下超椭圆看着更方,「这个圆角好安卓」)。
+  // 别的卡片仍走超椭圆,兜底那条路要靠它们来演。
+  await page.click('.tab[data-tab="todos"]').catch(() => {});
+  await page.waitForSelector('.todo-card', { timeout: 8000 }).catch(() => {});
+  const fb = await page.locator('.todo-card').first().evaluate(el => {
     const cs = getComputedStyle(el), ps = getComputedStyle(el, '::before');
     return {
       src: (cs.webkitMaskBoxImageSource || '').slice(0, 30),
@@ -541,12 +576,20 @@ for (const scheme of ['light', 'dark']) {
       ring: (ps.webkitMaskBoxImageSource || '').slice(0, 30),
     };
   });
-  ok('兜底路上卡片真被切成了超椭圆', fb.src.startsWith('url("data:image/svg+xml'), fb.src);
+  ok('兜底路上卡片真被切成了超椭圆(拿仍走超椭圆的便利贴卡片验)', fb.src.startsWith('url("data:image/svg+xml'), fb.src);
   // ⚠️ 半径必须归零,不然 mask 只会在那段圆弧里面再切一刀,形状还是圆弧
   ok('兜底路上圆角半径归零(形状交给 mask)', fb.radius === '0px', fb.radius);
   ok('兜底路上边缘高光跟着同一条曲线', fb.ring.startsWith('url("data:image/svg+xml'), fb.ring);
   // ⚠️ mask 会不会把玻璃弄没:这两条就是看着它的
   ok('兜底路上玻璃还在(模糊 + 半透明面)', fb.blur && fb.bg, JSON.stringify(fb));
+  // ⚠️ 记忆卡片走的是**第六档 42px 的超椭圆**(她最后选的那版)。这两条防「哪天又被调回小半径」。
+  const memo = await page.evaluate(() => {
+    const el = document.querySelector('.bucket-row'), cs = getComputedStyle(el);
+    return { mask: (cs.webkitMaskBoxImageSource || 'none'),
+             sq: getComputedStyle(document.documentElement).getPropertyValue('--r-6').trim() };
+  });
+  ok('兜底路上记忆卡片也被切成了超椭圆', memo.mask.startsWith('url("data:image/svg+xml'), memo.mask.slice(0, 30));
+  ok('记忆卡片那一档够大(≥40px)', parseFloat(memo.sq) >= 40, memo.sq);
   await page.screenshot({ path: SHOTS + '/squircle-fallback-' + scheme + '.png' });
 
   await ctx.close();

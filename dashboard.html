@@ -319,11 +319,21 @@
     --r-1: 6px;     /* 极小:进度条、小方块 */
     --r-2: 10px;    /* 小控件:小按钮、状态块 */
     --r-3: 12px;    /* 标准控件:输入框、按钮、下拉 */
-    --r-4: 20px;    /* 卡片 */
+    --r-4: 20px;    /* 卡片(信箱/配置块那些) */
     --r-5: 26px;    /* 大面板:抽屉、登录框、上传区 */
+    /* ⚠️ **第六档 2026-09-03 新增,专给记忆卡片**。她一路看着真图定的:
+       ~~20 普通圆弧~~ → ~~26 超椭圆~~(「这个圆角好安卓」)→ ~~26 普通圆弧~~(还是安卓)
+       → **42 超椭圆**,这一档才对。⚠️ **不是散值,是给尺度表补的一档**,仍然一档比一档大。
+       ⚠️ 目前**只有记忆卡片用它**,别顺手拿去套别的元件(抽屉/登录框仍是 r-5)。 */
+    --r-6: 42px;    /* 记忆卡片 */
     --r-pill: 999px;
   }
   @supports (corner-shape: squircle) {
+    /* ⚠️ **`.bucket-row` 走第六档(42px)的超椭圆**,和别的卡片(20/26)不同档。
+       她一路看着真图定的:~~20 普通圆弧~~ → ~~26 超椭圆~~(「这个圆角好安卓」)
+       → ~~26 普通圆弧~~(还是安卓)→ **42 超椭圆**。
+       ⚠️⚠️ **超椭圆在同一数值下看着比普通圆弧更方**(紧贴角切、弧收得快)——
+       所以「上超椭圆」必须**同时把半径给够**,26 那两版就是栽在这儿。别再往回调。 */
     .bucket-row, .letter-card, .letters-intro, .todo-card, .todo-check, .todo-row,
     .breath-flow, .breath-info, .detail-panel, .config-section,
     .btn, .btn-secondary, .btn-danger, input, select, textarea,
@@ -361,9 +371,11 @@
      **改半径只改 `--sq`**(跟着 `--r-*` 那张表走);曲线本身是采样出来的折线,
      12 段/角、两位小数,肉眼看不出折点。 */
   @supports not (corner-shape: squircle) {
-    .bucket-row, .letter-card, .letters-intro, .breath-flow, .config-section, .todo-check { --sq: var(--r-4); }
+    .letter-card, .letters-intro, .breath-flow, .config-section, .todo-check { --sq: var(--r-4); }
     .todo-card { --sq: var(--r-5); }
     .breath-info { --sq: var(--r-3); }
+    /* ⚠️ 记忆卡片是第六档(42px),**环也得是它自己那张**:描边宽度 = 40 ÷ 半径px = 0.95 */
+    .bucket-row { --sq: var(--r-6); }
     .bucket-row, .letter-card, .letters-intro, .breath-flow, .config-section,
   .todo-card, .breath-info, .todo-check {
       /* ⚠️ 半径必须归零:mask 只能"减",留着圆角的话切出来的还是那段圆弧 */
@@ -375,14 +387,15 @@
     /* 边缘高光:换成**同一条超椭圆**描出来的环(原来那圈是 mask-composite 拼的矩形环,
        在这条路下会被切角,四个角上会露出两条直线撞在一起)。
        ⚠️ 描边宽度是按「40 单位画到 --sq px」算好的,**换半径就要换对应那张环**。 */
-    .bucket-row::before, .letter-card::before, .letters-intro::before, .breath-flow::before, .config-section::before, .todo-card::before, .breath-info::before, .todo-check::before {
+    .letter-card::before, .letters-intro::before, .breath-flow::before, .config-section::before, .todo-card::before, .breath-info::before, .todo-check::before {
       border-radius: 0;
       padding: 0;
       -webkit-mask: none;
       mask: none;
       -webkit-mask-composite: source-over;
     }
-    .bucket-row::before, .letter-card::before, .letters-intro::before, .breath-flow::before, .config-section::before,
+    .bucket-row::before { -webkit-mask-box-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,0.5 60.0,0.5 74.3,0.6 80.1,1.2 84.4,2.0 87.9,3.2 90.8,4.8 93.2,6.8 95.2,9.2 96.8,12.1 98.0,15.6 98.8,19.9 99.4,25.7 99.5,40.0 99.5,60.0 99.4,74.3 98.8,80.1 98.0,84.4 96.8,87.9 95.2,90.8 93.2,93.2 90.8,95.2 87.9,96.8 84.4,98.0 80.1,98.8 74.3,99.4 60.0,99.5 40.0,99.5 25.7,99.4 19.9,98.8 15.6,98.0 12.1,96.8 9.2,95.2 6.8,93.2 4.8,90.8 3.2,87.9 2.0,84.4 1.2,80.1 0.6,74.3 0.5,60.0 0.5,40.0 0.6,25.7 1.2,19.9 2.0,15.6 3.2,12.1 4.8,9.2 6.8,6.8 9.2,4.8 12.1,3.2 15.6,2.0 19.9,1.2 25.7,0.6 40.0,0.5 Z' fill='none' stroke='black' stroke-width='0.95'/%3E%3C/svg%3E") 40% / var(--sq) stretch; }
+    .letter-card::before, .letters-intro::before, .breath-flow::before, .config-section::before,
     .todo-check::before { -webkit-mask-box-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,1.0 60.0,1.0 74.1,1.2 79.8,1.7 84.1,2.5 87.6,3.7 90.4,5.3 92.8,7.2 94.7,9.6 96.3,12.4 97.5,15.9 98.3,20.2 98.8,25.9 99.0,40.0 99.0,60.0 98.8,74.1 98.3,79.8 97.5,84.1 96.3,87.6 94.7,90.4 92.8,92.8 90.4,94.7 87.6,96.3 84.1,97.5 79.8,98.3 74.1,98.8 60.0,99.0 40.0,99.0 25.9,98.8 20.2,98.3 15.9,97.5 12.4,96.3 9.6,94.7 7.2,92.8 5.3,90.4 3.7,87.6 2.5,84.1 1.7,79.8 1.2,74.1 1.0,60.0 1.0,40.0 1.2,25.9 1.7,20.2 2.5,15.9 3.7,12.4 5.3,9.6 7.2,7.2 9.6,5.3 12.4,3.7 15.9,2.5 20.2,1.7 25.9,1.2 40.0,1.0 Z' fill='none' stroke='black' stroke-width='2.00'/%3E%3C/svg%3E") 40% / var(--sq) stretch; }
     .todo-card::before { -webkit-mask-box-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,0.8 60.0,0.8 74.2,0.9 80.0,1.4 84.3,2.3 87.7,3.5 90.6,5.1 93.0,7.0 94.9,9.4 96.5,12.3 97.7,15.7 98.6,20.0 99.1,25.8 99.2,40.0 99.2,60.0 99.1,74.2 98.6,80.0 97.7,84.3 96.5,87.7 94.9,90.6 93.0,93.0 90.6,94.9 87.7,96.5 84.3,97.7 80.0,98.6 74.2,99.1 60.0,99.2 40.0,99.2 25.8,99.1 20.0,98.6 15.7,97.7 12.3,96.5 9.4,94.9 7.0,93.0 5.1,90.6 3.5,87.7 2.3,84.3 1.4,80.0 0.9,74.2 0.8,60.0 0.8,40.0 0.9,25.8 1.4,20.0 2.3,15.7 3.5,12.3 5.1,9.4 7.0,7.0 9.4,5.1 12.3,3.5 15.7,2.3 20.0,1.4 25.8,0.9 40.0,0.8 Z' fill='none' stroke='black' stroke-width='1.54'/%3E%3C/svg%3E") 40% / var(--sq) stretch; }
     .breath-info::before { -webkit-mask-box-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,1.7 60.0,1.7 73.8,1.8 79.5,2.3 83.7,3.2 87.1,4.3 89.9,5.9 92.2,7.8 94.1,10.1 95.7,12.9 96.8,16.3 97.7,20.5 98.2,26.2 98.3,40.0 98.3,60.0 98.2,73.8 97.7,79.5 96.8,83.7 95.7,87.1 94.1,89.9 92.2,92.2 89.9,94.1 87.1,95.7 83.7,96.8 79.5,97.7 73.8,98.2 60.0,98.3 40.0,98.3 26.2,98.2 20.5,97.7 16.3,96.8 12.9,95.7 10.1,94.1 7.8,92.2 5.9,89.9 4.3,87.1 3.2,83.7 2.3,79.5 1.8,73.8 1.7,60.0 1.7,40.0 1.8,26.2 2.3,20.5 3.2,16.3 4.3,12.9 5.9,10.1 7.8,7.8 10.1,5.9 12.9,4.3 16.3,3.2 20.5,2.3 26.2,1.8 40.0,1.7 Z' fill='none' stroke='black' stroke-width='3.33'/%3E%3C/svg%3E") 40% / var(--sq) stretch; }
@@ -618,7 +631,7 @@
     border: 1px solid var(--glass-edge);
     color: var(--text-dim);
     border-radius: 999px;
-    padding: 7px 14px;
+    padding: 6px 12px;                  /* ⚠️ ~~原来 7px 14px~~ —— 同上,右上角整排收一档 */
     font-family: inherit;
     font-size: 12.5px;
     line-height: 1;
@@ -638,7 +651,13 @@
      ⚠️ **是横着的椭圆(胶囊),不是正圆** —— 所有者 2026-09-03 拿图指名要这种:
      「不要这种圆形,想要这种椭圆」。~~此前是 34×34 的正圆~~,别改回去。
      宽高比约 1.5:1,和旁边「退出」那颗文字胶囊看着是一家。 */
-  .hbtn-ico { width: 52px; height: 34px; padding: 0; justify-content: center; }
+  /* ⚠️ **收窄过一次,别再做肥**(2026-09-03 所有者拿她朋友那版比:「右上角的胶囊」也太胖)。
+     ~~原来 52×34~~ → **42×30**。在她那张 1206px @3x 的截图上量:我们那颗约 **50pt 宽**,
+     她朋友那版约 **35pt** —— 我们宽了快一半。
+     ⚠️⚠️ **仍然必须是横椭圆,不许收成正圆**:她 2026-09-03 拿图指名要过
+     「不要这种圆形,想要这种椭圆」(~~此前做成过 34×34 正圆,已撤销~~)。
+     **42 > 30 就是这条的底线**,演练钉着「宽 > 高」。 */
+  .hbtn-ico { width: 42px; height: 30px; padding: 0; justify-content: center; }
   .hbtn-ico .ico { width: 17px; height: 17px; }
   .search-bar { margin-top: 12px; }
   /* 搜索框:g2 档玻璃(面/模糊在公共实现里)。⚠️ input 上不渲染 ::before/::after,
@@ -689,13 +708,20 @@
     font-weight: 500;
   }
 
-  .content { padding: 20px; max-width: 1100px; margin: 0 auto; }
+  /* ⚠️ **横向也拉长了一点点**(2026-09-03 所有者要的)。~~原来左右各 20px~~ → **14px**,
+     卡片相应变宽。⚠️ 上下仍是 20px,只动了左右。 */
+  .content { padding: 20px 14px; max-width: 1100px; margin: 0 auto; }
 
   /* ── 筛选药丸 ── */
   .filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  /* ⚠️ **药丸不许再做肥**(2026-09-03 所有者拿她朋友那版并排比:「我们这一页的胶囊是不是也太胖了」)。
+     **量出来的**:同一张 1206px 宽 @3x 的截图上,我们那颗「全部」高 105px(=35pt),
+     她朋友那版 90px(=30pt) —— 我们胖了一档,横向也宽(173px vs 154px)。
+     ~~原来 padding:8px 16px / font-size:13px~~ → 现在约 29px 高。⚠️ 别再调回 8px 以上的竖向 padding。
+     ⚠️ **胶囊本来就不该有 44px 热区那条要求**:它排一行横滑、彼此挨着,做大反而更难点准。 */
   .filter-btn {
-    padding: 8px 16px;
-    font-size: 13px;
+    padding: 6px 13px;
+    font-size: 12.5px;
     border: 1px solid var(--glass-edge);
     border-radius: 999px;
     color: var(--chip-fg);              /* 面/模糊/边缘/厚度 = g3 档,见公共实现 */
@@ -725,14 +751,18 @@
   .sort-bar { display: flex; justify-content: flex-end; padding: 2px 0 12px; }
   .sort-pill {
     position: relative; display: inline-flex; align-items: center; gap: 6px;
-    padding: 7px 12px; border-radius: var(--r-pill);
-    border: 1px solid var(--glass-edge);   /* 面/模糊/边缘/厚度 = g3 档,见公共实现 */
-    color: var(--chip-fg); font-size: 13px; cursor: pointer;
+    /* ⚠️ **这颗要小、要隐蔽**(2026-09-03 所有者:「那个综合分胶囊能做的小一点隐蔽一点嘛」)。
+       ~~原来 7px 12px / 13px 字 / 一圈 glass-edge 描边~~ —— 现在 `4px 9px` / 11.5px,
+       **描边收成透明**(材质还是 g3,面和模糊都在,只是不再画那圈线),字色退到 `--text-light`。
+       ⚠️ 它不是主控件,别再给它加描边或加大 —— 真要找它,位置一直在药丸那行的右下角。 */
+    padding: 4px 9px; border-radius: var(--r-pill);
+    border: 1px solid transparent;         /* 面/模糊/厚度仍走 g3 档,只是不画边 */
+    color: var(--text-light); font-size: 11.5px; cursor: pointer;
     transition: background-color .18s ease, color .18s ease;
   }
   .sort-pill:hover { color: var(--text); background-color: var(--g3-fill-hi); }
   .sort-pill:focus-within { background-color: var(--g3-fill-hi); outline: none; }
-  .sort-pill .ico { width: 15px; height: 15px; color: var(--text-light); }
+  .sort-pill .ico { width: 13px; height: 13px; color: var(--text-light); }   /* ⚠️ 跟着那颗一起小一档 */
   .sort-pill .sort-caret { width: 14px; height: 14px; stroke-width: 2; }
   .sort-pill select {
     appearance: none; -webkit-appearance: none;
@@ -742,11 +772,16 @@
   }
 
   /* ── 记忆桶:卡片式(照效果图) ── */
-  .bucket-list { display: flex; flex-direction: column; gap: 12px; }
+  .bucket-list { display: flex; flex-direction: column; gap: 8px; }   /* ⚠️ C 档:~~原来 12px~~,列表要紧凑 */
+  /* ⚠️ **2026-09-03 所有者选的「C 档」**:她圈出整张卡片说「正文大胶囊」太胖、圆角看着「安卓方」。
+     ~~原来 padding:16px 18px / --r-4(20px) / 卡片间距 12px~~ ——
+     **收紧 + 圆角提到 `--r-5`(26px)**。⚠️ **两件事要一起改**:卡片越大,同样的圆角越显方;
+     只收紧不提圆角、或只提圆角不收紧,都不是她要的那个样子。
+     ⚠️ 圆角**没有新造数值**,仍是那五档里的「大面板」档(和抽屉/登录框同档)。 */
   .bucket-row {
     display: block;
-    padding: 16px 18px;
-    border-radius: var(--r-4);
+    padding: 11px 14px;
+    border-radius: var(--r-6);
     /* 面/模糊/光泽/边缘高光/厚度 = g1 主玻璃,全在公共实现里。
        ⚠️ 这儿只留一点点投影 —— 所有者:「不要滥用阴影」,分层交给材质,不交给阴影。 */
     box-shadow: var(--shadow-card);
@@ -819,6 +854,8 @@
     align-items: center;
     gap: 10px;
   }
+  /* ⚠️ **2026-09-03 试过把这里改成一串小胶囊,当天撤销** —— 所有者:「这玩意我根本没要」。
+     她说的「正文胶囊」不是这个,别再照那次自作主张做回来(要做先问清是哪一颗)。 */
   .bucket-row .domain {
     font-size: 12px;
     color: var(--text-light);
@@ -1371,8 +1408,11 @@
       flex-wrap: nowrap;
       overflow-x: auto;
       scrollbar-width: none;
-      margin: 0 -20px 16px;
-      padding: 0 20px 2px;
+      /* ⚠️ 这两个数**必须和 `.content` 的左右内边距一样**(现在 14px)——
+         它靠负边距顶到屏幕两侧再用同样的内边距顶回来。
+         2026-09-03 把 `.content` 由 20 改成 14 时忘了这儿,页面当场横向溢出 12px,演练「没有横向滚动」变红。 */
+      margin: 0 -14px 16px;
+      padding: 0 14px 2px;
     }
     .filters::-webkit-scrollbar { display: none; }
     .filter-btn { flex: none; }
