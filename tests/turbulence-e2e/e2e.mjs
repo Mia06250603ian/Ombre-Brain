@@ -107,10 +107,25 @@ await pg.waitForTimeout(900);
 const f1 = await pg.evaluate(() => window.__drift.frames());
 ok(f1 > f0, `动画真的在转(900ms 里画了 ${f1 - f0} 帧)`, f1 - f0);
 ok(await pg.evaluate(() => !document.getElementById('meter')), '左下角那块 FPS 读数已经删掉了');
+// ⚠️ 图例(那两行「说的是相近的事 / 共享同一个标签」)**默认是收起的**
+// (所有者 2026-09-03:「我点击才出现下面两行字」)。这儿钉「一进来看不见」。
+ok(await pg.$eval('#legend', n => !n.classList.contains('on') && getComputedStyle(n).visibility === 'hidden'),
+   '一进来图例是收起的');
 
 console.log('D. 点中一颗 → 卡片浮出来,正文是取回来的全文');
 await pg.evaluate(() => window.__drift.lockAt(0));
 await pg.waitForSelector('#card.on', { timeout:8000 });
+// 点中之后图例才出来,而且出场走一段「数据乱流」:字先乱跳、再从左往右定下来。
+ok(await pg.$eval('#legend', n => n.classList.contains('on')), '点中一颗之后图例出来了');
+{
+  // 乱流进行中:至少有一行还不是原文(⚠️ 抓得到就算,抓不到不判错 —— 动画只有半秒)
+  const mid = await pg.$$eval('#legend b', ns => ns.map(n => n.textContent !== n.dataset.text));
+  await pg.waitForFunction(`[...document.querySelectorAll('#legend b')].every(n => n.textContent === n.dataset.text)`,
+                           null, { timeout:4000 });
+  ok(true, `图例出场走了乱流动画(抓到乱码中的行数 ${mid.filter(Boolean).length})`);
+}
+ok(await pg.$$eval('#legend b', ns => ns.map(n => n.textContent).join('|')) === '说的是相近的事|共享同一个标签',
+   '乱流结束后两行字回到原文');
 ok(await pg.textContent('#cName') === '真·相遇那天', '卡片标题是那颗桶的名字');
 ok((await pg.textContent('#cKind')).includes('CORE'), 'pinned + importance 10 → 认成核心层');
 await pg.waitForFunction(`document.getElementById('cBody').textContent.includes('★全文到此★')`, null, { timeout:8000 });
@@ -234,6 +249,8 @@ ok(await pg.$$eval('#cNear button', (bs, back) => bs.some(b => b.dataset.id === 
 await pg.click('#cClose');
 ok(await pg.evaluate(() => !document.getElementById('card').classList.contains('on')), '✕ 之后卡片收掉了');
 ok(await pg.evaluate(() => window.__drift.locked()) === null, '✕ 之后锁定也松开了');
+// 图例跟着「有没有点中一颗」走,所以关掉卡片它也要收回去
+ok(await pg.$eval('#legend', n => !n.classList.contains('on')), '✕ 之后图例也收回去了');
 
 console.log('F. 缩放按钮');
 const s0 = await pg.evaluate(() => window.__drift.scale());

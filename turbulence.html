@@ -219,6 +219,16 @@ const CONFIG = {
   #legend span { display:inline-flex; align-items:center; gap:7px; }
   #legend i { width:26px; height:0; border-top:1px solid currentColor; display:inline-block; }
   #legend i.l-dash { border-top-style:dashed; }
+  #legend b { font-weight:inherit; font-variant-numeric:tabular-nums; }
+  /* 收起:占位不留(visibility 收掉,免得读屏还念它);展开时那两根线自己划出来 */
+  #legend { opacity:0; visibility:hidden; transform:translateY(-3px);
+            transition:opacity .32s ease, transform .32s cubic-bezier(.23,1,.32,1), visibility 0s .32s; }
+  #legend.on { opacity:1; visibility:visible; transform:none; transition-delay:0s; }
+  #legend i { width:0; transition:width .42s cubic-bezier(.23,1,.32,1) .06s; }
+  #legend.on i { width:26px; }
+  @media (prefers-reduced-motion: reduce) {
+    #legend, #legend i { transition-duration:.01s; }
+  }
   /* 底部那句引导。点过一次就淡出去 —— 说明只在你还不知道怎么用的时候才有用。 */
   #hint {
     position:fixed; left:0; right:0; z-index:2; text-align:center; pointer-events:none;
@@ -387,9 +397,12 @@ const CONFIG = {
   <!-- 统计 + 图例:所有者 2026-09-03 照她朋友那版要的。
        ⚠️ 图例说的是**两种线**;第三种(存入时关联到一起)我们取不到,所以图例里也没有它 —— 别加。 -->
   <p id="hStat"></p>
+  <!-- ⚠️ **图例默认是收起的,点中一颗字才出来**(所有者 2026-09-03:「我点击才出现下面两行字,
+       然后并且有一个数据乱流的动画」)。出场时那两行字先乱码、再一个个定下来 —— 见 revealLegend()。
+       文字放在 <b> 里、真身记在 data-text 上:乱码动画要反复改写它,原文得有地方存。 -->
   <div id="legend">
-    <span><i class="l-solid"></i>说的是相近的事</span>
-    <span><i class="l-dash"></i>共享同一个标签</span>
+    <span><i class="l-solid"></i><b data-text="说的是相近的事">说的是相近的事</b></span>
+    <span><i class="l-dash"></i><b data-text="共享同一个标签">共享同一个标签</b></span>
   </div>
 </div>
 
@@ -1064,8 +1077,54 @@ function boot(items, relations){
 }
 
 /* ══ ⑤ 点中一颗之后那张卡 ══ */
-function closeCard(){ document.getElementById('card').classList.remove('on'); }
+/* ══ 图例:点中一颗才出来,出场时走一段「数据乱流」 ══
+   所有者 2026-09-03 的原话:「**我点击才出现下面两行字,然后并且有一个数据乱流的动画**」。
+   做法:每个字先在字符表里乱跳,再**从左往右一个个定下来**(和这一页满屏的字符场是同一套字)。
+   ⚠️ **别改成整段淡入** —— 她要的就是"乱流"这个动作。
+   ⚠️ 系统开了「减少动态效果」就直接落到原文,不跳字(同这一页别处的 reduceMotion 规矩)。
+   ⚠️ 每次出场都要**先取消上一轮**(legendTimers),不然连点两下会有两轮抢着改同一段字。 */
+let legendTimers = [];
+function stopLegendScramble(){
+  legendTimers.forEach(id => cancelAnimationFrame(id));
+  legendTimers = [];
+}
+function scrambleText(el, ms){
+  const text = el.dataset.text || el.textContent;
+  const pool = CONFIG.glyphs;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = text; return; }
+  const startedAt = performance.now();
+  const step = function(now){
+    const t = Math.min(1, (now - startedAt) / ms);
+    // 定下来的字数从左往右推进;还没定的那些每帧换一个乱码
+    const settled = Math.floor(t * text.length);
+    let out = text.slice(0, settled);
+    for (let i = settled; i < text.length; i++) {
+      out += text[i] === ' ' ? ' ' : pool[Math.floor(Math.random() * pool.length)];
+    }
+    el.textContent = out;
+    if (t < 1) legendTimers.push(requestAnimationFrame(step));
+    else el.textContent = text;
+  };
+  legendTimers.push(requestAnimationFrame(step));
+}
+function revealLegend(){
+  const box = document.getElementById('legend');
+  if (!box || box.classList.contains('on')) return;
+  box.classList.add('on');
+  stopLegendScramble();
+  [...box.querySelectorAll('b')].forEach((el, i) => scrambleText(el, 460 + i * 140));
+}
+function hideLegend(){
+  const box = document.getElementById('legend');
+  if (!box) return;
+  stopLegendScramble();
+  box.classList.remove('on');
+  [...box.querySelectorAll('b')].forEach(el => { el.textContent = el.dataset.text || el.textContent; });
+}
+
+function closeCard(){ document.getElementById('card').classList.remove('on'); hideLegend(); }
 function openCard(item){
+  revealLegend();          // ⚠️ 图例跟着「点中了一颗」走,不跟着悬停走
   if (!item) return;
   const card = document.getElementById('card');
   document.getElementById('cKind').textContent = LAYER_LABEL[layerOf(item)] || '';
