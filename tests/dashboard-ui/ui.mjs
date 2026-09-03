@@ -203,7 +203,7 @@ for (const scheme of ['light', 'dark']) {
   // 图标跟着文字颜色走(stroke: currentColor),深浅色都不用另配色
   ok('图标跟着文字颜色走', await page.locator('.bucket-row .icon svg.ico').first().evaluate(
     el => getComputedStyle(el).stroke === getComputedStyle(el).color));
-  // 整页不许再有 emoji 当图标用(小票上的 □/✓ 和 logo ◐ 不是 emoji,不受影响)
+  // 整页不许再有 emoji 当图标用(logo ◐、排序 ↑↓ 这些不是 emoji,不受影响)
   ok('列表里没有 emoji 当图标', !/\p{Extended_Pictographic}/u.test(
     await page.locator('#bucket-list').innerText()));
   const wantChip = scheme === 'light' ? 'rgb(153, 153, 153)' : 'rgb(47, 51, 57)';
@@ -256,47 +256,63 @@ for (const scheme of ['light', 'dark']) {
   ok('恢复后那条的按钮没了', (await page.locator('#trash-list .letter-btn').count()) === 1);
 
   // 便利贴(2026-09-01):这块是晏的,面板只是让她看见 + 留了写入口。
-  // 页面是**一天一张小票**:同一天记下的凑一张,新的一天在前,下缘一排锯齿撕口。
+  // 页面是**一天一张卡**:同一天记下的凑一张,新的一天在前;
+  // 一行 = 圆形勾选 + 标题 + 副行 + 状态标签 + 撕掉。
   await page.locator('.tab[data-tab="todos"]').click();
   await page.waitForTimeout(400);
-  ok('一天一张小票,三天三张', (await page.locator('#todos-lines .receipt').count()) === 3);
-  ok('同一天的两条在同一张上', (await page.locator('#todos-lines .receipt').nth(1)
-    .locator('.receipt-line').count()) === 2);
-  ok('新的一天排在前面', /08\/31/.test(await page.locator('#todos-lines .receipt .receipt-date').first().innerText()));
-  ok('四条待办都在', (await page.locator('#todos-lines .receipt-line').count()) === 4);
-  ok('她贴的那条标着「你贴的」', await page.locator('#todos-lines .receipt-line.by-owner').first()
-    .evaluate(el => el.innerText.includes('你贴的')));
-  ok('已完成的划掉了', await page.locator('#todos-lines .receipt-line.is-done .receipt-text').first()
+  ok('一天一张卡,三天三张', (await page.locator('#todos-lines .todo-card').count()) === 3);
+  ok('同一天的两条在同一张上', (await page.locator('#todos-lines .todo-card').nth(1)
+    .locator('.todo-row').count()) === 2);
+  // ⚠️ 抬头是**英文**日期(所有者 2026-09-03 点名要的),而且**写死在代码里**不走
+  // toLocaleDateString —— 那个跟着浏览器语言走,她手机是中文的话会又变回中文。
+  ok('新的一天排在前面', /August 31/.test(
+    await page.locator('#todos-lines .todo-card-head h3').first().innerText()));
+  ok('抬头带星期(英文)', /Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday/.test(
+    await page.locator('#todos-lines .todo-card-head h3').first().innerText()));
+  ok('抬头字重是细的(不是 700)', await page.locator('#todos-lines .todo-card-head h3').first()
+    .evaluate(el => parseInt(getComputedStyle(el).fontWeight, 10) < 600));
+  ok('四条待办都在', (await page.locator('#todos-lines .todo-row').count()) === 4);
+  ok('她贴的那条标着 from you', await page.locator('#todos-lines .todo-row.by-owner').first()
+    .evaluate(el => el.innerText.includes('from you')));
+  ok('已完成的划掉了', await page.locator('#todos-lines .todo-row.is-done .todo-title').first()
     .evaluate(el => getComputedStyle(el).textDecorationLine === 'line-through'));
-  ok('每张票底下有 TOTAL', (await page.locator('#todos-lines .receipt-total').count()) === 3);
-  ok('全做完那张写「全做完了」', /全做完了/.test(await page.locator('#todos-lines .receipt').last().innerText()));
-  ok('小票下缘有锯齿(挂了遮罩)', await page.locator('#todos-lines .receipt').first()
-    .evaluate(el => (getComputedStyle(el).webkitMaskImage || getComputedStyle(el).maskImage).includes('conic-gradient')));
+  ok('每行右边有状态标签', (await page.locator('#todos-lines .todo-row .todo-tag').count()) === 4);
+  ok('没做的标 To do,做完的标 Done', await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#todos-lines .todo-row')];
+    return rows.every(r => r.querySelector('.todo-tag').textContent ===
+      (r.classList.contains('is-done') ? 'Done' : 'To do'));
+  }));
+  ok('勾选是个可按的圆(不是纯文字)', (await page.locator('#todos-lines .todo-check svg.ico').count()) === 4);
+  ok('全做完那张抬头写 All done', /All done/.test(
+    await page.locator('#todos-lines .todo-card').last().innerText()));
   await page.screenshot({ path: SHOTS + '/todos-' + scheme + '.png' });
 
-  // 贴一张:输入框回车即可。假 OB 给的是今天,所以会新开一张票
+  // 贴一张:输入框回车即可。假 OB 给的是今天,所以会新开一张卡
   await page.fill('#todo-input', '测试贴一张');
   await page.press('#todo-input', 'Enter');
   await page.waitForTimeout(400);
-  ok('新的一天单独一张票', (await page.locator('#todos-lines .receipt').count()) === 4);
+  ok('新的一天单独一张卡', (await page.locator('#todos-lines .todo-card').count()) === 4);
   ok('贴完输入框清空', (await page.inputValue('#todo-input')) === '');
-  ok('新贴的算她的', (await page.locator('#todos-lines .receipt-line.by-owner').count()) === 2);
+  ok('新贴的算她的', (await page.locator('#todos-lines .todo-row.by-owner').count()) === 2);
 
-  // 点一行 = 勾掉(小票上不摆按钮)
-  await page.locator('#todos-lines .receipt-line:not(.is-done) .receipt-text').first().click();
+  // 点整行 = 勾掉(手指比那颗小方块好按);点那颗圆同样能勾
+  await page.locator('#todos-lines .todo-row:not(.is-done) .todo-title').first().click();
   await page.waitForTimeout(400);
-  ok('点一行就勾掉了', (await page.locator('#todos-lines .receipt-line.is-done').count()) === 2);
+  ok('点一行就勾掉了', (await page.locator('#todos-lines .todo-row.is-done').count()) === 2);
+  await page.locator('#todos-lines .todo-row.is-done .todo-check').first().click();
+  await page.waitForTimeout(400);
+  ok('点那颗圆能取消勾选', (await page.locator('#todos-lines .todo-row.is-done').count()) === 1);
 
   // 撕掉是真删,必须二次确认:先取消,什么都不该变
-  const before = await page.locator('#todos-lines .receipt-line').count();
+  const before = await page.locator('#todos-lines .todo-row').count();
   page.once('dialog', d => d.dismiss());
-  await page.locator('#todos-lines .receipt-tear').first().click();
+  await page.locator('#todos-lines .todo-del').first().click();
   await page.waitForTimeout(300);
-  ok('撕掉取消确认就什么都不做', (await page.locator('#todos-lines .receipt-line').count()) === before);
+  ok('撕掉取消确认就什么都不做', (await page.locator('#todos-lines .todo-row').count()) === before);
   page.once('dialog', d => d.accept());
-  await page.locator('#todos-lines .receipt-tear').first().click();
+  await page.locator('#todos-lines .todo-del').first().click();
   await page.waitForTimeout(400);
-  ok('确认之后那条没了', (await page.locator('#todos-lines .receipt-line').count()) === before - 1);
+  ok('确认之后那条没了', (await page.locator('#todos-lines .todo-row').count()) === before - 1);
 
   // 其余标签页各开一次,看有没有炸
   for (const t of ['breath', 'letters', 'config', 'import', 'settings']) {

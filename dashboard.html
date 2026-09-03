@@ -213,7 +213,7 @@
     --r-pill: 999px;
   }
   @supports (corner-shape: squircle) {
-    .bucket-row, .letter-card, .receipt, .detail-panel, .config-section,
+    .bucket-row, .letter-card, .todo-card, .todo-check, .detail-panel, .config-section,
     .btn, .btn-secondary, .btn-danger, input, select, textarea,
     #import-upload-zone, #auth-overlay > div {
       corner-shape: squircle;
@@ -542,73 +542,95 @@
     line-height: 1.9; color: var(--text); font-size: 14px;
   }
 
-  /* ── 便利贴(2026-09-01)──
+  /* ── 便利贴(2026-09-01 建,2026-09-03 换成 iOS 那种卡片)──
      这块便利贴是晏的,面板只是让她也能看见。
-     ⚠️ **一天一张小票**(所有者 2026-09-01 拿一张收银小票的图来定的,当天改了三轮,
-     最后一句原话:「可以同一天的待办写在一起,但是不要一大坨都在一起」):
-     同一天记下的待办凑成一张,一张一张铺开;不是一整张长票,也不是一条一张。
-     ~~此前是贴纸墙(黄+蓝 → 淡纸色 B)、以及一整张长小票~~ —— **都已撤销,别改回去**,
-     三轮的取舍记在 INTERNALS 1.11。
-     ⚠️ 深色不是把浅色那张白纸搬过来(白纸贴黑底糊眼),另配一套暗纸色。
-     ⚠️ 手写体走**系统自带的**字体栈,**刻意不引 Google Fonts**:后台目前零外部请求。
-     ⚠️ 下缘锯齿是 conic-gradient 遮罩横向平铺,不是图片;改 padding/背景别把 mask 删了。 */
-  .receipt-wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; align-items: start; }
-  .receipt {
-    position: relative; padding: 16px 15px 22px;
-    background: linear-gradient(#fffefb, #faf6ef);
-    color: #3a352c;
-    box-shadow: 0 6px 18px rgba(0,0,0,.09), 0 1px 2px rgba(0,0,0,.05);
-    --zig: 11px;
-    -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / var(--zig) 100% repeat-x;
-    mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / var(--zig) 100% repeat-x;
+     一天一张卡:抬头日期 + 还剩几条 → 细分隔线 → 一行 =
+     圆形勾选 + 标题 + 副行 + 状态标签 + 撕掉键。
+     ⚠️ **「按天分组」是所有者 09-01 的原话**(「同一天写在一起,但不要一大坨都在一起」),
+     换皮没换分组 —— 别改成一条一张或一整张长列表。
+     ⚠️ 颜色**一律走主题变量**,深浅色自动跟,别在这儿自带一套色。 */
+  .todo-wall { display: flex; flex-direction: column; gap: 14px; }
+  .todo-card {
+    padding: 4px 6px 6px;
+    background: var(--glass-card);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-edge);
+    border-radius: var(--r-5);
+    box-shadow: var(--shadow-card);
   }
-  .receipt-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-  .receipt-head b { font-size: 12px; font-weight: 650; letter-spacing: .16em; color: #6d6659; }
-  .receipt-date { font-size: 12.5px; color: #3a352c; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .receipt-rule { border: 0; border-top: 1px dashed #c9c2b4; margin: 11px 0 9px; }
-  .receipt-line {
-    display: flex; align-items: flex-start; gap: 10px;
-    padding: 6px 2px; cursor: pointer; border-radius: var(--r-1);
+  .todo-card-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 14px 14px 10px;
   }
-  .receipt-line:hover { background: rgba(0,0,0,.03); }
-  .receipt-text { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.6; word-break: break-word; white-space: pre-wrap; }
-  .receipt-line.is-done .receipt-text { text-decoration: line-through; color: #a09889; }
-  .receipt-line.by-owner .receipt-text { color: #2f3a46; }
-  .receipt-who { margin-left: 6px; font-size: 10.5px; color: #8a8275; white-space: nowrap; }
-  .receipt-mark { flex: 0 0 auto; font-size: 12px; color: #8a8275; }
-  .receipt-tear {
-    border: 0; background: none; color: #c0b8aa; cursor: pointer; font-family: inherit;
-    font-size: 14px; line-height: 1; padding: 2px 3px; flex: 0 0 auto;
+  /* ⚠️ 抬头是英文日期、**字重刻意偏细**(所有者 2026-09-03:「字体细一点」)。
+     别按「标题就该粗」改回 700。 */
+  .todo-card-head h3 { font-size: 19px; font-weight: 450; letter-spacing: .2px; color: var(--text); }
+  .todo-card-head span { font-size: 12px; color: var(--text-light); white-space: nowrap; }
+  .todo-hairline { border: 0; border-top: 1px solid var(--border); margin: 0 14px; }
+
+  .todo-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 10px; border-radius: var(--r-4);
+    transition: background-color .15s ease;
   }
-  .receipt-tear:hover { color: #6d6659; }
-  .receipt-total { display: flex; justify-content: space-between; padding: 2px 2px 0; font-size: 12px; color: #6d6659; }
-  .receipt-total b { font-weight: 600; color: #3a352c; }
-  .receipt-empty { padding: 22px 2px; text-align: center; font-size: 13px; color: var(--text-light); }
-  .todo-add { display: flex; gap: 10px; margin-bottom: 16px; }
+  .todo-row:hover { background: var(--chip-bg); }
+  /* 勾选:灰底圆角方块 + 里面一个圈(照参考图) */
+  .todo-check {
+    flex: 0 0 auto; width: 38px; height: 38px; display: grid; place-items: center;
+    border: 0; border-radius: var(--r-3); background: var(--chip-bg);
+    cursor: pointer; font-family: inherit; padding: 0;
+    transition: background-color .15s ease;
+  }
+  .todo-check:hover { background: var(--border-strong); }
+  .todo-check .ico { width: 20px; height: 20px; color: var(--text-light); stroke-width: 1.5; }
+  .todo-row.is-done .todo-check { background: var(--accent); }
+  .todo-row.is-done .todo-check .ico { color: var(--accent-fg); }
+
+  .todo-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+  .todo-title {
+    font-size: 15px; font-weight: 500; line-height: 1.4; color: var(--text);
+    word-break: break-word; white-space: pre-wrap;
+  }
+  .todo-row.is-done .todo-title { color: var(--text-light); text-decoration: line-through; }
+  .todo-sub { font-size: 12px; color: var(--text-light); }
+
+  .todo-tag {
+    flex: 0 0 auto; padding: 5px 11px; border-radius: var(--r-pill);
+    background: var(--chip-bg); color: var(--chip-fg);
+    font-size: 11.5px; white-space: nowrap;
+  }
+  .todo-row.is-done .todo-tag { background: transparent; color: var(--text-light); }
+  .todo-del {
+    flex: 0 0 auto; width: 30px; height: 30px; display: grid; place-items: center;
+    border: 0; border-radius: var(--r-2); background: none; color: var(--text-light);
+    cursor: pointer; font-family: inherit; padding: 0; opacity: 0;
+    transition: opacity .15s ease, color .15s ease;
+  }
+  .todo-row:hover .todo-del, .todo-del:focus-visible { opacity: 1; }
+  .todo-del:hover { color: var(--negative); }
+  .todo-del .ico { width: 15px; height: 15px; }
+  /* 手机上没有 hover,撕掉那颗一直显示 */
+  @media (hover: none) { .todo-del { opacity: .55; } }
+
+  .todo-empty { padding: 26px 2px; text-align: center; font-size: 13px; color: var(--text-light); }
+
+  /* 底部输入:一条胶囊 + 一颗圆形发送键(照参考图) */
+  .todo-add { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
   .todo-add input {
     flex: 1; min-width: 0; background: var(--surface); border: 1px solid var(--border);
-    border-radius: 999px; padding: 10px 16px; font-size: 13px; color: var(--text); font-family: inherit;
+    border-radius: var(--r-pill); padding: 12px 18px; font-size: 14px;
+    color: var(--text); font-family: inherit;
   }
+  .todo-add input:focus { outline: none; border-color: var(--border-strong); }
   /* 按钮配色走 --accent / --accent-fg,和 .btn-primary 同一套(别写死颜色) */
   .todo-add button {
+    flex: 0 0 auto; width: 42px; height: 42px; display: grid; place-items: center;
     background: var(--accent); border: 1px solid var(--accent); color: var(--accent-fg);
-    border-radius: 999px; padding: 10px 20px; font-size: 13px; cursor: pointer;
-    font-family: inherit; white-space: nowrap;
+    border-radius: 50%; cursor: pointer; font-family: inherit; padding: 0;
   }
   .todo-add button:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
-  @media (prefers-color-scheme: dark) {
-    .receipt { background: linear-gradient(#262420, #201e1b); color: #e3ddd0; box-shadow: 0 6px 18px rgba(0,0,0,.45); }
-    .receipt-head b { color: #948c7e; }
-    .receipt-date { color: #e3ddd0; }
-    .receipt-rule { border-top-color: #45413a; }
-    .receipt-line:hover { background: rgba(255,255,255,.05); }
-    .receipt-line.is-done .receipt-text { color: #857e72; }
-    .receipt-line.by-owner .receipt-text { color: #cfdae6; }
-    .receipt-who, .receipt-mark, .receipt-total { color: #948c7e; }
-    .receipt-total b { color: #e3ddd0; }
-    .receipt-tear { color: #6f6961; }
-    .receipt-tear:hover { color: #b9b1a4; }
-  }
+  .todo-add button .ico { width: 19px; height: 19px; stroke-width: 2; }
 
   /* ── 详情抽屉 ── */
   .detail-panel {
@@ -1154,11 +1176,11 @@
     <span class="letters-note">这块是他的东西,这一页只是让你也能看见。你也可以贴一张给他:<b>你贴的那条会标「你贴的」,他那边会标「(她留的)」</b>——他有权知道哪条不是自己写的。撕掉的便利贴不留底,撕了就没了。</span>
   </div>
   <div class="todo-add">
-    <input id="todo-input" type="text" maxlength="500" placeholder="贴一张给他…(可留空不用)" />
-    <button onclick="addTodo()">贴上去</button>
+    <input id="todo-input" type="text" maxlength="500" placeholder="Add a note for him…" />
+    <button onclick="addTodo()" aria-label="贴上去" title="贴上去"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V6"/><path d="m6 12 6-6 6 6"/></svg></button>
   </div>
   <div id="todos-count" class="letters-count"></div>
-  <div id="todos-lines" class="receipt-wall"></div>
+  <div id="todos-lines" class="todo-wall"></div>
 </div>
 
 <div class="content" id="config-view" style="display:none">
@@ -1684,7 +1706,7 @@ function letterActions(it, textEl) {
 // 这块便利贴是晏的(存在卷上的 todos.json,MCP 的 todos 工具是他的入口)。
 // 这一页让她也能看见,并留了写入口 —— 她贴的条子服务端会打 by:"owner",
 // 晏那边显示「(她留的)」,这一页在那行后面标「你贴的」。
-// ⚠️ 页面做成一张小票(所有者拿图来定的):一行一条、右边日期、底下 TOTAL、下缘撕口。
+// ⚠️ 页面做成一天一张卡(所有者拿一张 iOS 待办小组件的截图来定的)。
 // ⚠️ 内容一律 textContent,不拼 HTML(便利贴是自由文本,和信箱同一条规矩)。
 async function loadTodos() {
   const wall = document.getElementById('todos-lines');
@@ -1699,13 +1721,13 @@ async function loadTodos() {
     if (!items.length) {
       cnt.textContent = '';
       const empty = document.createElement('div');
-      empty.className = 'receipt-empty';
-      empty.textContent = '便利贴上还什么都没有。';
+      empty.className = 'todo-empty';
+      empty.textContent = 'Nothing here yet.';
       wall.appendChild(empty);
       return;
     }
-    cnt.textContent = `${data.open} 条待做` + (data.done ? `、${data.done} 条已完成` : '');
-    // 同一天记下的凑一张小票,新的一天在前;没有日期的(08-14 那版的旧条目)单独一张
+    cnt.textContent = `${data.open} to do` + (data.done ? ` · ${data.done} done` : '');
+    // 同一天记下的凑一张卡,新的一天在前;没有日期的(08-14 那版的旧条目)单独一张
     const days = new Map();
     for (const it of items) {
       const key = todoDayKey(it.created);
@@ -1729,68 +1751,103 @@ function todoDayKey(iso) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-// 一天一张小票:抬头日期 → 虚线 → 这天的每一条 → 虚线 → 这天的合计 → 下缘撕口
+// 一天一张卡:抬头是那天的日期 + 还剩几条 → 细分隔线 → 一行一条。
+// ⚠️ 「按天分组」是她 09-01 的原话(「同一天写在一起,但不要一大坨都在一起」),别改。
+// ⚠️ 内容一律 textContent,不拼 HTML(便利贴是自由文本,和信箱同一条规矩)。
 function dayReceipt(key, dayItems) {
-  const card = document.createElement('div');
-  card.className = 'receipt';
+  const card = document.createElement('section');
+  card.className = 'todo-card';
 
   const head = document.createElement('div');
-  head.className = 'receipt-head';
-  const label = document.createElement('b');
-  label.textContent = 'TO DO';
-  const date = document.createElement('span');
-  date.className = 'receipt-date';
-  date.textContent = key ? key.slice(5).replace('-', '/') + '/' + key.slice(0, 4) : '没有日期';
-  head.appendChild(label); head.appendChild(date);
+  head.className = 'todo-card-head';
+  const title = document.createElement('h3');
+  title.textContent = todoDayLabel(key);
+  const count = document.createElement('span');
+  const open = dayItems.filter(it => !it.done).length;
+  count.textContent = open ? open + (open > 1 ? ' to do' : ' to do') : 'All done';
+  head.appendChild(title); head.appendChild(count);
   card.appendChild(head);
-  card.appendChild(document.createElement('hr')).className = 'receipt-rule';
 
-  // 一张票里也是没做的在前
+  const rule = document.createElement('hr');
+  rule.className = 'todo-hairline';
+  card.appendChild(rule);
+
+  // 没做的排前面
   const ordered = dayItems.filter(it => !it.done).concat(dayItems.filter(it => it.done));
   for (const it of ordered) card.appendChild(todoLine(it));
-
-  card.appendChild(document.createElement('hr')).className = 'receipt-rule';
-  const total = document.createElement('div');
-  total.className = 'receipt-total';
-  const l = document.createElement('span'); l.textContent = 'TOTAL';
-  const v = document.createElement('b');
-  const open = dayItems.filter(it => !it.done).length;
-  v.textContent = open ? `${open} 条待做` : '全做完了';
-  total.appendChild(l); total.appendChild(v);
-  card.appendChild(total);
   return card;
 }
 
+// 「2026-09-03」→「September 3, Wednesday」(所有者 2026-09-03 点名要英文)。
+// ⚠️ 月份/星期写死在这儿,不走 toLocaleDateString —— 那个跟着浏览器语言走,
+// 她手机是中文的话会又变回中文,等于没改。
+const TODO_MONTHS = ['January','February','March','April','May','June',
+                     'July','August','September','October','November','December'];
+const TODO_WEEK = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function todoDayLabel(key) {
+  if (!key) return 'No date';
+  const d = new Date(key + 'T00:00:00');
+  if (isNaN(d)) return key;
+  return TODO_MONTHS[d.getMonth()] + ' ' + d.getDate() + ', ' + TODO_WEEK[d.getDay()];
+}
+
 function todoLine(it) {
-  const line = document.createElement('div');
-  line.className = 'receipt-line' + (it.done ? ' is-done' : '') + (it.by === 'owner' ? ' by-owner' : '');
-  line.title = '#' + (it.id || '');
+  const row = document.createElement('div');
+  row.className = 'todo-row' + (it.done ? ' is-done' : '') + (it.by === 'owner' ? ' by-owner' : '');
+  row.title = '#' + (it.id || '');
 
-  const mark = document.createElement('span');
-  mark.className = 'receipt-mark';
-  mark.textContent = it.done ? '✓' : '□';
+  // 勾选:灰底圆角方块里一个圈,勾掉之后填成强调色 + 打勾
+  const check = document.createElement('button');
+  check.type = 'button';
+  check.className = 'todo-check';
+  check.setAttribute('aria-pressed', it.done ? 'true' : 'false');
+  check.setAttribute('aria-label', it.done ? '取消完成' : '标记完成');
+  check.innerHTML = ico(it.done ? 'tick' : 'circle');
+  check.onclick = () => toggleTodo(it.id, !it.done);
 
-  const text = document.createElement('div');
-  text.className = 'receipt-text';
-  text.textContent = it.text || '';
-  if (it.by === 'owner') {
-    const who = document.createElement('span');
-    who.className = 'receipt-who';
-    who.textContent = '· 你贴的';
-    text.appendChild(who);
+  const main = document.createElement('div');
+  main.className = 'todo-main';
+  const title = document.createElement('div');
+  title.className = 'todo-title';
+  title.textContent = it.text || '';
+  const sub = document.createElement('div');
+  sub.className = 'todo-sub';
+  sub.textContent = todoSubLine(it);
+  main.appendChild(title); main.appendChild(sub);
+
+  const tag = document.createElement('span');
+  tag.className = 'todo-tag';
+  tag.textContent = it.done ? 'Done' : 'To do';
+
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'todo-del';
+  del.setAttribute('aria-label', '撕掉这条');
+  del.title = '撕掉';
+  del.innerHTML = ico('cross');
+  // ⚠️ 撕掉是真删、没有回收站,所以必须二次确认(这条 09-01 就定了,别去掉)
+  del.onclick = (e) => { e.stopPropagation(); deleteTodo(it); };
+
+  // 点整行也是勾掉/取消(手指比那颗小方块好按)
+  row.onclick = (e) => {
+    if (e.target.closest('.todo-del') || e.target.closest('.todo-check')) return;
+    toggleTodo(it.id, !it.done);
+  };
+
+  row.appendChild(check); row.appendChild(main); row.appendChild(tag); row.appendChild(del);
+  return row;
+}
+
+// 副行:几点记的 + 是不是她贴的(晏那边显示「(她留的)」,这儿显示「你贴的」)
+function todoSubLine(it) {
+  const bits = [];
+  if (it.created) {
+    const d = new Date(it.created);
+    if (!isNaN(d)) bits.push(String(d.getHours()).padStart(2, '0') + ':' +
+                             String(d.getMinutes()).padStart(2, '0'));
   }
-  // 点一行就是勾掉/取消 —— 小票上摆一排按钮不像小票
-  line.onclick = (e) => { if (e.target.classList.contains('receipt-tear')) return; toggleTodo(it.id, !it.done); };
-
-  const tear = document.createElement('button');
-  tear.className = 'receipt-tear';
-  tear.type = 'button';
-  tear.textContent = '×';
-  tear.title = '撕掉';
-  tear.onclick = () => deleteTodo(it);
-
-  line.appendChild(mark); line.appendChild(text); line.appendChild(tear);
-  return line;
+  if (it.by === 'owner') bits.push('from you');
+  return bits.join(' · ');
 }
 
 async function todoWrite(url, body) {
@@ -2259,6 +2316,9 @@ var ICONS = {
   search: '<circle cx="11" cy="11" r="6"/><path d="m15.5 15.5 4 4"/>',
   clock:  '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 1.8"/>',
   cross:  '<path d="m7 7 10 10M17 7 7 17"/>',
+  circle: '<circle cx="12" cy="12" r="8"/>',
+  tick:   '<circle cx="12" cy="12" r="8"/><path d="M8.6 12.2l2.3 2.3 4.5-4.9"/>',
+  arrowUp:'<path d="M12 19V6"/><path d="m6 12 6-6 6 6"/>',
 };
 function ico(name, extra) {
   var body = ICONS[name] || '';
