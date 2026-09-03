@@ -158,6 +158,16 @@ const CONFIG = {
       rgba(255,255,255,.95) 0%, rgba(255,255,255,.45) 22%,
       rgba(19,19,19,.05) 60%, rgba(255,255,255,.5) 100%);
     --card-depth: inset 0 14px 22px -18px rgba(255,255,255,.9), inset 0 -1px 0 rgba(19,19,19,.04);
+    /* 胶囊(分类标签 +「在面板里打开」)的玻璃,照后台 1.8 的 **g3 微玻璃**那一档来
+       (2026-09-03 所有者:「我想要胶囊和现在上线的前端一样的玻璃质感」)。
+       ⚠️ **底色和字色一个数没动**,仍是 rgba(--drift-signal,.13) + rgb(--drift-signal);
+       这里加的只有材质三件(光泽 / 边缘高光 / 厚度)+ 模糊。 */
+    --pill-blur:  blur(14px) saturate(1.25);
+    --pill-sheen: linear-gradient(172deg, rgba(255,255,255,.42) 0%, rgba(255,255,255,0) 46%, rgba(19,19,19,.035) 100%);
+    --pill-rim:   linear-gradient(150deg,
+      rgba(255,255,255,.80) 0%, rgba(255,255,255,.22) 34%,
+      rgba(19,19,19,.05) 70%, rgba(255,255,255,.34) 100%);
+    --pill-depth: inset 0 8px 14px -14px rgba(255,255,255,.85);
     /* 正文那块玻璃:比卡片底再亮一档,浅色靠白、深色靠白的一点点透明度 */
     --drift-sheet:  rgba(255,255,255,.62);
     --drift-input:  rgba(20,20,19,.03);
@@ -185,6 +195,12 @@ const CONFIG = {
         rgba(255,255,255,.42) 0%, rgba(255,255,255,.14) 24%,
         rgba(0,0,0,.22) 60%, rgba(255,255,255,.2) 100%);
       --card-depth: inset 0 14px 24px -18px rgba(255,255,255,.28), inset 0 -1px 0 rgba(0,0,0,.5);
+      --pill-blur:  blur(14px) saturate(1.3);
+      --pill-sheen: linear-gradient(172deg, rgba(255,255,255,.07) 0%, rgba(255,255,255,0) 46%, rgba(0,0,0,.05) 100%);
+      --pill-rim:   linear-gradient(150deg,
+        rgba(255,255,255,.24) 0%, rgba(255,255,255,.07) 34%,
+        rgba(0,0,0,.10) 70%, rgba(255,255,255,.11) 100%);
+      --pill-depth: inset 0 8px 16px -14px rgba(255,255,255,.16);
       --drift-sheet:  rgba(255,255,255,.045);
       --drift-input:  rgba(255,255,255,.03);
     }
@@ -271,8 +287,13 @@ const CONFIG = {
      半透明面(--drift-card)+ 光泽(--card-sheen)+ 模糊放大到 30px + 边缘高光(::before)
      + 厚度(::after)+ 背后真有东西(这一页满屏的字符雨)。做法和后台 1.8 那套一致。
      ⚠️ `background-color` 走面、`background-image` 走光泽,别用 `background` 简写把两者合掉。 */
+  /* ⚠️ 卡片**不通栏**:左右各留 11px(2026-09-03 所有者拿她朋友那版比:「你对比一下 p2 的宽度,
+     我们的目前有点太安卓了」)。~~原来 left:0;right:0 顶满屏宽~~ —— 通栏正是那股安卓味。
+     **11px 是量出来的**:在她那张 Flux 截图上(1206px 宽 = 402pt @3x)量到卡片左右各缩进
+     约 35px ≈ 11.6pt,取 11px。⚠️ 现场再量法:截图里找卡片白区的左右边界,除以 3。
+     ⚠️ 侧边露出来之后,边缘高光那圈环**四边都看得见了**(原来只露顶边和两个顶角)—— 本来就是画满环的,不用改。 */
   #card {
-    position:fixed; left:0; right:0; bottom:0; z-index:4;
+    position:fixed; left:11px; right:11px; bottom:0; z-index:4;
     max-height:66vh; padding:20px 18px calc(env(safe-area-inset-bottom,0px) + 18px);
     display:none; grid-template-rows:auto 1fr; gap:11px;
     border-top:1px solid transparent; border-radius:16px 16px 0 0;
@@ -348,10 +369,13 @@ const CONFIG = {
        ② 日期不是标签,就是一句次要文字,和标签并排。所以这里没有第二个胶囊。
      颜色直接取 --drift-signal(她亲手拖的那个),不另配色。 */
   #cTags { margin-top:6px; display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; }
+  /* ⚠️ 胶囊**不许再做肥**(2026-09-03 所有者:「胶囊不要做那么肥美」,拿她朋友那版比的)。
+     ~~原来 padding:4px 11px / font-size:12.5 / line-height:1.5,量出来约 27px 高~~ ——
+     现在约 **20px**。**参照物是量出来的**:她那张 Flux 截图上那颗「社交」高 53px(1206px 宽 @3x)
+     ≈ 17.7pt;我们留了一点余量好让中文不挤。⚠️ **别再调回 4px 以上的竖向 padding。** */
   #cTags .c-tag {
-    padding:4px 11px; border-radius:var(--r-pill, 999px);
-    background:rgba(var(--drift-signal),.13); color:rgb(var(--drift-signal));
-    font-size:12.5px; font-weight:500; line-height:1.5; letter-spacing:.01em;
+    padding:2px 9px; border-radius:var(--r-pill, 999px);
+    font-size:11.5px; font-weight:500; line-height:1.35; letter-spacing:.01em;
   }
   #cNear { margin-top:17px; }
   #cNear > b { display:block; margin-bottom:9px; color:rgb(var(--drift-signal)); font-size:11.5px; font-weight:500; letter-spacing:.08em; }
@@ -376,8 +400,37 @@ const CONFIG = {
   #cOpen {
     margin-top:18px; display:block; padding:14px; text-align:center;
     border:0; border-radius:var(--r-pill, 999px);
-    background:rgba(var(--drift-signal),.13); color:rgb(var(--drift-signal));
     font-size:14px; font-weight:600; text-decoration:none;
+  }
+  /* 胶囊的**玻璃**(2026-09-03 所有者:「我想要胶囊和现在上线的前端一样的玻璃质感」)。
+     照后台 1.8 的 **g3 微玻璃**那一档来:半透明的面 + 光泽 + mask 抠出来的边缘高光 + 极柔厚度 + 模糊。
+     ⚠️ **底色和字色一个数没动**(仍是 signal 的 .13 底 + signal 的字)——她 09-03 为这套配色否过两版,
+     **这次只换材质,不许趁机另配色**(1.12 那条「不许另配第二套」仍然有效)。
+     ⚠️ 标签和「在面板里打开」**必须长得一模一样**,所以两个选择器永远写在一起,演练逐字段比对。 */
+  #cTags .c-tag, #cOpen {
+    position:relative;
+    background-color:rgba(var(--drift-signal),.13); background-image:var(--pill-sheen);
+    color:rgb(var(--drift-signal));
+    -webkit-backdrop-filter:var(--pill-blur); backdrop-filter:var(--pill-blur);
+    box-shadow:var(--pill-depth);
+  }
+  #cTags .c-tag::before, #cOpen::before { content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none; }
+  @supports ((-webkit-mask-composite:xor) or (mask-composite:exclude)) {
+    #cTags .c-tag::before, #cOpen::before {
+      inset:-1px; padding:1px; background:var(--pill-rim);
+      -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite:xor; mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      mask-composite:exclude;
+    }
+  }
+  /* 玻璃透不了时退回原来那身平底(同 #card 的兜底,不然半透明没了模糊会糊字) */
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
+    #cTags .c-tag, #cOpen { background-image:none; box-shadow:none; }
+    #cTags .c-tag::before, #cOpen::before { display:none; }
+  }
+  @media (prefers-reduced-transparency:reduce) {
+    #cTags .c-tag, #cOpen { background-image:none; box-shadow:none; }
+    #cTags .c-tag::before, #cOpen::before { display:none; }
   }
   /* ⚠️ 2026-09-03 所有者定的:「**改成和恋爱那个按钮一样的,黑白两版本都改成那个样的**」——
      就是上面那颗标签的做法:**同色的极淡底(.13)+ 强调色的字,不描边**。

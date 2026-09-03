@@ -162,6 +162,36 @@ ok(openCss.bg === tagCss.bg, '它的底和「恋爱」那颗标签一模一样',
 ok(openCss.fg === tagCss.fg, '它的字色和「恋爱」那颗标签一模一样', openCss.fg + ' vs ' + tagCss.fg);
 ok(openCss.href === '/dashboard#bucket=b01',
    '⚠️ 它不是装饰:href 真的指向后台里的那一条', openCss.href);
+// 胶囊:①不许再做肥 ②材质要和后台那套玻璃一样(2026-09-03 所有者两条一起提的)
+const pill = await pg.evaluate(() => {
+  const read = sel => {
+    const n = document.querySelector(sel), s = getComputedStyle(n), ps = getComputedStyle(n, '::before');
+    return { h:n.getBoundingClientRect().height,
+             blur:(s.backdropFilter || s.webkitBackdropFilter || ''),
+             sheen:/gradient/.test(s.backgroundImage),
+             depth:/inset/.test(s.boxShadow),
+             rim:/gradient/.test(ps.backgroundImage) ||
+                 /(exclude|xor)/.test((ps.webkitMaskComposite || '') + (ps.maskComposite || '')) };
+  };
+  return { tag:read('#cTags .c-tag'), open:read('#cOpen') };
+});
+ok(pill.tag.h <= 22, `分类标签不肥(高 ${pill.tag.h.toFixed(1)}px,原来约 27px;她朋友那版 ≈17.7px)`);
+ok(/blur/.test(pill.tag.blur), '胶囊开了玻璃模糊(和后台那套 g3 微玻璃同一档)', pill.tag.blur);
+ok(pill.tag.sheen, '胶囊的面上叠了光泽,不是单一色块');
+ok(pill.tag.rim, '胶囊的边缘是渐变高光,不是硬描边');
+ok(pill.tag.depth, '胶囊有厚度(内侧那道极柔的明暗)');
+// ⚠️ 两颗必须长得一模一样(1.12:标签和「在面板里打开」不许另配第二套)
+ok(pill.open.blur === pill.tag.blur && pill.open.sheen === pill.tag.sheen &&
+   pill.open.rim === pill.tag.rim && pill.open.depth === pill.tag.depth,
+   '「在面板里打开」和标签是同一套玻璃,没有第二套');
+// 卡片不通栏(2026-09-03 所有者:「对比一下 p2 的宽度,我们的目前有点太安卓了」)
+const cardBox = await pg.evaluate(() => {
+  const r = document.getElementById('card').getBoundingClientRect();
+  return { left:r.left, right:innerWidth - r.right, w:r.width, vw:innerWidth };
+});
+ok(cardBox.left >= 8 && cardBox.right >= 8,
+   `卡片左右都留了空,不顶满屏(左 ${cardBox.left.toFixed(0)}px / 右 ${cardBox.right.toFixed(0)}px)`);
+ok(cardBox.w < cardBox.vw, `卡片比屏窄(${cardBox.w.toFixed(0)} < ${cardBox.vw})`);
 // 日期:/api/buckets 是给 created 的,卡上就该有(2026-09-03 夹具漏了这个字段,她一眼看出来)
 ok(/月/.test(await pg.textContent('#cTags')), '日期显示出来了', await pg.textContent('#cTags'));
 // 「正文的部分是有一个和底色相近的玻璃质感框的」—— 正文是唯一保留框的一块,而且是玻璃不是描边
