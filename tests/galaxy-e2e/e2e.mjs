@@ -36,6 +36,29 @@ ok(await pg.evaluate(()=>document.getElementById('hTitle').textContent==='Vesper
 ok(await pg.evaluate(()=>document.getElementById('hZh').textContent==='每一颗星都记得宇宙的方向'),'中文小字是新写的那句');
 ok(await pg.evaluate(()=>getComputedStyle(document.getElementById('loading')).display==='none'),'「entering the galaxy…」已经收掉');
 
+console.log('B2. 有出口能回后台（刻意做得很淡）');
+// ⚠️ 这一页能被加到手机主屏,那种模式下连浏览器返回按钮都没有 —— 没这颗只能杀掉重开。
+// ⚠️⚠️ 本文件的 ok() 是「条件在前、说明在后」,和 tests/dashboard-ui/ 那套**相反**。
+//    2026-09-03 照那套写过一次,结果条件永远是个非空字符串、七条断言全是假绿。别再弄反。
+ok(await pg.locator('#exit').isVisible(), '左上角有出口');
+ok((await pg.getAttribute('#exit','href'))==='/dashboard', '出口指向 /dashboard');
+ok((await pg.evaluate(()=>document.getElementById('exit').tagName))==='A', '出口是链接不是 JS 跳转');
+ok(!!(await pg.getAttribute('#exit','aria-label')), '出口有 aria-label（它只有图标）');
+// 所有者要「更隐蔽一点」:不许做成有底色的按钮,平时也不许太显眼
+ok(await pg.evaluate(()=>{
+  const cs=getComputedStyle(document.getElementById('exit'));
+  const bg=cs.backgroundColor;
+  return (bg==='rgba(0, 0, 0, 0)'||bg==='transparent') && parseFloat(cs.borderTopWidth)===0;
+}), '出口是隐蔽的：没底色没描边');
+ok(await pg.evaluate(()=>{
+  const m=getComputedStyle(document.getElementById('exit')).color.match(/[\d.]+/g);
+  return !!m && m.length===4 && parseFloat(m[3])<0.45;
+}), '出口平时很淡（不透明度 <0.45）');
+// 看着淡不等于难按:热区仍要够大
+ok(await pg.locator('#exit').evaluate(el=>{
+  const r=el.getBoundingClientRect(); return r.width>=40 && r.height>=40;
+}), '热区够大（≥40px）');
+
 console.log('C. 点一颗星（真的点画布，走光线拾取）');
 // 找一颗此刻朝向镜头、在屏幕内的星
 const target=await pg.evaluate(()=>{

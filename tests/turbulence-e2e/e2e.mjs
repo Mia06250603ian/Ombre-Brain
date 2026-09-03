@@ -48,10 +48,25 @@ ok(await pg.evaluate(() => getComputedStyle(document.getElementById('loading')).
 
 console.log('B2. 有出口能回后台');
 // ⚠️ 这一页可以被加到手机主屏,那种模式下连浏览器的返回按钮都没有 —— 没这颗就只能杀掉重开。
-ok('左上角有出口', await pg.locator('#exit').isVisible());
-ok('出口指向 /dashboard', (await pg.getAttribute('#exit', 'href')) === '/dashboard');
-ok('出口是链接不是 JS 跳转', (await pg.evaluate(() => document.getElementById('exit').tagName)) === 'A');
-ok('出口有 aria-label(它只有图标)', !!(await pg.getAttribute('#exit', 'aria-label')));
+// ⚠️⚠️ 本文件的 ok() 是「条件在前、说明在后」。2026-09-03 这四条一度写反了
+//    (说明写在前面 → 条件永远是个非空字符串 → 全是假绿,什么都没测)。**别再弄反。**
+ok(await pg.locator('#exit').isVisible(), '左上角有出口');
+ok((await pg.getAttribute('#exit', 'href')) === '/dashboard', '出口指向 /dashboard');
+ok((await pg.evaluate(() => document.getElementById('exit').tagName)) === 'A', '出口是链接不是 JS 跳转');
+ok(!!(await pg.getAttribute('#exit', 'aria-label')), '出口有 aria-label(它只有图标)');
+// 所有者要「做成隐藏的」:不许做成有底色的按钮,平时也不许太显眼
+ok(await pg.evaluate(() => {
+  const cs = getComputedStyle(document.getElementById('exit'));
+  const bg = cs.backgroundColor;
+  return (bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') && parseFloat(cs.borderTopWidth) === 0;
+}), '出口是隐蔽的:没底色没描边');
+ok(await pg.evaluate(() =>
+  parseFloat(getComputedStyle(document.getElementById('exit')).opacity) < 0.45),
+  '出口平时很淡(不透明度 <0.45)');
+// 看着淡不等于难按:热区仍要够大
+ok(await pg.locator('#exit').evaluate(el => {
+  const r = el.getBoundingClientRect(); return r.width >= 40 && r.height >= 40;
+}), '热区够大(≥40px)');
 
 console.log('C. 画布真的在画,而且是深色底');
 const px = await pg.evaluate(() => {
