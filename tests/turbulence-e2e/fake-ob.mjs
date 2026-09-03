@@ -5,15 +5,15 @@ import http from 'node:http';
 import fs from 'node:fs';
 
 const B = [
-  {id:'b01',name:'真·相遇那天',  type:'permanent',domain:['恋爱'],   importance:10,pinned:true, resolved:false,content_preview:'PLACEHOLDER'},
-  {id:'b02',name:'真·搭记忆库',  type:'dynamic',  domain:['编程','AI'],importance:8,pinned:false,resolved:false,content_preview:'预览二'},
-  {id:'b03',name:'真·某个晚安',  type:'dynamic',  domain:['日常'],   importance:5, pinned:false,resolved:false,content_preview:'预览三'},
-  {id:'b04',name:'真·旧事',      type:'dynamic',  domain:['回忆'],   importance:3, pinned:false,resolved:true, content_preview:'预览四'},
-  {id:'b05',name:'真·他的自省',  type:'feel',     domain:['自省'],   importance:6, pinned:false,resolved:false,content_preview:'预览五'},
-  {id:'b06',name:'真·没有域的桶',type:'dynamic',  domain:[],         importance:7, pinned:false,resolved:false,content_preview:'预览六'},
+  {id:'b01',created:'2026-01-01T20:00:00+08:00',name:'真·相遇那天',  type:'permanent',domain:['恋爱'],   importance:10,pinned:true, resolved:false,content_preview:'PLACEHOLDER'},
+  {id:'b02',created:'2026-02-08T14:00:00+08:00',name:'真·搭记忆库',  type:'dynamic',  domain:['编程','AI'],importance:8,pinned:false,resolved:false,content_preview:'预览二'},
+  {id:'b03',created:'2026-03-20T23:40:00+08:00',name:'真·某个晚安',  type:'dynamic',  domain:['日常'],   importance:5, pinned:false,resolved:false,content_preview:'预览三'},
+  {id:'b04',created:'2026-04-02T10:00:00+08:00',name:'真·旧事',      type:'dynamic',  domain:['回忆'],   importance:3, pinned:false,resolved:true, content_preview:'预览四'},
+  {id:'b05',created:'2026-05-30T21:00:00+08:00',name:'真·他的自省',  type:'feel',     domain:['自省'],   importance:6, pinned:false,resolved:false,content_preview:'预览五'},
+  {id:'b06',created:'2026-06-10T15:00:00+08:00',name:'真·没有域的桶',type:'dynamic',  domain:[],         importance:7, pinned:false,resolved:false,content_preview:'预览六'},
   // ⚠️ 这条是**专门用来撞溢出的**:所有者的真实桶名长这样(`session_日期_一整句话`)。
   // 2026-09-03 就是它把详情卡撑出了屏幕、右上角的 ✕ 被挤没了。**别把它改短。**
-  {id:'b07',name:'session_2026-07-01_7月1日深夜到7月2日凌晨改了prompt加了记忆库还聊了很久很久',
+  {id:'b07',created:'2026-07-01T23:50:00+08:00',name:'session_2026-07-01_7月1日深夜到7月2日凌晨改了prompt加了记忆库还聊了很久很久',
    type:'permanent',domain:['自省','心理'],importance:9,pinned:false,resolved:false,content_preview:'超长标题的那条'},
 ];
 const FULL = {

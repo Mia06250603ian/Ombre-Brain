@@ -146,6 +146,7 @@ const CONFIG = {
     --drift-card:   rgba(250,249,245,.94);
     /* 正文那块玻璃:比卡片底再亮一档,浅色靠白、深色靠白的一点点透明度 */
     --drift-sheet:  rgba(255,255,255,.62);
+    --drift-btn:    #5c5c5c;          /* 「在面板里打开」的底:中性灰,零饱和 */
     --drift-input:  rgba(20,20,19,.03);
   }
   @media (prefers-color-scheme: dark) {
@@ -164,6 +165,7 @@ const CONFIG = {
       --drift-panel:  rgba(4,7,11,.9);
       --drift-card:   rgba(4,7,11,.94);
       --drift-sheet:  rgba(255,255,255,.045);
+      --drift-btn:    #3a3a3a;
       --drift-input:  rgba(255,255,255,.03);
     }
   }
@@ -325,13 +327,15 @@ const CONFIG = {
   /* 日期:纯文字,不做成第二个胶囊(苹果的卡片抬头都是这么排的) */
   #cTags .c-date { color:var(--drift-faint); font-size:11px; letter-spacing:.02em; }
   #cOpen {
-    margin-top:16px; display:block; padding:12px; text-align:center;
+    margin:16px auto 0; display:block; width:fit-content; padding:9px 22px; text-align:center;
     border:0; border-radius:var(--r-pill, 999px);
-    background:rgb(var(--drift-signal)); color:#12161c;
-    font-size:12.5px; font-weight:600; text-decoration:none;
+    background:var(--drift-btn); color:#ffffff;
+    font-size:11.5px; font-weight:500; text-decoration:none;
   }
-  /* ⚠️ 字色写死成近黑,**不能用白** —— 她挑的两个 signal 都是浅色
-     (浅 144,206,216 / 深 150,180,253),白字在上面根本看不清。 */
+  /* ⚠️ 2026-09-03 所有者:「这个按钮能不能改成灰色呢?或者改小一点,上面的字我要白色」——
+     两样都做了:底换成中性灰(零饱和,和后台那颗灰按钮同一路)、字白、个头收窄成
+     **只有文字那么宽**、不再通栏。⚠️ **底不能用 `--drift-signal`**:她挑的两个色都很浅,
+     白字压上去看不清 —— 灰底正是为了让白字站得住。 */
   #cOpen:hover { opacity:.85; }
   #cNear small { color:var(--drift-faint); font-size:8px; }
   /* ⚠️ 窄屏上关系名太长会把标题挤没,所以叠成两行(宽屏才并排)。 */

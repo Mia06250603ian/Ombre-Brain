@@ -118,8 +118,19 @@ const framed = await pg.evaluate(() => {
   return bad;
 });
 ok(framed.length === 0, '✕ / 关联列表 / 「在面板里打开」三处都没有描边框', framed.join('|'));
-ok(await pg.$eval('#cOpen', n => getComputedStyle(n).backgroundColor !== 'rgba(0, 0, 0, 0)'),
-   '「在面板里打开」是实心按钮(照她们那版),不是空心胶囊');
+// 「在面板里打开」是**真按钮**不是装饰:实心、灰底白字、点了真跳到那一条
+const openCss = await pg.$eval('#cOpen', n => {
+  const s = getComputedStyle(n);
+  return { bg:s.backgroundColor, fg:s.color, href:n.getAttribute('href') };
+});
+ok(openCss.bg !== 'rgba(0, 0, 0, 0)', '「在面板里打开」是实心按钮,不是空心胶囊', openCss.bg);
+{ const m = openCss.bg.match(/\d+/g).slice(0,3).map(Number);
+  ok(m[0] === m[1] && m[1] === m[2], '底是零饱和的灰(她要的)', openCss.bg); }
+ok(openCss.fg === 'rgb(255, 255, 255)', '字是白的(她要的)', openCss.fg);
+ok(openCss.href === '/dashboard#bucket=b01',
+   '⚠️ 它不是装饰:href 真的指向后台里的那一条', openCss.href);
+// 日期:/api/buckets 是给 created 的,卡上就该有(2026-09-03 夹具漏了这个字段,她一眼看出来)
+ok(/月/.test(await pg.textContent('#cTags')), '日期显示出来了', await pg.textContent('#cTags'));
 // 「正文的部分是有一个和底色相近的玻璃质感框的」—— 正文是唯一保留框的一块,而且是玻璃不是描边
 const bodyBox = await pg.$eval('#cBody', n => {
   const s = getComputedStyle(n);
