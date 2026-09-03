@@ -424,6 +424,20 @@ for (const scheme of ['light', 'dark']) {
       return blur.includes('blur') && /rgba\([^)]+, *0?\.\d+\)/.test(cs.backgroundColor);
     }));
   }
+  // ⚠️ 2026-09-03 所有者:「**那个方块也要圆角 然后圆圈居中**」。
+  // ① 圆圈居中:`button .ico { margin-right: 5px }` 会把「只有图标」的按钮里那颗图标推到左边
+  //    (它是居中的,所以偏一半 = 现场量到的 2.5px)。修法是 `button .ico:only-child { margin-right: 0 }`。
+  ok('勾选里的圆圈居中(±1px)', await page.locator('#todos-lines .todo-check').first().evaluate(el => {
+    const a = el.getBoundingClientRect(), c = el.querySelector('svg').getBoundingClientRect();
+    return Math.abs((c.left + c.right) / 2 - (a.left + a.right) / 2) <= 1
+        && Math.abs((c.top + c.bottom) / 2 - (a.top + a.bottom) / 2) <= 1;
+  }));
+  // ② 方块要够圆:38px 的方块用 --r-4(浏览器会夹到 19 = 整块超椭圆)。
+  //    ⚠️ 钉的是「够圆」不是具体像素 —— 以后调档不会把这条弄红。
+  ok('勾选那个方块够圆(≥ 边长的 40%)', await page.locator('#todos-lines .todo-check').first().evaluate(el => {
+    const cs = getComputedStyle(el);
+    return parseFloat(cs.borderTopLeftRadius) >= parseFloat(cs.width) * 0.4;
+  }));
   ok('勾上那颗也没被填成强调色', await page.evaluate(() => {
     const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
     const el = document.querySelector('#todos-lines .todo-row.is-done .todo-check');

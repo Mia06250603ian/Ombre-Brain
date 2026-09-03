@@ -324,7 +324,8 @@
     --r-pill: 999px;
   }
   @supports (corner-shape: squircle) {
-    .bucket-row, .letter-card, .todo-card, .todo-check, .detail-panel, .config-section,
+    .bucket-row, .letter-card, .letters-intro, .todo-card, .todo-check, .todo-row,
+    .breath-flow, .breath-info, .detail-panel, .config-section,
     .btn, .btn-secondary, .btn-danger, input, select, textarea,
     #import-upload-zone, #auth-overlay > div {
       corner-shape: squircle;
@@ -360,9 +361,9 @@
      **改半径只改 `--sq`**(跟着 `--r-*` 那张表走);曲线本身是采样出来的折线,
      12 段/角、两位小数,肉眼看不出折点。 */
   @supports not (corner-shape: squircle) {
-    .bucket-row, .letter-card, .letters-intro, .breath-flow, .config-section { --sq: var(--r-4); }
+    .bucket-row, .letter-card, .letters-intro, .breath-flow, .config-section, .todo-check { --sq: var(--r-4); }
     .todo-card { --sq: var(--r-5); }
-    .breath-info, .todo-check { --sq: var(--r-3); }
+    .breath-info { --sq: var(--r-3); }
     .bucket-row, .letter-card, .letters-intro, .breath-flow, .config-section,
   .todo-card, .breath-info, .todo-check {
       /* ⚠️ 半径必须归零:mask 只能"减",留着圆角的话切出来的还是那段圆弧 */
@@ -381,9 +382,10 @@
       mask: none;
       -webkit-mask-composite: source-over;
     }
-    .bucket-row::before, .letter-card::before, .letters-intro::before, .breath-flow::before, .config-section::before { -webkit-mask-box-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,1.0 60.0,1.0 74.1,1.2 79.8,1.7 84.1,2.5 87.6,3.7 90.4,5.3 92.8,7.2 94.7,9.6 96.3,12.4 97.5,15.9 98.3,20.2 98.8,25.9 99.0,40.0 99.0,60.0 98.8,74.1 98.3,79.8 97.5,84.1 96.3,87.6 94.7,90.4 92.8,92.8 90.4,94.7 87.6,96.3 84.1,97.5 79.8,98.3 74.1,98.8 60.0,99.0 40.0,99.0 25.9,98.8 20.2,98.3 15.9,97.5 12.4,96.3 9.6,94.7 7.2,92.8 5.3,90.4 3.7,87.6 2.5,84.1 1.7,79.8 1.2,74.1 1.0,60.0 1.0,40.0 1.2,25.9 1.7,20.2 2.5,15.9 3.7,12.4 5.3,9.6 7.2,7.2 9.6,5.3 12.4,3.7 15.9,2.5 20.2,1.7 25.9,1.2 40.0,1.0 Z' fill='none' stroke='black' stroke-width='2.00'/%3E%3C/svg%3E") 40% / var(--sq) stretch; }
+    .bucket-row::before, .letter-card::before, .letters-intro::before, .breath-flow::before, .config-section::before,
+    .todo-check::before { -webkit-mask-box-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,1.0 60.0,1.0 74.1,1.2 79.8,1.7 84.1,2.5 87.6,3.7 90.4,5.3 92.8,7.2 94.7,9.6 96.3,12.4 97.5,15.9 98.3,20.2 98.8,25.9 99.0,40.0 99.0,60.0 98.8,74.1 98.3,79.8 97.5,84.1 96.3,87.6 94.7,90.4 92.8,92.8 90.4,94.7 87.6,96.3 84.1,97.5 79.8,98.3 74.1,98.8 60.0,99.0 40.0,99.0 25.9,98.8 20.2,98.3 15.9,97.5 12.4,96.3 9.6,94.7 7.2,92.8 5.3,90.4 3.7,87.6 2.5,84.1 1.7,79.8 1.2,74.1 1.0,60.0 1.0,40.0 1.2,25.9 1.7,20.2 2.5,15.9 3.7,12.4 5.3,9.6 7.2,7.2 9.6,5.3 12.4,3.7 15.9,2.5 20.2,1.7 25.9,1.2 40.0,1.0 Z' fill='none' stroke='black' stroke-width='2.00'/%3E%3C/svg%3E") 40% / var(--sq) stretch; }
     .todo-card::before { -webkit-mask-box-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,0.8 60.0,0.8 74.2,0.9 80.0,1.4 84.3,2.3 87.7,3.5 90.6,5.1 93.0,7.0 94.9,9.4 96.5,12.3 97.7,15.7 98.6,20.0 99.1,25.8 99.2,40.0 99.2,60.0 99.1,74.2 98.6,80.0 97.7,84.3 96.5,87.7 94.9,90.6 93.0,93.0 90.6,94.9 87.7,96.5 84.3,97.7 80.0,98.6 74.2,99.1 60.0,99.2 40.0,99.2 25.8,99.1 20.0,98.6 15.7,97.7 12.3,96.5 9.4,94.9 7.0,93.0 5.1,90.6 3.5,87.7 2.3,84.3 1.4,80.0 0.9,74.2 0.8,60.0 0.8,40.0 0.9,25.8 1.4,20.0 2.3,15.7 3.5,12.3 5.1,9.4 7.0,7.0 9.4,5.1 12.3,3.5 15.7,2.3 20.0,1.4 25.8,0.9 40.0,0.8 Z' fill='none' stroke='black' stroke-width='1.54'/%3E%3C/svg%3E") 40% / var(--sq) stretch; }
-    .breath-info::before, .todo-check::before { -webkit-mask-box-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,1.7 60.0,1.7 73.8,1.8 79.5,2.3 83.7,3.2 87.1,4.3 89.9,5.9 92.2,7.8 94.1,10.1 95.7,12.9 96.8,16.3 97.7,20.5 98.2,26.2 98.3,40.0 98.3,60.0 98.2,73.8 97.7,79.5 96.8,83.7 95.7,87.1 94.1,89.9 92.2,92.2 89.9,94.1 87.1,95.7 83.7,96.8 79.5,97.7 73.8,98.2 60.0,98.3 40.0,98.3 26.2,98.2 20.5,97.7 16.3,96.8 12.9,95.7 10.1,94.1 7.8,92.2 5.9,89.9 4.3,87.1 3.2,83.7 2.3,79.5 1.8,73.8 1.7,60.0 1.7,40.0 1.8,26.2 2.3,20.5 3.2,16.3 4.3,12.9 5.9,10.1 7.8,7.8 10.1,5.9 12.9,4.3 16.3,3.2 20.5,2.3 26.2,1.8 40.0,1.7 Z' fill='none' stroke='black' stroke-width='3.33'/%3E%3C/svg%3E") 40% / var(--sq) stretch; }
+    .breath-info::before { -webkit-mask-box-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,1.7 60.0,1.7 73.8,1.8 79.5,2.3 83.7,3.2 87.1,4.3 89.9,5.9 92.2,7.8 94.1,10.1 95.7,12.9 96.8,16.3 97.7,20.5 98.2,26.2 98.3,40.0 98.3,60.0 98.2,73.8 97.7,79.5 96.8,83.7 95.7,87.1 94.1,89.9 92.2,92.2 89.9,94.1 87.1,95.7 83.7,96.8 79.5,97.7 73.8,98.2 60.0,98.3 40.0,98.3 26.2,98.2 20.5,97.7 16.3,96.8 12.9,95.7 10.1,94.1 7.8,92.2 5.9,89.9 4.3,87.1 3.2,83.7 2.3,79.5 1.8,73.8 1.7,60.0 1.7,40.0 1.8,26.2 2.3,20.5 3.2,16.3 4.3,12.9 5.9,10.1 7.8,7.8 10.1,5.9 12.9,4.3 16.3,3.2 20.5,2.3 26.2,1.8 40.0,1.7 Z' fill='none' stroke='black' stroke-width='3.33'/%3E%3C/svg%3E") 40% / var(--sq) stretch; }
     .bucket-row::after, .letter-card::after, .letters-intro::after, .breath-flow::after, .config-section::after, .todo-card::after, .breath-info::after, .todo-check::after { border-radius: 0; }
   }
 
@@ -784,6 +786,11 @@
   .ico-fill { fill: currentColor; stroke: none; }
   .bucket-row .icon .ico { width: 17px; height: 17px; }
   button .ico, .btn-secondary .ico, .btn-danger .ico { margin-right: 5px; }
+  /* ⚠️ **只有图标、没有字的按钮不能吃这 5px** —— 那点右边距会把图标整个推到左边。
+     2026-09-03 所有者在便利贴那颗勾选上看出来的(「圆圈居中」):现场量是**偏左 2.5px**
+     (= 5px 的一半,因为它是 `place-items:center` 居中的)。加这条之后为 0。
+     演练钉着一条「勾选里的圆圈居中(±1px)」。 */
+  button .ico:only-child { margin-right: 0; }
   .bucket-row .name {
     font-size: 16px;
     font-weight: 600;
@@ -930,7 +937,10 @@
      别为了「勾上要更明显」把 --accent 填回来。 */
   .todo-check {
     flex: 0 0 auto; width: 38px; height: 38px; display: grid; place-items: center;
-    border: 1px solid var(--glass-edge); border-radius: var(--r-3);
+    /* ⚠️ 圆角走 `--r-4`(2026-09-03 所有者:「**那个方块也要圆角**」)。
+       38px 的方块上浏览器会把 20px 夹到 19px = **整块超椭圆**,正是 iOS 那种小方块;
+       ~~原来是 `--r-3`~~ 看着还是个方的。**仍然是那五档里的一档,没有新造数值。** */
+    border: 1px solid var(--glass-edge); border-radius: var(--r-4);
     cursor: pointer; font-family: inherit; padding: 0;   /* g3 微玻璃 */
     transition: background-color .15s ease, border-color .15s ease;
   }
