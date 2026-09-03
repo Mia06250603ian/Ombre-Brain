@@ -98,6 +98,16 @@ ok((await pg.textContent('#cKind')).includes('CORE'), 'pinned + importance 10 �
 await pg.waitForFunction(`document.getElementById('cBody').textContent.includes('★全文到此★')`, null, { timeout:8000 });
 ok(true, '正文是点中之后才去取的全文,不是 200 字预览');
 ok((await pg.textContent('#cTags')).includes('恋爱'), 'domain 变成标签显示出来了');
+// 2026-09-03 所有者:「不要那么有安卓味,按苹果 ui 设计走」。钉三条,别改回去:
+ok(await pg.$eval('#cTags', n => n.closest('#card header') !== null),
+   '标签在标题正下方(卡片抬头里),不在正文底下');
+const tagCss = await pg.$eval('#cTags .c-tag', n => {
+  const s = getComputedStyle(n);
+  return { bw:s.borderTopWidth, bg:s.backgroundColor, fg:s.color };
+});
+ok(tagCss.bw === '0px', '标签不描边(描边+实心那套是安卓味)', tagCss.bw);
+ok(/^rgba\(/.test(tagCss.bg) && tagCss.bg !== 'rgba(0, 0, 0, 0)',
+   '标签的底是同色的极淡一层,不是实心色块', tagCss.bg);
 // ⚠️ 别钉「几条」「第一条是谁」—— 假 OB 的边一改这些就红,而那不是 bug
 // (2026-09-03 给夹具加了条超长标题的桶,顺序就变了)。钉真正该成立的性质:
 const near = await pg.$$eval('#cNear button', bs => bs.map(x => x.textContent));
