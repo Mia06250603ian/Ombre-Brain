@@ -499,6 +499,29 @@ const after = await pg3.evaluate(() => [...document.getElementById('canvas').get
 ok(before[0] < 20 && after[0] > 200,
    `切到浅色,画布当场跟着换了(${before.join(',')} → ${after.join(',')})`, before + ' → ' + after);
 
+console.log('L. 画布按屏幕的倍数画(2026-09-03 所有者:「感觉数据乱流很模糊 是我的错觉吗?」)');
+// ⚠️ 不是错觉:~~原来触屏上把画布压到 1.5 倍~~,她 3 倍屏上就是**一半分辨率**。
+// 这一段专门在「3 倍屏 + 触屏」下量后备画布,别在桌面那个 pg 上量(那边 dpr=1,量不出来)。
+{
+  const mctx = await b.newContext({ viewport:{ width:390, height:844 }, deviceScaleFactor:3,
+                                    hasTouch:true, isMobile:true, colorScheme:'dark' });
+  const mp = await mctx.newPage();
+  await mp.goto(`${OB}/turbulence`);
+  await mp.waitForFunction('document.getElementById("gate").classList.contains("on")', null, { timeout:30000 });
+  await mp.fill('#gPass', PASS);
+  await mp.tap('#gGo');
+  await mp.waitForFunction('window.__drift', null, { timeout:30000 });
+  await mp.waitForTimeout(400);
+  const cv = await mp.evaluate(() => {
+    const c = document.getElementById('canvas');
+    return { back:c.width, css:Math.round(c.getBoundingClientRect().width), dpr:devicePixelRatio };
+  });
+  const ratio = cv.back / cv.css;
+  ok(cv.dpr === 3, `这一段确实跑在 3 倍屏上(${cv.dpr}×)`, cv.dpr);
+  ok(ratio >= 2, `画布至少按 2 倍画(实得 ${ratio.toFixed(2)}×,后备 ${cv.back}px / CSS ${cv.css}px)—— 低于 2 就是她说的那种糊`);
+  await mctx.close();
+}
+
 console.log('I. 控制台');
 ok(errs.length === 0, '整场零 JS 报错', errs.join(' | '));
 

@@ -1021,7 +1021,15 @@ function boot(items, relations){
     const b = canvas.getBoundingClientRect();
     W = b.width; H = b.height;
     worldW = W * worldScale; worldH = H * worldScale;
-    const dpr = Math.min(window.devicePixelRatio || 1, coarse ? 1.5 : 2);
+    /* ⚠️ 画布得自己声明按几倍分辨率画,声明低了就是**真糊**,不是错觉。
+       ~~原来触屏上压到 1.5~~ —— 所有者 2026-09-03:「感觉数据乱流很模糊 是我的错觉吗?」
+       **量出来不是**:她 3 倍屏的手机上,画布只画 585px 再拉到 1170px 显示 = 一半分辨率;
+       页面别处(字、卡片、胶囊)都是浏览器按 3 倍渲染的,**唯独满屏字符雨是半分辨率**,
+       那股"不精致"多半就是这么来的。**她选了 2 倍**(585 → 780px),3 倍最利但没法在容器里
+       量准她手机上的代价(这边是 7 条假记忆 144 个字符,她是 399 条 + 2393 条关联)。
+       ⚠️ **真要再往上调,先在她手机上量**:`window.__drift.frames()` 隔 3 秒读两次,除以 3 = 帧率;
+       掉到 24 以下就是吃不消,退回来。⚠️ 触屏那条 30fps 的节流(`loop` 里的 32ms)没动。 */
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width  = Math.max(1, Math.round(W * dpr));
     canvas.height = Math.max(1, Math.round(H * dpr));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
