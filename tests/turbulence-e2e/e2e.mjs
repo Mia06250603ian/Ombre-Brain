@@ -251,6 +251,13 @@ const light = await readScheme('light');
 ok(dark.canvas[0] < 20 && dark.canvas[2] < 30, `深色下画布底是深的 rgb(${dark.canvas.join(',')})`, dark.canvas.join(','));
 ok(light.canvas[0] > 200 && light.canvas[1] > 200, `浅色下画布底是浅的 rgb(${light.canvas.join(',')})`, light.canvas.join(','));
 ok(dark.signal !== light.signal, `连线那个颜色两套不一样(深 ${dark.signal} / 浅 ${light.signal})`);
+// 所有者 2026-09-03:「线和这个界面上的红色字能不能改成饱和度低的蓝色」——
+// 钉两件事:是蓝的(蓝通道最大),而且饱和度低(最大最小通道差不超过 70)。
+for (const [name, v] of [['深色', dark.signal], ['浅色', light.signal]]) {
+  const [r, g, b] = v.split(',').map(Number);
+  ok(b > r && b > g, `${name}的连线是蓝的(不是原版那个玫瑰红)`, v);
+  ok(Math.max(r, g, b) - Math.min(r, g, b) <= 70, `${name}的蓝是低饱和的`, v);
+}
 ok(dark.bodyBg !== light.bodyBg, '页面底色两套不一样');
 ok(dark.headInk !== light.headInk, '标题的字色两套不一样');
 ok(dark.errs.length === 0 && light.errs.length === 0, '两套配色下都零报错',
