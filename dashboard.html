@@ -323,6 +323,18 @@
     #import-upload-zone, #auth-overlay > div {
       corner-shape: squircle;
     }
+    /* ⚠️ **`corner-shape` 不会自动继承到伪元素**(`border-radius: inherit` 只管半径)。
+       不写这条的话:卡片是 squircle,而玻璃的**边缘高光那圈环和厚度那层**还是普通圆弧,
+       四个角上对不齐 —— 这一条同样只有支持 `corner-shape` 的浏览器(她的 iPhone)看得见,
+       容器里的 chromium 测不出来。**圆角本身一个数没动,五档还是那五档。** */
+    :is(.glass-1, .bucket-row, .letter-card, .letters-intro, .todo-card, .config-section, .breath-info, .breath-flow,
+        .glass-2, .header, .hbtn,
+        .glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button)::before,
+    :is(.glass-1, .bucket-row, .letter-card, .letters-intro, .todo-card, .config-section, .breath-info, .breath-flow,
+        .glass-2, .header, .hbtn,
+        .glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button)::after {
+      corner-shape: inherit;
+    }
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
