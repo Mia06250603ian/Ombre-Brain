@@ -87,12 +87,45 @@ const painted = await pg.evaluate(() => {
   return n;
 });
 ok(painted > 5000, `场上确实画了东西(${painted} 个像素和底色不同)`, painted);
+// ⚠️ 横向要铺开(2026-09-03 所有者:「乱码都集中在中间」)。改之前现场量:
+// 中间那 80% 的字只占屏宽的 **37%**(p10 = 25%、p90 = 62%),两边是空的;
+// 病根是「相似的拽到一起」+ 松弛只拉不推,x 会整体塌向中间(y 不会,它按名次铺平过)。
+// 现在 makeGraph 末尾按名次把 x 混着摊开(`CONFIG.spreadX`)。**这条钉的是「铺没铺开」,
+// 不是具体数值** —— 调 spreadX 不会把它弄红,但塌回中间就会。
+const spreadPct = await pg.evaluate(() => {
+  const d = window.__drift, W = innerWidth, xs = [];
+  for (let i = 0; i < d.glyphs; i++) { const pt = d.point(i); if (pt) xs.push(pt.x); }
+  xs.sort((a, b) => a - b);
+  const q = f => xs[Math.floor(f * (xs.length - 1))];
+  return Math.round((q(.9) - q(.1)) / W * 100);
+});
+ok(spreadPct >= 55, `字符横向铺开了(中间 80% 的字占屏宽 ${spreadPct}%,要 ≥55%)`, spreadPct);
+// ⚠️ 2026-09-03 所有者把左下角那块「30 FPS | 1.00×」的读数删了(「那一行能不能删掉」),
+// 所以「动画真的在转」改成读观察口里的帧计数,不再依赖屏幕上有那块读数。
+const f0 = await pg.evaluate(() => window.__drift.frames());
 await pg.waitForTimeout(900);
-ok(/^[0-9]+$/.test((await pg.textContent('#mFps')).trim()), 'FPS 读数在跳 = 动画真的在转');
+const f1 = await pg.evaluate(() => window.__drift.frames());
+ok(f1 > f0, `动画真的在转(900ms 里画了 ${f1 - f0} 帧)`, f1 - f0);
+ok(await pg.evaluate(() => !document.getElementById('meter')), '左下角那块 FPS 读数已经删掉了');
+// ⚠️ 图例(那两行「说的是相近的事 / 共享同一个标签」)**默认是收起的**
+// (所有者 2026-09-03:「我点击才出现下面两行字」)。这儿钉「一进来看不见」。
+ok(await pg.$eval('#legend', n => !n.classList.contains('on') && getComputedStyle(n).visibility === 'hidden'),
+   '一进来图例是收起的');
 
 console.log('D. 点中一颗 → 卡片浮出来,正文是取回来的全文');
 await pg.evaluate(() => window.__drift.lockAt(0));
 await pg.waitForSelector('#card.on', { timeout:8000 });
+// 点中之后图例才出来,而且出场走一段「数据乱流」:字先乱跳、再从左往右定下来。
+ok(await pg.$eval('#legend', n => n.classList.contains('on')), '点中一颗之后图例出来了');
+{
+  // 乱流进行中:至少有一行还不是原文(⚠️ 抓得到就算,抓不到不判错 —— 动画只有半秒)
+  const mid = await pg.$$eval('#legend b', ns => ns.map(n => n.textContent !== n.dataset.text));
+  await pg.waitForFunction(`[...document.querySelectorAll('#legend b')].every(n => n.textContent === n.dataset.text)`,
+                           null, { timeout:4000 });
+  ok(true, `图例出场走了乱流动画(抓到乱码中的行数 ${mid.filter(Boolean).length})`);
+}
+ok(await pg.$$eval('#legend b', ns => ns.map(n => n.textContent).join('|')) === '说的是相近的事|共享同一个标签',
+   '乱流结束后两行字回到原文');
 ok(await pg.textContent('#cName') === '真·相遇那天', '卡片标题是那颗桶的名字');
 ok((await pg.textContent('#cKind')).includes('CORE'), 'pinned + importance 10 → 认成核心层');
 await pg.waitForFunction(`document.getElementById('cBody').textContent.includes('★全文到此★')`, null, { timeout:8000 });
@@ -141,6 +174,21 @@ ok(bodyBox.bw === '0px', '正文那块是玻璃,不是描边框', bodyBox.bw);
 ok(/^rgba\(255, 255, 255/.test(bodyBox.bg), '正文那块的底是「把卡片底再提亮一点」的一层白', bodyBox.bg);
 ok(bodyBox.r >= 10 && bodyBox.pad >= 10, `正文那块有圆角(${bodyBox.r}px)和内边距(${bodyBox.pad}px)`);
 ok(/blur/.test(bodyBox.blur), '正文那块真的开了玻璃模糊', bodyBox.blur);
+// 整张卡本身也是玻璃(2026-09-03 所有者:「这个页面也改成玻璃质感」)。
+// ⚠️ ~~原来 --drift-card 是 .94 几乎不透 = 一张白纸~~ —— 现在压到透得出字符雨、又开了模糊。
+const cardGlass = await pg.$eval('#card', n => {
+  const s = getComputedStyle(n);
+  const m = s.backgroundColor.match(/rgba?\([^)]*,\s*([0-9.]+)\)\s*$/);
+  const ps = getComputedStyle(n, '::before');
+  return { alpha: m ? parseFloat(m[1]) : 1,
+           blur: (s.backdropFilter || s.webkitBackdropFilter || ''),
+           sheen: /gradient/.test(s.backgroundImage),
+           rim: /gradient/.test(ps.backgroundImage) || /(exclude|xor)/.test((ps.webkitMaskComposite||'')+(ps.maskComposite||'')) };
+});
+ok(cardGlass.alpha <= 0.85, `详情卡是半透明的(面 alpha ${cardGlass.alpha},透得出字符雨)`, cardGlass.alpha);
+ok(/blur/.test(cardGlass.blur), '详情卡开了玻璃模糊', cardGlass.blur);
+ok(cardGlass.sheen, '详情卡的面上叠了光泽(不是单一色)');
+ok(cardGlass.rim, '详情卡的边缘是渐变高光,不是硬描边');
 // ⚠️ 别钉「几条」「第一条是谁」—— 假 OB 的边一改这些就红,而那不是 bug
 // (2026-09-03 给夹具加了条超长标题的桶,顺序就变了)。钉真正该成立的性质:
 const near = await pg.$$eval('#cNear button', bs => bs.map(x => x.textContent));
@@ -216,6 +264,8 @@ ok(await pg.$$eval('#cNear button', (bs, back) => bs.some(b => b.dataset.id === 
 await pg.click('#cClose');
 ok(await pg.evaluate(() => !document.getElementById('card').classList.contains('on')), '✕ 之后卡片收掉了');
 ok(await pg.evaluate(() => window.__drift.locked()) === null, '✕ 之后锁定也松开了');
+// 图例跟着「有没有点中一颗」走,所以关掉卡片它也要收回去
+ok(await pg.$eval('#legend', n => !n.classList.contains('on')), '✕ 之后图例也收回去了');
 
 console.log('F. 缩放按钮');
 const s0 = await pg.evaluate(() => window.__drift.scale());
@@ -225,7 +275,9 @@ ok(s1 > s0, `＋ 放大了(${s0.toFixed(2)} → ${s1.toFixed(2)})`);
 await pg.click('#controls button[data-action="reset"]');
 const s2 = await pg.evaluate(() => window.__drift.scale());
 ok(Math.abs(s2 - 1) < 0.001, '↺ 复位回 1.00×');
-ok((await pg.textContent('#mZoom')).includes('×'), '右下角读数带倍数');
+// ⚠️ ~~原来这条读的是屏幕上 #mZoom 那块「1.00×」~~ —— 那块已按所有者要求删掉,
+// 改成直接量倍数本身(本来就该量这个)。
+ok(typeof (await pg.evaluate(() => window.__drift.scale())) === 'number', '倍数读得出来');
 
 console.log('G. 只读 + 零外部请求(这一页的底线)');
 const external = requests.filter(r => !r.url.startsWith(OB) && !r.url.startsWith('data:') && !r.url.startsWith('about:'));

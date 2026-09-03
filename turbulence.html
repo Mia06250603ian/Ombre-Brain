@@ -86,6 +86,9 @@ const CONFIG = {
   visibleGlyphs:  300,
   tagGroupMax:    28,              // 一个标签底下超过这么多桶就当它太泛,不连线(「日常」那种)
   tagEdgesPerNode: 4,              // 每个桶最多留几条「共享标签」的线
+  // ⚠️ 横向铺开的力度(2026-09-03 所有者:「乱码都集中在中间」)。
+  // 0 = 不铺(会塌回中间那一坨),1 = 完全按名次铺平(簇会被抹掉,不要)。做法见 makeGraph 末尾。
+  spreadX:        0.62,
   driftSpeed:     0.004725,        // 上飘速度(0 = 不飘)
   interactRadius: 110,             // 手指/鼠标多近才算「凑近了」(px)
   neighborCount:  4,               // 凑近时照亮最近几颗
@@ -143,7 +146,18 @@ const CONFIG = {
     --drift-faint:  var(--color-gray-500);
     --drift-line:   var(--color-gray-300);
     --drift-panel:  rgba(255,255,255,.9);
-    --drift-card:   rgba(250,249,245,.94);
+    /* ⚠️ 详情卡是**玻璃**(2026-09-03 所有者:「这个页面也改成玻璃质感」)。
+       ~~原来 `rgba(250,249,245,.94)` 几乎不透,底下的字符雨一点都透不上来 = 一张白纸~~。
+       现在压到看得见字符雨、又不糊正文的程度;再配 sheen/rim/depth 三件(见 #card)。
+       ⚠️ **别调回 .9 以上**,一实就没玻璃了(和后台 1.8「实色卡片是没有玻璃的」同一条)。 */
+    --drift-card:   rgba(252,251,247,.60);
+    --card-sheen:
+      radial-gradient(130% 90% at 6% -24%, rgba(255,255,255,.55), rgba(255,255,255,.12) 40%, transparent 68%),
+      linear-gradient(180deg, rgba(255,255,255,.22) 0%, transparent 20%);
+    --card-rim: linear-gradient(122deg,
+      rgba(255,255,255,.95) 0%, rgba(255,255,255,.45) 22%,
+      rgba(19,19,19,.05) 60%, rgba(255,255,255,.5) 100%);
+    --card-depth: inset 0 14px 22px -18px rgba(255,255,255,.9), inset 0 -1px 0 rgba(19,19,19,.04);
     /* 正文那块玻璃:比卡片底再亮一档,浅色靠白、深色靠白的一点点透明度 */
     --drift-sheet:  rgba(255,255,255,.62);
     --drift-input:  rgba(20,20,19,.03);
@@ -162,7 +176,15 @@ const CONFIG = {
       --drift-faint:  #8b939d;
       --drift-line:   #252b32;
       --drift-panel:  rgba(4,7,11,.9);
-      --drift-card:   rgba(4,7,11,.94);
+      /* 深色玻璃:底本来就深,面要更透才看得出后面有字符雨(同后台 1.8 深色那条) */
+      --drift-card:   rgba(6,10,16,.52);
+      --card-sheen:
+        radial-gradient(130% 90% at 6% -24%, rgba(255,255,255,.10), rgba(255,255,255,.03) 40%, transparent 68%),
+        linear-gradient(180deg, rgba(255,255,255,.05) 0%, transparent 22%);
+      --card-rim: linear-gradient(122deg,
+        rgba(255,255,255,.42) 0%, rgba(255,255,255,.14) 24%,
+        rgba(0,0,0,.22) 60%, rgba(255,255,255,.2) 100%);
+      --card-depth: inset 0 14px 24px -18px rgba(255,255,255,.28), inset 0 -1px 0 rgba(0,0,0,.5);
       --drift-sheet:  rgba(255,255,255,.045);
       --drift-input:  rgba(255,255,255,.03);
     }
@@ -216,6 +238,16 @@ const CONFIG = {
   #legend span { display:inline-flex; align-items:center; gap:7px; }
   #legend i { width:26px; height:0; border-top:1px solid currentColor; display:inline-block; }
   #legend i.l-dash { border-top-style:dashed; }
+  #legend b { font-weight:inherit; font-variant-numeric:tabular-nums; }
+  /* 收起:占位不留(visibility 收掉,免得读屏还念它);展开时那两根线自己划出来 */
+  #legend { opacity:0; visibility:hidden; transform:translateY(-3px);
+            transition:opacity .32s ease, transform .32s cubic-bezier(.23,1,.32,1), visibility 0s .32s; }
+  #legend.on { opacity:1; visibility:visible; transform:none; transition-delay:0s; }
+  #legend i { width:0; transition:width .42s cubic-bezier(.23,1,.32,1) .06s; }
+  #legend.on i { width:26px; }
+  @media (prefers-reduced-motion: reduce) {
+    #legend, #legend i { transition-duration:.01s; }
+  }
   /* 底部那句引导。点过一次就淡出去 —— 说明只在你还不知道怎么用的时候才有用。 */
   #hint {
     position:fixed; left:0; right:0; z-index:2; text-align:center; pointer-events:none;
@@ -225,18 +257,15 @@ const CONFIG = {
   }
   #hint.gone { opacity:0; }
 
-  /* 左下角读数 / 右下角三颗按钮 */
+  /* 右下角三颗按钮。
+     ⚠️ 左下角原来还有一块「30 FPS | 1.00×」的读数(`#meter`),
+     **2026-09-03 所有者点名删掉了**(「下方的 30fps 1.00x 那一行能不能删掉」)。
+     它是给开发看的,对她没用。**别照旧文加回来**;演练里量「动画在转 / 缩放生效」
+     改成读 `window.__drift` 的 `frames()` 和 `scale()`,不再依赖屏幕上有这块读数。 */
   .hud {
     position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 14px); z-index:3;
     font-family:"SFMono-Regular",Menlo,Consolas,monospace; font-size:10px; letter-spacing:.08em;
   }
-  #meter {
-    left:14px; display:flex; align-items:center; gap:8px; height:34px; padding:0 11px;
-    border:1px solid var(--drift-line); border-radius:7px; background:var(--drift-panel);
-    color:var(--drift-dim); pointer-events:none;
-  }
-  #meter b { color:var(--drift-ink); font-weight:500; }
-  #meter i { padding-left:8px; border-left:1px solid var(--drift-line); font-style:normal; letter-spacing:0; }
   #controls { right:14px; display:flex; gap:5px; }
   #controls button {
     width:38px; height:38px; display:grid; place-items:center;
@@ -249,14 +278,43 @@ const CONFIG = {
   }
   #controls button:active { transform:scale(.97); }
 
-  /* 点中一颗之后从底下浮上来的那张卡 */
+  /* 点中一颗之后从底下浮上来的那张卡。
+     ⚠️ 这是**玻璃**(2026-09-03 所有者:「这个页面也改成玻璃质感」),六件事凑齐:
+     半透明面(--drift-card)+ 光泽(--card-sheen)+ 模糊放大到 30px + 边缘高光(::before)
+     + 厚度(::after)+ 背后真有东西(这一页满屏的字符雨)。做法和后台 1.8 那套一致。
+     ⚠️ `background-color` 走面、`background-image` 走光泽,别用 `background` 简写把两者合掉。 */
   #card {
     position:fixed; left:0; right:0; bottom:0; z-index:4;
     max-height:66vh; padding:20px 18px calc(env(safe-area-inset-bottom,0px) + 18px);
     display:none; grid-template-rows:auto 1fr; gap:11px;
-    border-top:1px solid var(--drift-line); border-radius:16px 16px 0 0;
-    background:var(--drift-card); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
+    border-top:1px solid transparent; border-radius:16px 16px 0 0;
+    background-color:var(--drift-card); background-image:var(--card-sheen);
+    backdrop-filter:blur(30px) saturate(1.4); -webkit-backdrop-filter:blur(30px) saturate(1.4);
+    box-shadow:var(--card-depth);
     animation:rise .18s cubic-bezier(.23,1,.32,1) both;
+  }
+  /* 边缘高光:一圈渐变的 1px 环(mask 抠出来的),不是描边;支持不了 mask 就退回上面那圈透明 border。
+     ⚠️ 只有顶边和两个顶角露在屏幕里(底部弹层),环画满也无妨,顶部读起来就是玻璃的那道"唇"。 */
+  #card::before, #card::after { content:''; position:absolute; pointer-events:none; }
+  #card::before {
+    inset:0; border-radius:inherit; z-index:0;
+  }
+  @supports ((-webkit-mask-composite:xor) or (mask-composite:exclude)) {
+    #card::before {
+      inset:-1px; padding:1px; background:var(--card-rim);
+      -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite:xor; mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      mask-composite:exclude;
+    }
+  }
+  /* 卡里的内容压在高光之上(高光只在边上,本来也不碍着字) */
+  #card > * { position:relative; z-index:1; }
+  /* 玻璃透不了时(不支持 backdrop-filter / 系统开了「降低透明度」)退回实色,不然糊字 */
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
+    #card { background-color:var(--drift-panel); background-image:none; }
+  }
+  @media (prefers-reduced-transparency:reduce) {
+    #card { background-color:var(--drift-panel); background-image:none; }
   }
   /* ⚠️ 这三个 min-width/minmax(0,…) 是**堵溢出**的,别删(2026-09-03 所有者报的:
      标题是 `session_2026-07-01_…` 那种超长名字时,整张卡被撑出屏幕、右上角的 ✕ 被挤没了)。
@@ -320,7 +378,10 @@ const CONFIG = {
   }
   #cNear button:hover strong, #cNear button:focus-visible strong { color:rgb(var(--drift-signal)); }
   #cNear button:focus-visible { outline:none; }
-  #cNear strong { overflow:hidden; font-size:13px; font-weight:600; text-overflow:ellipsis; white-space:nowrap; }
+  /* ⚠️ 关联标题**不加粗**(2026-09-03 所有者:「桶112/桶109 等等不要加粗字体」)。
+     它和左边关系名的层次靠**字色**分(标题走亮的 --drift-ink,关系名走暗的 --drift-faint),不靠字重。
+     ~~原来是 font-weight:600~~,别改回去。 */
+  #cNear strong { overflow:hidden; font-size:13px; font-weight:400; text-overflow:ellipsis; white-space:nowrap; }
   #cNear em { font-style:normal; font-size:12.5px; color:var(--drift-faint); }
   /* 日期:纯文字,不做成第二个胶囊(苹果的卡片抬头都是这么排的) */
   #cTags .c-date { color:var(--drift-faint); font-size:12.5px; letter-spacing:.02em; }
@@ -387,15 +448,17 @@ const CONFIG = {
   <!-- 统计 + 图例:所有者 2026-09-03 照她朋友那版要的。
        ⚠️ 图例说的是**两种线**;第三种(存入时关联到一起)我们取不到,所以图例里也没有它 —— 别加。 -->
   <p id="hStat"></p>
+  <!-- ⚠️ **图例默认是收起的,点中一颗字才出来**(所有者 2026-09-03:「我点击才出现下面两行字,
+       然后并且有一个数据乱流的动画」)。出场时那两行字先乱码、再一个个定下来 —— 见 revealLegend()。
+       文字放在 <b> 里、真身记在 data-text 上:乱码动画要反复改写它,原文得有地方存。 -->
   <div id="legend">
-    <span><i class="l-solid"></i>说的是相近的事</span>
-    <span><i class="l-dash"></i>共享同一个标签</span>
+    <span><i class="l-solid"></i><b data-text="说的是相近的事">说的是相近的事</b></span>
+    <span><i class="l-dash"></i><b data-text="共享同一个标签">共享同一个标签</b></span>
   </div>
 </div>
 
 <p id="hint">点一个字,看它牵着谁</p>
 
-<div id="meter" class="hud"><b id="mFps">–</b> FPS <i id="mZoom">1.00×</i></div>
 <div id="controls" class="hud">
   <button type="button" data-action="in"    aria-label="放大">＋</button>
   <button type="button" data-action="out"   aria-label="缩小">－</button>
@@ -615,6 +678,22 @@ function makeGraph(items, relations){
   // 最后把 y 铺匀,免得上飘时一阵密一阵疏
   nodes.slice().sort((l, r) => l.y - r.y).forEach(function(n, i, all){ n.y = (i + .5) / all.length; });
 
+  // ⚠️⚠️ x 也要铺开(2026-09-03 所有者:「**乱码都集中在中间**」)。
+  // **病根**:上面「相似的拽到一起」+ 十轮松弛是**只拉不推到边**的,
+  // 400 个桶带 2300+ 条边,x 会整体塌向中间 —— 现场量过:**80% 的字符挤在屏幕中间 37% 的宽度里**
+  // (p10 = 屏宽 25%、p90 = 62%,两侧几乎是空的)。**y 没这个毛病,因为上面那行按名次铺平过。**
+  // **做法**:按名次算一个「铺满全宽」的理想位置,再和现在的位置**按比例混**。
+  // ⚠️ **不能像 y 那样直接铺平**(`spreadX = 1`)—— 那会把「相似的挨在一起」整个抹掉,
+  //    簇就没了。混合是保序的:**簇还在,只是整体摊开到全宽**。
+  // 调 `CONFIG.spreadX`:0 = 回到原来那坨,1 = 完全铺平(不要)。
+  if (CONFIG.spreadX > 0) {
+    const byX = nodes.slice().sort((l, r) => l.x - r.x);
+    byX.forEach(function(n, i, all){
+      const even = .018 + (i + .5) / all.length * .964;      // 铺满 [.018,.982],和 clamp 的边界一致
+      n.x = n.x * (1 - CONFIG.spreadX) + even * CONFIG.spreadX;
+    });
+  }
+
   // 世界铺多大 = 总字符数 / 一屏想看见多少(下限 1:世界不能比一屏还小)
   return { nodes:nodes, edges:edges,
            worldScale:Math.max(1, Math.sqrt(total / CONFIG.visibleGlyphs)) };
@@ -659,10 +738,8 @@ function boot(items, relations){
   let scale = 1, panX = 0, panY = 0;
   let pointer = null, drag = null, pinch = null;
   const touches = new Map();
-  let running = true, lastFrame = 0, frames = 0, fpsAt = performance.now();
+  let running = true, lastFrame = 0, frames = 0;   // frames 只累加,给演练当「动画真的在转」的观察口
   let lockedIndex = null, feedbacks = [];
-
-  const fpsEl = document.getElementById('mFps'), zoomEl = document.getElementById('mZoom');
 
   const clampScale = v => clamp(v, minScale, 3.2);
   function clampPan(){
@@ -864,13 +941,7 @@ function boot(items, relations){
       return true;
     });
 
-    if (zoomEl) zoomEl.textContent = scale.toFixed(2) + '×';
     frames++;
-    if (now - fpsAt > 500) {
-      const fps = Math.round(frames * 1000 / (now - fpsAt));
-      frames = 0; fpsAt = now;
-      if (fpsEl) fpsEl.textContent = String(clamp(fps, 1, 120));
-    }
   }
 
   function loop(now){
@@ -1049,6 +1120,7 @@ function boot(items, relations){
     },
     clear: function(){ lockedIndex = null; closeCard(); },
     scale: () => scale,
+    frames: () => frames,      // 只增不减:演练拿它判「动画真的在转」(原来是读屏幕上那块 FPS)
   };
 
   resize();
@@ -1056,8 +1128,54 @@ function boot(items, relations){
 }
 
 /* ══ ⑤ 点中一颗之后那张卡 ══ */
-function closeCard(){ document.getElementById('card').classList.remove('on'); }
+/* ══ 图例:点中一颗才出来,出场时走一段「数据乱流」 ══
+   所有者 2026-09-03 的原话:「**我点击才出现下面两行字,然后并且有一个数据乱流的动画**」。
+   做法:每个字先在字符表里乱跳,再**从左往右一个个定下来**(和这一页满屏的字符场是同一套字)。
+   ⚠️ **别改成整段淡入** —— 她要的就是"乱流"这个动作。
+   ⚠️ 系统开了「减少动态效果」就直接落到原文,不跳字(同这一页别处的 reduceMotion 规矩)。
+   ⚠️ 每次出场都要**先取消上一轮**(legendTimers),不然连点两下会有两轮抢着改同一段字。 */
+let legendTimers = [];
+function stopLegendScramble(){
+  legendTimers.forEach(id => cancelAnimationFrame(id));
+  legendTimers = [];
+}
+function scrambleText(el, ms){
+  const text = el.dataset.text || el.textContent;
+  const pool = CONFIG.glyphs;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = text; return; }
+  const startedAt = performance.now();
+  const step = function(now){
+    const t = Math.min(1, (now - startedAt) / ms);
+    // 定下来的字数从左往右推进;还没定的那些每帧换一个乱码
+    const settled = Math.floor(t * text.length);
+    let out = text.slice(0, settled);
+    for (let i = settled; i < text.length; i++) {
+      out += text[i] === ' ' ? ' ' : pool[Math.floor(Math.random() * pool.length)];
+    }
+    el.textContent = out;
+    if (t < 1) legendTimers.push(requestAnimationFrame(step));
+    else el.textContent = text;
+  };
+  legendTimers.push(requestAnimationFrame(step));
+}
+function revealLegend(){
+  const box = document.getElementById('legend');
+  if (!box || box.classList.contains('on')) return;
+  box.classList.add('on');
+  stopLegendScramble();
+  [...box.querySelectorAll('b')].forEach((el, i) => scrambleText(el, 460 + i * 140));
+}
+function hideLegend(){
+  const box = document.getElementById('legend');
+  if (!box) return;
+  stopLegendScramble();
+  box.classList.remove('on');
+  [...box.querySelectorAll('b')].forEach(el => { el.textContent = el.dataset.text || el.textContent; });
+}
+
+function closeCard(){ document.getElementById('card').classList.remove('on'); hideLegend(); }
 function openCard(item){
+  revealLegend();          // ⚠️ 图例跟着「点中了一颗」走,不跟着悬停走
   if (!item) return;
   const card = document.getElementById('card');
   document.getElementById('cKind').textContent = LAYER_LABEL[layerOf(item)] || '';
