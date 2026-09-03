@@ -304,10 +304,14 @@
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    background: var(--glass-soft);
+    /* ⚠️ 顶栏这几颗是**玻璃**(所有者 2026-09-03:「我要玻璃质感」):
+       白纱 + 模糊 + 一圈淡描边 + 极轻的影,和卡片同一套。
+       ~~此前描边用的是 --border-strong~~ —— 那是一道硬灰边,压在玻璃上显脏,已改成 --glass-edge。 */
+    background: var(--glass-card);
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
-    border: 1px solid var(--border-strong);
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--shadow-card);
     color: var(--text-dim);
     border-radius: 999px;
     padding: 7px 14px;
@@ -318,7 +322,7 @@
     text-decoration: none;
     transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
   }
-  .hbtn:hover { color: var(--text); border-color: var(--text-light); }
+  .hbtn:hover { color: var(--text); border-color: var(--border-strong); box-shadow: var(--shadow-card-hover); }
   /* 只有图标的顶栏按钮。
      ⚠️ **是横着的椭圆(胶囊),不是正圆** —— 所有者 2026-09-03 拿图指名要这种:
      「不要这种圆形,想要这种椭圆」。~~此前是 34×34 的正圆~~,别改回去。

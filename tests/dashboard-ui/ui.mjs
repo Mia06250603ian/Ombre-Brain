@@ -86,6 +86,12 @@ for (const scheme of ['light', 'dark']) {
       document.querySelector(`a.hbtn[href="${h}"]`).getBoundingClientRect());
     return Math.abs(a.width - b.width) < 1 && Math.abs(a.height - b.height) < 1;
   }));
+  // 顶栏那几颗也是玻璃(所有者 2026-09-03:「我要玻璃质感」)
+  ok('顶栏按钮是玻璃', await page.locator('a.hbtn[href="/galaxy"]').evaluate(el => {
+    const cs = getComputedStyle(el);
+    const blur = cs.backdropFilter || cs.webkitBackdropFilter || '';
+    return blur.includes('blur') && /rgba\([^)]+, *0?\.\d+\)/.test(cs.backgroundColor);
+  }));
   ok('入口是横着的椭圆,不是正圆', await page.evaluate(() => {
     const r = document.querySelector('a.hbtn[href="/galaxy"]').getBoundingClientRect();
     return r.width > r.height * 1.25;
