@@ -536,14 +536,16 @@ for (const scheme of ['light', 'dark']) {
       let rules; try { rules = sheet.cssRules; } catch { continue; }
       for (const r of rules) {
         if (!r.conditionText) continue;
+        // ⚠️ 样本由 `.bucket-row` 换成 `.todo-card`:2026-09-03 起记忆卡片按所有者的选择走**普通圆弧**,
+        // 超椭圆那两条路要靠仍在用它的卡片(便利贴等)来验。
         if (/^\(corner-shape/.test(r.conditionText))
-          for (const i of r.cssRules) if (/\.bucket-row/.test(i.selectorText || '')) out.native = true;
+          for (const i of r.cssRules) if (/\.todo-card/.test(i.selectorText || '')) out.native = true;
         if (/not \(corner-shape/.test(r.conditionText)) {
           out.css += [...r.cssRules].map(i => i.cssText).join('\n');
           for (const i of r.cssRules) {
             const sel = i.selectorText || '';
-            if (/\.bucket-row(,|\s|$)/.test(sel) && /mask-box-image/.test(i.cssText)) out.fallbackCards++;
-            if (/\.bucket-row::before/.test(sel) && /mask-box-image/.test(i.cssText)) out.fallbackRing++;
+            if (/\.todo-card(,|\s|$)/.test(sel) && /mask-box-image/.test(i.cssText)) out.fallbackCards++;
+            if (/\.todo-card::before/.test(sel) && /mask-box-image/.test(i.cssText)) out.fallbackRing++;
           }
         }
       }
@@ -558,7 +560,12 @@ for (const scheme of ['light', 'dark']) {
   await page.addStyleTag({ content: '*, *::before, *::after { corner-shape: round !important; }\n' + sq.css });
   await page.setViewportSize({ width: 430, height: 932 });
   await page.waitForTimeout(250);
-  const fb = await page.locator('.bucket-row').first().evaluate(el => {
+  // ⚠️ **探针换成 `.todo-card`,不再是 `.bucket-row`** —— 2026-09-03 起记忆卡片按所有者的选择
+  // 走**普通圆弧**(她看了四张真图选的:同一数值下超椭圆看着更方,「这个圆角好安卓」)。
+  // 别的卡片仍走超椭圆,兜底那条路要靠它们来演。
+  await page.click('.tab[data-tab="todos"]').catch(() => {});
+  await page.waitForSelector('.todo-card', { timeout: 8000 }).catch(() => {});
+  const fb = await page.locator('.todo-card').first().evaluate(el => {
     const cs = getComputedStyle(el), ps = getComputedStyle(el, '::before');
     return {
       src: (cs.webkitMaskBoxImageSource || '').slice(0, 30),
@@ -568,12 +575,21 @@ for (const scheme of ['light', 'dark']) {
       ring: (ps.webkitMaskBoxImageSource || '').slice(0, 30),
     };
   });
-  ok('兜底路上卡片真被切成了超椭圆', fb.src.startsWith('url("data:image/svg+xml'), fb.src);
+  ok('兜底路上卡片真被切成了超椭圆(拿仍走超椭圆的便利贴卡片验)', fb.src.startsWith('url("data:image/svg+xml'), fb.src);
   // ⚠️ 半径必须归零,不然 mask 只会在那段圆弧里面再切一刀,形状还是圆弧
   ok('兜底路上圆角半径归零(形状交给 mask)', fb.radius === '0px', fb.radius);
   ok('兜底路上边缘高光跟着同一条曲线', fb.ring.startsWith('url("data:image/svg+xml'), fb.ring);
   // ⚠️ mask 会不会把玻璃弄没:这两条就是看着它的
   ok('兜底路上玻璃还在(模糊 + 半透明面)', fb.blur && fb.bg, JSON.stringify(fb));
+  // ⚠️ 记忆卡片**刻意不参与**:所有者选的是普通圆弧。这两条防的是「哪天顺手又把它加回超椭圆名单」。
+  const memo = await page.locator('.bucket-row').first().evaluate(el => {
+    const cs = getComputedStyle(el);
+    return { shape: cs.cornerShape || '', radius: cs.borderTopLeftRadius,
+             mask: (cs.webkitMaskBoxImageSource || 'none') };
+  });
+  ok('记忆卡片是普通圆弧,不是超椭圆', !/squircle|superellipse/.test(memo.shape), memo.shape || '(空)');
+  ok('记忆卡片的圆角没被 mask 归零', parseFloat(memo.radius) >= 20 && memo.mask === 'none',
+    memo.radius + ' / ' + memo.mask.slice(0, 24));
   await page.screenshot({ path: SHOTS + '/squircle-fallback-' + scheme + '.png' });
 
   await ctx.close();
