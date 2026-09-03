@@ -81,10 +81,12 @@ for (const scheme of ['light', 'dark']) {
   // ⚠️ 2026-09-03:浅色整套由暖改冷(所有者:「我是想改成冷色调一点,包括那个灰色按钮之类的」)。
   // ~~原来浅色钉的是 rgb(250,249,245) / rgb(20,20,19) / #999999(官端暖灰)~~ —— 已换成冷灰版,
   // 明度和官端逐档相同、只搬了色相,所以对比度那几笔账照旧。**深色一个数没动。**
-  const wantBg = scheme === 'light' ? 'rgb(247, 247, 249)' : 'rgb(20, 20, 19)';   // cool-050 / gray-950
+  // ⚠️ 浅色 2026-09-03 又压深了一档(#f7f7f9 → #f1f1f4):iOS 那种质感靠「灰底 + 纯白卡片」
+  // 的落差分层,底色和卡片太接近就分不出层。深色没动。
+  const wantBg = scheme === 'light' ? 'rgb(241, 241, 244)' : 'rgb(20, 20, 19)';
   const wantFg = scheme === 'light' ? 'rgb(17, 19, 21)' : 'rgb(250, 249, 245)';   // cool-950 / gray-050
   const wantAccent = scheme === 'light' ? '#8d97a5' : '#343434';   // 浅色冷灰(09-03)/ 深色仍是她 08-31 定的
-  ok('底色 = ' + (scheme === 'light' ? '冷灰 cool-050' : '官端 gray-950'), bg === wantBg, bg);
+  ok('底色 = ' + (scheme === 'light' ? '冷灰 #f1f1f4' : '官端 gray-950'), bg === wantBg, bg);
   ok('字色 = 反色', fg === wantFg, fg);
   ok('强调色 = 所有者定的灰', accent === wantAccent, accent);
   // 强调色当填色 / 当文字是两个角色,合并回一个就会有地方看不见
@@ -96,9 +98,15 @@ for (const scheme of ['light', 'dark']) {
   ok('药丸一行横滑', await page.locator('.filters').evaluate(el =>
     getComputedStyle(el).flexWrap === 'nowrap' && el.scrollWidth > el.clientWidth));
 
-  // 玻璃:顶栏/标签/卡片/药丸都得真的挂上 backdrop-filter,且底是半透明的
-  for (const sel of ['.header', '.tabs', '.bucket-row', '.filter-btn:not(.active)']) {
-    ok('玻璃:' + sel, await page.locator(sel).first().evaluate(el => {
+  // 磨砂:必须真的挂上 backdrop-filter,且底是半透明的。
+  // ⚠️ 2026-09-03 起**分两档**:~~原来四个选择器在两套配色下都要求是玻璃~~ ——
+  // 浅色改成 iOS 那种「平灰底 + 纯白卡片」之后,**卡片和药丸在浅色下是实色,不再是玻璃**
+  // (见上面那两条新断言)。**顶栏和标签栏两套都仍是磨砂** —— iOS 的顶栏本来就是磨砂的。
+  const frosted = scheme === 'light'
+    ? ['.header', '.tabs']
+    : ['.header', '.tabs', '.bucket-row', '.filter-btn:not(.active)'];
+  for (const sel of frosted) {
+    ok('磨砂:' + sel, await page.locator(sel).first().evaluate(el => {
       const cs = getComputedStyle(el);
       const blur = cs.backdropFilter || cs.webkitBackdropFilter || '';
       return blur.includes('blur') && /rgba\([^)]+, *0?\.\d+\)/.test(cs.backgroundColor);
@@ -110,25 +118,24 @@ for (const scheme of ['light', 'dark']) {
   // 边缘要一圈均匀的淡描边,**不许有 inset 高光线**;参照物是 Claude Code 手机端自己的面板。
   ok('卡片没有上缘高光线', await page.locator('.bucket-row').first().evaluate(
     el => !/inset/.test(getComputedStyle(el).boxShadow)));
-  // 底光:玻璃靠它才有东西可透。
-  // ⚠️ 2026-09-03 改过:~~原来两套都钉「≤0.02,所有者定的 1% 纯灰」~~ —— 浅色那条已由
-  // 所有者本人推翻(她拿朋友那版来问「玻璃质感是不是做不出来」,答案是底光得有颜色)。
-  // **深色仍是 1%**,一个数没动。上限留着是防止以后有人把它调成一锅粥。
-  const washMax = scheme === 'light' ? 0.16 : 0.02;
-  ok('页面有一层底光' + (scheme === 'light' ? '(浅色:带颜色的)' : '(深色:极淡)'),
-    await page.evaluate((max) => {
-      const bi = getComputedStyle(document.body).backgroundImage;
-      if (!bi.includes('gradient')) return false;
-      const a = [...bi.matchAll(/rgba\([^)]*?,\s*([0-9.]+)\)/g)].map(m => parseFloat(m[1]));
-      return a.length > 0 && Math.max(...a) <= max;
-    }, washMax));
-  // 浅色的底光必须**真的有颜色**(三个通道不能相等)—— 这正是玻璃感的来源,别被"统一"回灰的
+  // 底光。⚠️ 2026-09-03 当天来回改了两轮,**别照中间那版改回去**:
+  // ~~当天中途改成「浅色 ≤0.16 且必须真的有颜色」~~ —— 那是配「玻璃质感」那一版的;
+  // 她随后拿一张 iOS app 的截图说要那种质感,**平的灰底 + 纯白卡片,不要彩光**,
+  // 于是彩光撤掉、这两条断言也跟着撤回。现在两套都只留一丝几乎看不见的中性底光。
+  ok('页面有一层极淡的底光', await page.evaluate(() => {
+    const bi = getComputedStyle(document.body).backgroundImage;
+    if (!bi.includes('gradient')) return false;
+    const a = [...bi.matchAll(/rgba\([^)]*?,\s*([0-9.]+)\)/g)].map(m => parseFloat(m[1]));
+    return a.length > 0 && Math.max(...a) <= 0.02;
+  }));
+  // 浅色的卡片必须是**纯白实色**:她要的 iOS 质感靠「灰底 + 纯白卡片」的落差分层,
+  // 半透明会把底色吃进来。⚠️ 深色相反,仍是 7% 白纱 —— 别拿这条去"统一"深色。
   if (scheme === 'light') {
-    ok('浅色的底光是有颜色的,不是灰的', await page.evaluate(() => {
-      const bi = getComputedStyle(document.body).backgroundImage;
-      const m = [...bi.matchAll(/rgba\((\d+),\s*(\d+),\s*(\d+)/g)].map(x => x.slice(1, 4).map(Number));
-      return m.some(([r, g, b]) => !(r === g && g === b));
-    }));
+    ok('浅色卡片是纯白实色,不是半透明', await page.locator('.bucket-row').first().evaluate(
+      el => getComputedStyle(el).backgroundColor === 'rgb(255, 255, 255)'));
+    ok('浅色卡片不描边', await page.locator('.bucket-row').first().evaluate(
+      el => { const c = getComputedStyle(el).borderTopColor;
+              return c === 'rgba(0, 0, 0, 0)' || c === 'transparent'; }));
   }
 
   // 页面不许横向滚动(手机上最容易翻车的一条)

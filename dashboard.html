@@ -62,7 +62,9 @@
     --color-error: #bf4d43;
 
     /* ── 角色表(浅色):照官端 :root 逐条对应 ── */
-    --bg: var(--cool-050);                  /* background-primary(2026-09-03 由暖改冷) */
+    /* ⚠️ 2026-09-03 由 --cool-050(#f7f7f9)压到 #f1f1f4:iOS 那种质感靠的是
+       **灰底 + 纯白卡片的落差**,底色和卡片太接近就分不出层,只能靠阴影撑,反而显脏。 */
+    --bg: #f1f1f4;                          /* background-primary */
     --surface: var(--color-gray-000);       /* background-overlay:卡片 */
     --surface-solid: var(--color-gray-000);
     --surface-sunken: var(--cool-100);      /* background-secondary:输入框底 */
@@ -94,10 +96,11 @@
        ⚠️ 代价她知情:红=负面/绿=正面那层意思没了,只剩圆点位置表示情绪值。 */
     --vbar-from: var(--cool-200);
     --vbar-to: var(--accent);
-    /* 阴影 2026-09-03 改成「带一点蓝的柔影」:硬的灰影压在有颜色的底上会显脏 */
-    --shadow-card: 0 2px 10px rgba(52, 74, 138, 0.06);
-    --shadow-card-hover: 0 8px 26px rgba(52, 74, 138, 0.12);
-    --shadow-panel: 0 10px 44px rgba(52, 74, 138, 0.16);
+    /* 阴影 2026-09-03 定稿:**极轻的中性影**。~~当天中途试过带蓝的柔影~~,那是配彩色底光的,
+       彩光撤了之后蓝影会在灰底上显脏。iOS 那种卡片阴影几乎看不见,分层交给底色落差。 */
+    --shadow-card: 0 1px 3px rgba(17, 19, 21, 0.04);
+    --shadow-card-hover: 0 4px 16px rgba(17, 19, 21, 0.08);
+    --shadow-panel: 0 8px 36px rgba(17, 19, 21, 0.12);
     /* 毛玻璃。**2026-08-31 所有者定稿的这一版,三处都别乱动**(中间试错两轮才到这儿):
        ① 面是「白纱」不是「灰块」—— 深色下 7% 白,不是 52% 灰。
           ~~灰块那版~~ 合成出来 `#1d1d1c`,而实色卡片本来就是 `#1a1918`,**差 3/255,肉眼等于没差**。
@@ -107,22 +110,25 @@
        ③ 页面要有一层**底光**给玻璃当透视素材,否则平底色上模糊了个寂寞。
           **强度 1%、纯灰(饱和度 0)** —— 所有者拿滑杆自己定的;她试过带色的,不要。
        ⚠️ 别把 `--wash-*` 调大或加颜色,也别把高光线加回来。 */
-    --glass-chrome: rgba(247, 247, 249, 0.60);   /* 顶栏、标签栏(跟着 --bg 走;09-03 由 .72 调透一点) */
-    /* ⚠️ 2026-09-03 由 .50/.42 提到 .66/.55:底光有颜色之后,太透会让卡片里的正文发花。
-       **规矩没变**:它仍然是「白纱」不是「灰块」(见下面第 ① 条)。 */
-    --glass-card: rgba(255, 255, 255, 0.66);     /* 卡片、面板 */
-    --glass-soft: rgba(255, 255, 255, 0.55);     /* 药丸、小按钮 */
+    --glass-chrome: rgba(241, 241, 244, 0.82);   /* 顶栏、标签栏(跟着 --bg 走;iOS 的顶栏是磨砂的,保留模糊) */
+    /* ⚠️ 2026-09-03 定稿:浅色下卡片是**纯白实色**,不再是半透明的白纱。
+       理由见 --wash-* 那段第 ③ 条:她要的 iOS 质感靠「灰底 + 纯白卡片」的落差分层,
+       半透明会把底色吃进来、白得不干净。**深色仍然是白纱**(7% 白),一个数没动。 */
+    --glass-card: #ffffff;                       /* 卡片、面板 */
+    --glass-soft: #ffffff;                       /* 药丸、小按钮 */
     --glass-blur: saturate(180%) blur(24px);
-    --glass-edge: rgba(17, 19, 21, 0.07);        /* 均匀描边,不是高光线 */
-    /* ⚠️⚠️ 2026-09-03:底光由「1% 纯灰」改成**带颜色的蓝紫**,这是本次改动的关键。
-       ~~原文:「强度 1%、纯灰(饱和度 0)—— 所有者拿滑杆自己定的;她试过带色的,不要。
-       别把 --wash-* 调大或加颜色」~~ —— **该结论 2026-09-03 由所有者本人推翻**:
-       她拿朋友那版的截图来问「像我朋友这样的玻璃质感是不是做不出来」。
-       **玻璃感的来源不是把 blur 调大,是玻璃背后得有东西可透** —— 1% 纯灰上再怎么模糊
-       都是白盖白。所以这里给了两团有颜色的光,卡片压上去才透得出东西。
-       **想退回她 08-31 那版**:把这两行换回 rgba(17,19,21,0.010) / (…,0.008) 即可。 */
-    --wash-a: rgba(86, 124, 214, 0.13);
-    --wash-b: rgba(140, 116, 216, 0.10);
+    /* ⚠️ 2026-09-03 浅色改成透明:iOS 那种卡片是**没有描边**的,靠白与灰分层就够;
+       白卡上再描一圈灰边会显得廉价。深色那条(10% 白)没动 —— 深色底上没有边会糊。 */
+    --glass-edge: transparent;                   /* 浅色:不描边 */
+    /* 底光。⚠️ 2026-09-03 当天来回改过两轮,**别照任何一版旧文改回去**:
+       ①原是「1%、纯灰」(她 08-31 拿滑杆定的);
+       ②当天她拿朋友那版来问玻璃质感,改成了**蓝 13% + 紫 10% 的三团彩光**;
+       ③**当天她又拿一张 iOS app 的截图来说「我想要的是类似于这种的 iOS app 质感」**
+         —— 那种是**平的浅灰底 + 纯白卡片**,靠白与灰的落差分层,**不靠透光**,
+         所以彩光撤掉了。**这两个方向是互斥的**,别把彩光加回来又指望它像 iOS。
+       现在留一丝几乎看不见的中性底光,只为让顶栏的模糊有点东西可糊。 */
+    --wash-a: rgba(17, 19, 21, 0.006);
+    --wash-b: rgba(17, 19, 21, 0.005);
     /* Breath 评分条用(JS 靠 cssVar() 现读,别写死在 JS 里)。
        ⚠️ 原来这里还有 --net-permanent / --net-archived / --net-line / --canvas-bg 四个,
        是「记忆网络」页的画布在用;那一页 2026-09-03 已删,四个变量跟着删掉。 */
@@ -192,12 +198,9 @@
     /* background-color 仍是官端那个纯色(测试按它对账);上面浮一层极淡的底光,
        给半透明的卡片一点可透的东西,不然「玻璃」和「灰卡片」看不出区别。 */
     background-color: var(--bg);
-    /* 三团光:左上、右上、左下。⚠️ 2026-09-03 由两团加到三团 —— 只有两个角有光的话,
-       页面往下滚就滚出了有颜色的区域,卡片又变回白盖白。 */
     background-image:
-      radial-gradient(70rem 52rem at 8% -10%, var(--wash-a), transparent 64%),
-      radial-gradient(60rem 46rem at 96% 2%, var(--wash-b), transparent 62%),
-      radial-gradient(56rem 44rem at 4% 96%, var(--wash-a), transparent 60%);
+      radial-gradient(58rem 40rem at 12% -8%, var(--wash-a), transparent 62%),
+      radial-gradient(46rem 34rem at 92% 4%, var(--wash-b), transparent 60%);
     background-attachment: fixed;
     color: var(--text);
     min-height: 100vh;
@@ -351,7 +354,7 @@
   .bucket-row {
     display: block;
     padding: 16px 18px;
-    border-radius: 16px;
+    border-radius: 20px;
     background: var(--glass-card);
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
@@ -439,7 +442,7 @@
   .letters-intro {
     background: var(--glass-card); -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur); border: 1px solid var(--border);
-    border-radius: 16px; padding: 18px 20px; margin-bottom: 18px;
+    border-radius: 20px; padding: 18px 20px; margin-bottom: 18px;
     line-height: 1.8; font-size: 13px; color: var(--text-dim);
     box-shadow: var(--shadow-card);
   }
@@ -465,7 +468,7 @@
   .letter-card {
     background: var(--glass-card); -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur); border: 1px solid var(--border);
-    border-radius: 16px; padding: 18px 20px; margin-bottom: 14px;
+    border-radius: 20px; padding: 18px 20px; margin-bottom: 14px;
     box-shadow: var(--shadow-card);
   }
   .letter-time {
@@ -712,7 +715,7 @@
     background: var(--glass-card);
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
-    border-radius: 16px;
+    border-radius: 20px;
     border: 1px solid var(--border);
     box-shadow: var(--shadow-card);
   }
@@ -899,7 +902,7 @@
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
     border: 1px solid var(--border);
-    border-radius: 16px;
+    border-radius: 20px;
     font-size: 12px;
     overflow-x: auto;
   }
