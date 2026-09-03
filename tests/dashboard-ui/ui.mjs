@@ -177,6 +177,97 @@ for (const scheme of ['light', 'dark']) {
   // 那是去追 iOS 平面质感的那一版,所有者随后说「我就是想要玻璃质感啊你改改没了」。
   // 现在浅色的卡片和药丸**又是玻璃了**,由下面那组「磨砂」断言统一钉着。
 
+  // ══ 玻璃材质那一轮的断言(2026-09-03 新增)══════════════════════════════
+  // 所有者:「**I don't want a translucent card. I want a monochrome glass material.**」
+  // 下面这几条钉的是「材质是不是真的成立」,而不是某个具体像素值 —— 调参数不会把它们弄红。
+
+  // ① 整页零彩色。所有者原话「整个网页必须是 MONOCHROME…黑白灰玻璃,不是彩色玻璃」。
+  //    扫全部元素的字色/底色/描边 + 渐变里的每一个色标,三通道必须相等。
+  const colored = await page.evaluate(() => {
+    const bad = [];
+    const chk = (el, prop, v) => {
+      for (const m of v.matchAll(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([0-9.]+))?\)/g)) {
+        const [r, g, b, a] = [+m[1], +m[2], +m[3], m[4] === undefined ? 1 : parseFloat(m[4])];
+        if (a > 0.001 && !(r === g && g === b)) bad.push((el.className || el.tagName) + ' ' + prop + ' ' + m[0]);
+      }
+    };
+    for (const el of document.querySelectorAll('*')) {
+      const cs = getComputedStyle(el);
+      for (const p of ['color', 'backgroundColor', 'backgroundImage', 'borderTopColor',
+                       'borderBottomColor', 'boxShadow', 'fill', 'stroke']) chk(el, p, cs[p] || '');
+      for (const pe of ['::before', '::after']) {
+        const ps = getComputedStyle(el, pe);
+        for (const p of ['backgroundColor', 'backgroundImage', 'boxShadow']) chk(el, pe + p, ps[p] || '');
+      }
+    }
+    return bad.slice(0, 5);
+  });
+  ok('整页零彩色(黑白灰透明)', colored.length === 0, colored.join(' | '));
+
+  // ② 场景层:玻璃背后要有「东西」。body::before 是明暗形状、body::after 是颗粒。
+  //    ⚠️ 撤掉它 = 玻璃又回到「漂在一张纯色底上」,她点名不要那个。
+  const scene = await page.evaluate(() => {
+    const b = getComputedStyle(document.body, '::before');
+    const a = getComputedStyle(document.body, '::after');
+    return {
+      shapes: (b.backgroundImage.match(/radial-gradient/g) || []).length,
+      fixed: b.position === 'fixed',
+      grain: a.backgroundImage.includes('url(') && parseFloat(a.opacity) > 0,
+    };
+  });
+  ok('背后有明暗形状(≥5 团)', scene.shapes >= 5, scene.shapes);
+  ok('场景层是固定的(玻璃在它上面滑过)', scene.fixed);
+  ok('有颗粒层', scene.grain);
+
+  // ③ 三档玻璃必须**真的不一样**(所有者:「不要所有元素使用完全相同的 opacity/blur/border」)。
+  const tiers = await page.evaluate(() => {
+    const pick = sel => {
+      const cs = getComputedStyle(document.querySelector(sel));
+      const f = cs.backdropFilter || cs.webkitBackdropFilter || '';
+      return {
+        blur: parseFloat((f.match(/blur\(([\d.]+)px\)/) || [0, 0])[1]),
+        a: parseFloat((cs.backgroundColor.match(/,\s*([0-9.]+)\)$/) || [0, 1])[1]),
+      };
+    };
+    return { g1: pick('.bucket-row'), g2: pick('.header'), g3: pick('.filter-btn:not(.active)') };
+  });
+  ok('三档玻璃的模糊各不相同',
+    new Set([tiers.g1.blur, tiers.g2.blur, tiers.g3.blur]).size === 3, JSON.stringify(tiers));
+  ok('三档玻璃的通透度各不相同',
+    new Set([tiers.g1.a, tiers.g2.a, tiers.g3.a]).size === 3, JSON.stringify(tiers));
+  ok('微玻璃最淡、主玻璃最厚', tiers.g3.a < tiers.g1.a, JSON.stringify(tiers));
+
+  // ④ 玻璃**不是单一颜色**:面上必须叠着渐变(一角亮、对角略暗)。
+  ok('卡片内部有明暗变化(不是单一色)', await page.locator('.bucket-row').first().evaluate(
+    el => (getComputedStyle(el).backgroundImage.match(/gradient/g) || []).length >= 2));
+
+  // ⑤ 边缘是**渐变高光**,不是一条 CSS 描边:走 ::before + mask 抠出来的 1px 环。
+  const rim = await page.locator('.bucket-row').first().evaluate(el => {
+    const ps = getComputedStyle(el, '::before');
+    return { grad: /gradient/.test(ps.backgroundImage), masked: /(content-box|exclude|xor)/.test(
+      (ps.webkitMaskComposite || '') + (ps.maskComposite || '') + (ps.webkitMask || '') + (ps.mask || '')) };
+  });
+  ok('边缘是渐变高光,不是纯描边', rim.grad && rim.masked, JSON.stringify(rim));
+  // 描边本身要淡 —— 所有者:「不要让边框太明显」
+  ok('描边很淡(兜底用的)', await page.locator('.bucket-row').first().evaluate(el => {
+    const m = getComputedStyle(el).borderTopColor.match(/,\s*([0-9.]+)\)$/);
+    return !m || parseFloat(m[1]) <= 0.12;
+  }));
+
+  // ⑥ 厚度:内侧要有极柔的明暗。⚠️ 是**柔**的(模糊半径 ≥6px),不是 08-31 被否掉的那道 1px 硬白杠;
+  //    所以它写在 ::after 上,元件自己的 box-shadow 仍然不许有 inset(上面那条断言没变)。
+  const depth = await page.locator('.bucket-row').first().evaluate(
+    el => getComputedStyle(el, '::after').boxShadow);
+  ok('玻璃有厚度(内侧明暗)', /inset/.test(depth), depth);
+  ok('厚度是柔的,不是一道硬线',
+    (depth.match(/(\d+(?:\.\d+)?)px/g) || []).some(v => parseFloat(v) >= 6), depth);
+
+  // ⑦ 阴影要克制 —— 所有者:「不要滥用阴影…更希望看到玻璃内部的明暗变化」。
+  ok('卡片阴影很克制(模糊 ≤8px)', await page.locator('.bucket-row').first().evaluate(el => {
+    const nums = (getComputedStyle(el).boxShadow.match(/(-?\d+(?:\.\d+)?)px/g) || []).map(parseFloat);
+    return nums.length === 0 || Math.max(...nums.map(Math.abs)) <= 8;
+  }, ), await page.locator('.bucket-row').first().evaluate(el => getComputedStyle(el).boxShadow));
+
   // 页面不许横向滚动(手机上最容易翻车的一条)
   ok('没有横向滚动', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
 
@@ -333,6 +424,20 @@ for (const scheme of ['light', 'dark']) {
       return blur.includes('blur') && /rgba\([^)]+, *0?\.\d+\)/.test(cs.backgroundColor);
     }));
   }
+  // ⚠️ 2026-09-03 所有者:「**那个方块也要圆角 然后圆圈居中**」。
+  // ① 圆圈居中:`button .ico { margin-right: 5px }` 会把「只有图标」的按钮里那颗图标推到左边
+  //    (它是居中的,所以偏一半 = 现场量到的 2.5px)。修法是 `button .ico:only-child { margin-right: 0 }`。
+  ok('勾选里的圆圈居中(±1px)', await page.locator('#todos-lines .todo-check').first().evaluate(el => {
+    const a = el.getBoundingClientRect(), c = el.querySelector('svg').getBoundingClientRect();
+    return Math.abs((c.left + c.right) / 2 - (a.left + a.right) / 2) <= 1
+        && Math.abs((c.top + c.bottom) / 2 - (a.top + a.bottom) / 2) <= 1;
+  }));
+  // ② 方块要够圆:38px 的方块用 --r-4(浏览器会夹到 19 = 整块超椭圆)。
+  //    ⚠️ 钉的是「够圆」不是具体像素 —— 以后调档不会把这条弄红。
+  ok('勾选那个方块够圆(≥ 边长的 40%)', await page.locator('#todos-lines .todo-check').first().evaluate(el => {
+    const cs = getComputedStyle(el);
+    return parseFloat(cs.borderTopLeftRadius) >= parseFloat(cs.width) * 0.4;
+  }));
   ok('勾上那颗也没被填成强调色', await page.evaluate(() => {
     const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
     const el = document.querySelector('#todos-lines .todo-row.is-done .todo-check');
@@ -393,6 +498,56 @@ for (const scheme of ['light', 'dark']) {
     return Math.abs(a - c) <= 1 && Math.abs(b - c) <= 1;
   }));
   await page.screenshot({ path: SHOTS + '/wide-' + scheme + '.png' });
+
+  // ══ iOS 那种连续圆角:**两条路都要在**(2026-09-03)══════════════════════
+  // 所有者:「我要的是 Apple / iOS 那种…不是普通 CSS border-radius 的圆角」。
+  // ⚠️ `corner-shape` 只有 Chrome 139+ 认,**Safari 不认** —— 她手机走的是 mask 那条兜底。
+  // ~~此前手册写「她的 iPhone Safari 吃到 squircle」~~ 是没验过的假设,别再照它省掉兜底。
+  const sq = await page.evaluate(() => {
+    const out = { native: false, fallbackCards: 0, fallbackRing: 0, css: '' };
+    for (const sheet of document.styleSheets) {
+      let rules; try { rules = sheet.cssRules; } catch { continue; }
+      for (const r of rules) {
+        if (!r.conditionText) continue;
+        if (/^\(corner-shape/.test(r.conditionText))
+          for (const i of r.cssRules) if (/\.bucket-row/.test(i.selectorText || '')) out.native = true;
+        if (/not \(corner-shape/.test(r.conditionText)) {
+          out.css += [...r.cssRules].map(i => i.cssText).join('\n');
+          for (const i of r.cssRules) {
+            const sel = i.selectorText || '';
+            if (/\.bucket-row(,|\s|$)/.test(sel) && /mask-box-image/.test(i.cssText)) out.fallbackCards++;
+            if (/\.bucket-row::before/.test(sel) && /mask-box-image/.test(i.cssText)) out.fallbackRing++;
+          }
+        }
+      }
+    }
+    return out;
+  });
+  ok('原生那条在(corner-shape: squircle)', sq.native);
+  ok('兜底那条在(mask 切出来的超椭圆)', sq.fallbackCards > 0 && sq.fallbackRing > 0, JSON.stringify(sq).slice(0, 120));
+  ok('兜底用的是内嵌 SVG,没有外部请求', /url\("data:image\/svg\+xml/.test(sq.css));
+
+  // 真把兜底那条演一遍:关掉原生 corner-shape,再把 @supports not(...) 里的声明原样贴上。
+  await page.addStyleTag({ content: '*, *::before, *::after { corner-shape: round !important; }\n' + sq.css });
+  await page.setViewportSize({ width: 430, height: 932 });
+  await page.waitForTimeout(250);
+  const fb = await page.locator('.bucket-row').first().evaluate(el => {
+    const cs = getComputedStyle(el), ps = getComputedStyle(el, '::before');
+    return {
+      src: (cs.webkitMaskBoxImageSource || '').slice(0, 30),
+      radius: cs.borderTopLeftRadius,
+      blur: (cs.backdropFilter || cs.webkitBackdropFilter || '').includes('blur'),
+      bg: /rgba\([^)]+, *0?\.\d+\)/.test(cs.backgroundColor),
+      ring: (ps.webkitMaskBoxImageSource || '').slice(0, 30),
+    };
+  });
+  ok('兜底路上卡片真被切成了超椭圆', fb.src.startsWith('url("data:image/svg+xml'), fb.src);
+  // ⚠️ 半径必须归零,不然 mask 只会在那段圆弧里面再切一刀,形状还是圆弧
+  ok('兜底路上圆角半径归零(形状交给 mask)', fb.radius === '0px', fb.radius);
+  ok('兜底路上边缘高光跟着同一条曲线', fb.ring.startsWith('url("data:image/svg+xml'), fb.ring);
+  // ⚠️ mask 会不会把玻璃弄没:这两条就是看着它的
+  ok('兜底路上玻璃还在(模糊 + 半透明面)', fb.blur && fb.bg, JSON.stringify(fb));
+  await page.screenshot({ path: SHOTS + '/squircle-fallback-' + scheme + '.png' });
 
   await ctx.close();
 }

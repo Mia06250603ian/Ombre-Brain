@@ -16,8 +16,10 @@
 <!-- 从主屏打开时不显示 Safari 那圈壳,像个 app。⚠️ 也就没有「返回」按钮了 -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#faf9f5" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
+<!-- ⚠️ 这两个值要和 --bg 一致(手机地址栏/状态栏用它)。
+     2026-09-03 由官端暖灰 #faf9f5 / #141413 改成纯灰,和整页零饱和那条对齐。 -->
+<meta name="theme-color" content="#f1f1f1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131313" media="(prefers-color-scheme: dark)">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   /* ============================================================
@@ -98,9 +100,19 @@
     --chip-bg: var(--neutral-200);             /* button-tertiary-bg */
     --chip-fg: var(--neutral-650);             /* button-secondary-fg */
     --input-bg: var(--color-gray-000);      /* input-bg */
-    --positive: var(--color-olive);
-    --negative: var(--color-error);
-    --warning: var(--color-clay);
+    /* ⚠️ 2026-09-03 起**整页零彩色**(所有者原话:「整个网页必须是 MONOCHROME…
+       黑白灰玻璃,而不是彩色玻璃」)。语义色**不再用官端那几个彩色**(橄榄/砖红/陶土),
+       全部改指灰阶 —— **区分靠明度,不靠色相**。
+       ⚠️ 官端那套彩色(上面 `--color-clay` 等)一行没删,留着当来源对照,但**页面里不再引用**;
+       演练里钉了一条「整页找不到彩色」,加回去会当场变红。 */
+    --positive: var(--neutral-600);
+    --negative: var(--neutral-950);        /* 危险/错误:靠"最重的黑"跳出来,不靠红 */
+    --warning: var(--neutral-700);
+    /* Breath 那四条评分条:四档灰,别换回四种颜色(JS 靠 cssVar() 现读) */
+    --bar-topic: var(--neutral-950);
+    --bar-emotion: var(--neutral-700);
+    --bar-time: var(--neutral-500);
+    --bar-importance: var(--neutral-300);
     /* 情绪条:所有者 2026-08-31 定的,从红→绿渐变改成强调色的深浅渐变。
        ⚠️ 代价她知情:红=负面/绿=正面那层意思没了,只剩圆点位置表示情绪值。 */
     --vbar-from: var(--neutral-200);
@@ -110,27 +122,65 @@
     --shadow-card: 0 1px 3px rgba(19, 19, 19, 0.04);
     --shadow-card-hover: 0 4px 16px rgba(19, 19, 19, 0.08);
     --shadow-panel: 0 8px 36px rgba(19, 19, 19, 0.12);
-    /* 毛玻璃。**2026-08-31 所有者定稿的这一版,三处都别乱动**(中间试错两轮才到这儿):
-       ① 面是「白纱」不是「灰块」—— 深色下 7% 白,不是 52% 灰。
-          ~~灰块那版~~ 合成出来 `#1d1d1c`,而实色卡片本来就是 `#1a1918`,**差 3/255,肉眼等于没差**。
-       ② **边缘是一圈均匀的淡描边,没有上缘高光线。**
-          ~~`inset 0 1px 0` 那道亮线~~ 已撤销 —— 所有者原话「卡片上方那个线有点太粗了不像玻璃感」,
-          2 倍屏上它就是一条又粗又硬的白杠。参照物是 Claude Code 手机端自己的面板:通体一圈淡边,没有亮线。
-       ③ 页面要有一层**底光**给玻璃当透视素材,否则平底色上模糊了个寂寞。
-          **强度 1%、纯灰(饱和度 0)** —— 所有者拿滑杆自己定的;她试过带色的,不要。
-       ⚠️ 别把 `--wash-*` 调大或加颜色,也别把高光线加回来。 */
-    --glass-chrome: rgba(241, 241, 241, 0.82);   /* 顶栏、标签栏(跟着 --bg 走,同样纯灰;iOS 的顶栏是磨砂的,保留模糊) */
-    /* ⚠️ 2026-09-03 定稿:浅色下卡片是**半透明白纱**,不是实色。
-       ~~当天中途改成过纯白实色 `#fff`(去追 iOS 那种平面)~~ —— **已撤销**,
-       所有者原话「**我就是想要玻璃质感啊你改改没了**」:**实色卡片是没有玻璃的**。
-       .58 是权衡:再透正文会发花,再实就看不出透光。**深色仍是 7% 白纱**,一个数没动。 */
-    --glass-card: rgba(255, 255, 255, 0.58);     /* 卡片、面板 */
-    --glass-soft: rgba(255, 255, 255, 0.48);     /* 药丸、小按钮 */
-    --glass-blur: saturate(180%) blur(24px);
-    /* ⚠️ 2026-09-03 定稿:那一圈均匀的淡描边**留着** —— 它是玻璃的边缘,不是装饰。
-       ~~当天中途去掉过(去追 iOS 那种无边白卡)~~ **已撤销**,理由同上:那一版把玻璃弄没了。
-       **仍然不许有上缘高光线**(`inset`),那条 08-31 的结论没变。 */
-    --glass-edge: rgba(19, 19, 19, 0.06);
+    /* ══ 玻璃材质(2026-09-03 重做:从「半透明卡片」改成「玻璃材质」)══════════
+       所有者原话:「**I don't want a translucent card. I want a monochrome glass material.**」
+       —— 旧做法是「一个 rgba 白纱 + 圆角 + 阴影」,那只是**半透明卡片**。
+       现在玻璃质感由**六件事**合起来给,少一件都会打回原形:
+         ① 背后真有东西(见下面 `--scene-*`:大块明暗形状 + 颗粒)
+         ② 模糊 + **它对背后的影响**(`brightness`/`contrast`,不只是 blur)
+         ③ 面**不是单一颜色**(`--gN-sheen`:一角亮、对角略暗、上缘比中心亮)
+         ④ 边缘是**一圈渐变的高光**(`--gN-rim`,走 mask 做的 1px 渐变环),不是 CSS 描边
+         ⑤ **厚度**(`--gN-depth`:极柔的内侧明暗,**不是 1px 硬亮线**)
+         ⑥ **分三档**(见下),不是所有元件长一个样
+       ⚠️ **一律零彩色**:白 / 黑 / 灰 / 透明,别加任何环境光的颜色(她点名不要蓝紫)。
+       ⚠️ **08-31 那条「不许有上缘高光线」仍然有效** —— 撤掉的是 `inset 0 1px 0` 那种
+          又粗又硬的白杠;现在的高光是**渐变的、柔的、不对称的**,两回事。
+       ⚠️ 阴影**刻意压到几乎没有**(她:「不要滥用阴影…更希望看到玻璃内部的明暗变化」)。
+
+       三档材质(别把它们调成一样,页面的空间层级全靠这个):
+         g1 主玻璃 = 卡片、面板、抽屉        —— 最厚、模糊最重、边缘最亮
+         g2 次玻璃 = 顶栏、标签栏、搜索框、顶栏按钮 —— 更透、更轻
+         g3 微玻璃 = 药丸、排序、勾选、小标签  —— 几乎融进背景,只留一点材质 */
+    --g1-fill: rgba(255, 255, 255, 0.36);
+    --g1-blur: blur(26px) saturate(0.55) brightness(1.05) contrast(1.02);
+    --g1-sheen:
+      radial-gradient(125% 150% at 4% -24%, rgba(255,255,255,.58), rgba(255,255,255,.12) 38%, rgba(255,255,255,0) 68%),
+      radial-gradient(80% 110% at 112% 116%, rgba(255,255,255,.20), rgba(255,255,255,0) 62%),
+      linear-gradient(177deg, rgba(255,255,255,.26) 0%, rgba(255,255,255,0) 26%, rgba(19,19,19,.045) 100%);
+    --g1-rim: linear-gradient(146deg,
+      rgba(255,255,255,.95) 0%, rgba(255,255,255,.42) 20%,
+      rgba(19,19,19,.055) 48%, rgba(19,19,19,.085) 74%, rgba(255,255,255,.60) 100%);
+    --g1-depth:
+      inset 0 12px 20px -16px rgba(255,255,255,.95),
+      inset 0 -14px 24px -18px rgba(19,19,19,.20);
+    /* ⚠️ 顶栏/标签栏/抽屉比卡片更「实」是刻意的:它们底下压着正文,太透会把下面的字透上来
+       (2026-09-03 截图上抓到过:搜索框背后的卡片正文清清楚楚) */
+    --g2-fill: rgba(255, 255, 255, 0.74);
+    --g2-blur: blur(34px) saturate(0.5) brightness(1.03) contrast(1.01);
+    --g2-sheen:
+      radial-gradient(140% 220% at 12% -60%, rgba(255,255,255,.40), rgba(255,255,255,0) 62%),
+      linear-gradient(180deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,0) 40%, rgba(19,19,19,.03) 100%);
+    --g2-rim: linear-gradient(150deg,
+      rgba(255,255,255,.70) 0%, rgba(255,255,255,.22) 26%,
+      rgba(19,19,19,.045) 60%, rgba(255,255,255,.34) 100%);
+    --g2-depth:
+      inset 0 10px 18px -16px rgba(255,255,255,.80),
+      inset 0 -10px 18px -18px rgba(19,19,19,.14);
+    --g3-fill: rgba(255, 255, 255, 0.18);
+    --g3-blur: blur(14px) saturate(0.5) brightness(1.02);
+    --g3-sheen:
+      linear-gradient(172deg, rgba(255,255,255,.34) 0%, rgba(255,255,255,0) 44%, rgba(19,19,19,.035) 100%);
+    --g3-rim: linear-gradient(150deg,
+      rgba(255,255,255,.75) 0%, rgba(255,255,255,.18) 34%,
+      rgba(19,19,19,.05) 70%, rgba(255,255,255,.30) 100%);
+    --g3-depth: inset 0 8px 14px -14px rgba(255,255,255,.85);
+    /* 悬停/聚焦时用的「厚一档的面」。⚠️ 悬停变化只走**材质**(面厚一点),
+       不走阴影、不走描边 —— 见 .bucket-row:hover 那几处。 */
+    --g1-fill-hi: rgba(255, 255, 255, 0.52);
+    --g3-fill-hi: rgba(255, 255, 255, 0.34);
+    /* 不支持 mask 的浏览器靠这一圈兜底(支持的会被 rim 盖住)。**别调大**:
+       所有者「不要让边框太明显」——边缘该是光,不是描边。 */
+    --glass-edge: rgba(19, 19, 19, 0.05);
     /* 底光。⚠️⚠️ 2026-09-03 当天来回改过三轮,**别照任何一版旧文改回去**,定稿是这版:
        ①原「1%、纯灰」(她 08-31 拿滑杆定的)—— 太淡,玻璃没东西可透,白盖白;
        ②改成「蓝 13% + 紫 10%」的彩光 —— 她说「**我并不想要这么高的饱和度**」;
@@ -144,11 +194,19 @@
        不是纯灰。2026-09-03 演练那条「底光是中性灰,没有饱和度」当场抓到的。 */
     --wash-a: rgba(19, 19, 19, 0.050);
     --wash-b: rgba(19, 19, 19, 0.038);
-    /* Breath 评分条用(JS 靠 cssVar() 现读,别写死在 JS 里)。
-       ⚠️ 原来这里还有 --net-permanent / --net-archived / --net-line / --canvas-bg 四个,
-       是「记忆网络」页的画布在用;那一页 2026-09-03 已删,四个变量跟着删掉。 */
-    --net-dynamic: var(--color-clay);
-    --net-feel: var(--color-fig);
+    /* ══ 场景层:玻璃背后的那些东西(2026-09-03 新增)══════════════════════
+       所有者原话:「**不要让玻璃组件漂浮在一张完全平坦的黑色背景上**」。
+       上面那三团 `--wash-*` 是**平面上的底光**,这里再加一层**有远近的场景**:
+       两团比底色亮的「光源」+ 两团比底色暗的「阴面」,尺寸/位置**故意不对称**,
+       所以滚动时每张卡片背后透出来的明暗都不一样 —— 这才是「隔着玻璃看东西」。
+       ⚠️ **全部零饱和**(白 / 黑,不带任何色相),演练里钉着。
+       ⚠️ 别把它们调到看不见(那就回到「白盖白」),也别调到显脏。 */
+    --scene-hi-1: rgba(255, 255, 255, 0.95);
+    --scene-hi-2: rgba(255, 255, 255, 0.60);
+    --scene-lo-1: rgba(19, 19, 19, 0.105);
+    --scene-lo-2: rgba(19, 19, 19, 0.065);
+    /* 颗粒:极弱的噪点,让大块渐变不发"塑料"。⚠️ 是灰的(SVG 里 saturate=0) */
+    --grain-a: 0.05;
   }
 
   /* 跟随系统深浅色。官端自己是靠 class 切的,我们没有开关,就认系统。 */
@@ -183,14 +241,67 @@
       --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.30);
       --shadow-card-hover: 0 4px 14px rgba(0, 0, 0, 0.45);
       --shadow-panel: 0 8px 40px rgba(0, 0, 0, 0.55);
-      --glass-chrome: rgba(19, 19, 19, 0.68);
-      --glass-card: rgba(255, 255, 255, 0.07);   /* 白纱,不是灰块 */
-      --glass-soft: rgba(255, 255, 255, 0.05);
-      --glass-edge: rgba(255, 255, 255, 0.10);   /* 均匀描边 */
+      /* 语义色深色版:同样零彩色,靠明度区分(见浅色那段的说明) */
+      --positive: var(--neutral-400);
+      --negative: var(--neutral-200);      /* 深色下靠「最亮」跳出来,对应浅色的「最重的黑」。⚠️ 别用纯白:删除键那圈描边会刺眼 */
+      --warning: var(--neutral-400);
+      --bar-topic: var(--neutral-050);
+      --bar-emotion: var(--neutral-300);
+      --bar-time: var(--neutral-500);
+      --bar-importance: var(--neutral-700);
+      /* ══ 玻璃三档(深色)══ 结构和浅色那段一一对应,只换明暗方向:
+         深色下"光"来自白色的极低透明度,"暗"来自更深的灰 —— 两边都零饱和。
+         ⚠️ 深色的面要**比浅色更透**:底本来就深,面一厚就看不出后面有东西。
+         ⚠️⚠️ **2026-09-03 深色整体调柔过一轮**(所有者:「**黑色那个对比太强烈了 能调柔和一点吗**」)。
+            改的是**反差**,不是配色:①暗团不再用纯黑(见下面 `--scene-lo-*`);
+            ②高光和内侧明暗一律减档;③模糊里的 `brightness` 收小(原来玻璃被提得比底亮太多)。
+            **别照旧值调回去**(原值:场景暗团 .60/.40、g1 边缘高光 .42、g1 厚度 .28/.60、brightness 1.16)。 */
+      --g1-fill: rgba(255, 255, 255, 0.055);
+      --g1-blur: blur(28px) saturate(0.55) brightness(1.08) contrast(1.01);
+      --g1-sheen:
+        radial-gradient(125% 150% at 4% -24%, rgba(255,255,255,.065), rgba(255,255,255,.02) 38%, rgba(255,255,255,0) 68%),
+        radial-gradient(80% 110% at 112% 116%, rgba(255,255,255,.03), rgba(255,255,255,0) 62%),
+        linear-gradient(177deg, rgba(255,255,255,.035) 0%, rgba(255,255,255,0) 28%, rgba(0,0,0,.055) 100%);
+      --g1-rim: linear-gradient(146deg,
+        rgba(255,255,255,.24) 0%, rgba(255,255,255,.085) 22%,
+        rgba(255,255,255,.02) 50%, rgba(0,0,0,.10) 74%, rgba(255,255,255,.12) 100%);
+      --g1-depth:
+        inset 0 12px 22px -16px rgba(255,255,255,.16),
+        inset 0 -14px 26px -18px rgba(0,0,0,.30);
+      --g2-fill: rgba(19, 19, 19, 0.76);      /* 同浅色那条:顶栏太透会透出正文 */
+      --g2-blur: blur(34px) saturate(0.5) brightness(1.04) contrast(1.01);
+      --g2-sheen:
+        radial-gradient(140% 220% at 12% -60%, rgba(255,255,255,.045), rgba(255,255,255,0) 62%),
+        linear-gradient(180deg, rgba(255,255,255,.025) 0%, rgba(255,255,255,0) 42%, rgba(0,0,0,.055) 100%);
+      --g2-rim: linear-gradient(150deg,
+        rgba(255,255,255,.17) 0%, rgba(255,255,255,.06) 28%,
+        rgba(0,0,0,.10) 62%, rgba(255,255,255,.09) 100%);
+      --g2-depth:
+        inset 0 10px 20px -16px rgba(255,255,255,.13),
+        inset 0 -10px 20px -18px rgba(0,0,0,.24);
+      --g3-fill: rgba(255, 255, 255, 0.035);
+      --g3-blur: blur(14px) saturate(0.5) brightness(1.05);
+      --g3-sheen:
+        linear-gradient(172deg, rgba(255,255,255,.04) 0%, rgba(255,255,255,0) 46%, rgba(0,0,0,.045) 100%);
+      --g3-rim: linear-gradient(150deg,
+        rgba(255,255,255,.18) 0%, rgba(255,255,255,.05) 34%,
+        rgba(0,0,0,.08) 70%, rgba(255,255,255,.08) 100%);
+      --g3-depth: inset 0 8px 16px -14px rgba(255,255,255,.14);
+      --g1-fill-hi: rgba(255, 255, 255, 0.085);
+      --g3-fill-hi: rgba(255, 255, 255, 0.065);
+      --glass-edge: rgba(255, 255, 255, 0.055);
       /* ⚠️ 2026-09-03 由 1% 提到 4.5%/3.5%,和浅色同一个道理:**1% 上玻璃没东西可透**。
          白色本身就是零饱和,所以这两团不用改颜色,只改强度。 */
       --wash-a: rgba(255, 255, 255, 0.045);
       --wash-b: rgba(255, 255, 255, 0.035);
+      /* 场景层(深色)。⚠️ **暗团不许用纯黑** —— 底色 `#131313` 上压一层 60% 的黑会掉到近 `#080808`,
+         卡片一亮就是一记硬反差,所有者原话「黑色那个对比太强烈了」。现在压的是**更深的灰**、
+         而且只压一档;亮团也跟着减。**层次还在,只是不再拉到两头。** */
+      --scene-hi-1: rgba(255, 255, 255, 0.065);
+      --scene-hi-2: rgba(255, 255, 255, 0.038);
+      --scene-lo-1: rgba(10, 10, 10, 0.34);
+      --scene-lo-2: rgba(10, 10, 10, 0.20);
+      --grain-a: 0.05;
     }
   }
 
@@ -213,26 +324,100 @@
     --r-pill: 999px;
   }
   @supports (corner-shape: squircle) {
-    .bucket-row, .letter-card, .todo-card, .todo-check, .detail-panel, .config-section,
+    .bucket-row, .letter-card, .letters-intro, .todo-card, .todo-check, .todo-row,
+    .breath-flow, .breath-info, .detail-panel, .config-section,
     .btn, .btn-secondary, .btn-danger, input, select, textarea,
     #import-upload-zone, #auth-overlay > div {
       corner-shape: squircle;
     }
+    /* ⚠️ **`corner-shape` 不会自动继承到伪元素**(`border-radius: inherit` 只管半径)。
+       不写这条的话:卡片是 squircle,而玻璃的**边缘高光那圈环和厚度那层**还是普通圆弧,
+       四个角上对不齐 —— 这一条同样只有支持 `corner-shape` 的浏览器(她的 iPhone)看得见,
+       容器里的 chromium 测不出来。**圆角本身一个数没动,五档还是那五档。** */
+    :is(.glass-1, .bucket-row, .letter-card, .letters-intro, .todo-card, .config-section, .breath-info, .breath-flow,
+        .glass-2, .header, .hbtn,
+        .glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button)::before,
+    :is(.glass-1, .bucket-row, .letter-card, .letters-intro, .todo-card, .config-section, .breath-info, .breath-flow,
+        .glass-2, .header, .hbtn,
+        .glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button)::after {
+      corner-shape: inherit;
+    }
+  }
+
+  /* ── iOS 那种连续圆角的**兜底那条路**(2026-09-03 新增)──────────────────
+     所有者:「**我要的是 Apple / iOS 系统 UI 那种自然、柔和、圆润的圆角,
+     不是普通 CSS border-radius 的圆角…没有明显的四分之一圆弧感**」。
+     ⚠️⚠️ **上面那条 `corner-shape` 只有 Chrome 139+ 认,Safari 至今不认** ——
+     也就是说**她 iPhone 上一直看到的是普通圆弧**;~~此前手册写「她的 iPhone Safari 吃到 squircle」~~
+     **那是没验过的假设,已撤销**。所以这儿再给一条兜底:用一张**超椭圆**(n=4,
+     `|x/r|⁴+|y/r|⁴=1`)的 `-webkit-mask-box-image` 直接把形状切出来。
+     `-webkit-mask-box-image` 是 WebKit 十几年的老属性,Safari/Chrome 都认。
+     **两条路给的是同一条曲线**,曲率连续、没有圆弧接缝。
+     ⚠️ **别把这段当冗余删掉**,删了她手机上就退回普通圆角。
+     ⚠️ 只挂在**卡片**上(她说的就是卡片):药丸/胶囊/输入框不参与,
+        `.detail-panel`(整屏抽屉,本来就没圆角)和登录框也不参与。
+     ⚠️ 代价一条,已知情:mask 会把**元件外面的投影**一起裁掉。卡片那点投影是
+        `0 1px 3px` 的 4%(浅)/ 30%(深),肉眼看不出;**别为了找回它去掉 mask**。
+     **改半径只改 `--sq`**(跟着 `--r-*` 那张表走);曲线本身是采样出来的折线,
+     12 段/角、两位小数,肉眼看不出折点。 */
+  @supports not (corner-shape: squircle) {
+    .bucket-row, .letter-card, .letters-intro, .breath-flow, .config-section, .todo-check { --sq: var(--r-4); }
+    .todo-card { --sq: var(--r-5); }
+    .breath-info { --sq: var(--r-3); }
+    .bucket-row, .letter-card, .letters-intro, .breath-flow, .config-section,
+  .todo-card, .breath-info, .todo-check {
+      /* ⚠️ 半径必须归零:mask 只能"减",留着圆角的话切出来的还是那段圆弧 */
+      border-radius: 0;
+      /* ⚠️ border 留着(尺寸不能变),只是不再画线 —— 边线交给下面那圈超椭圆的环 */
+      border-color: transparent;
+      -webkit-mask-box-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,0.0 60.0,0.0 74.5,0.2 80.3,0.7 84.7,1.6 88.3,2.8 91.2,4.4 93.6,6.4 95.6,8.8 97.2,11.7 98.4,15.3 99.3,19.7 99.8,25.5 100.0,40.0 100.0,60.0 99.8,74.5 99.3,80.3 98.4,84.7 97.2,88.3 95.6,91.2 93.6,93.6 91.2,95.6 88.3,97.2 84.7,98.4 80.3,99.3 74.5,99.8 60.0,100.0 40.0,100.0 25.5,99.8 19.7,99.3 15.3,98.4 11.7,97.2 8.8,95.6 6.4,93.6 4.4,91.2 2.8,88.3 1.6,84.7 0.7,80.3 0.2,74.5 0.0,60.0 0.0,40.0 0.2,25.5 0.7,19.7 1.6,15.3 2.8,11.7 4.4,8.8 6.4,6.4 8.8,4.4 11.7,2.8 15.3,1.6 19.7,0.7 25.5,0.2 40.0,0.0 Z' fill='black'/%3E%3C/svg%3E") 40% fill / var(--sq) stretch;
+    }
+    /* 边缘高光:换成**同一条超椭圆**描出来的环(原来那圈是 mask-composite 拼的矩形环,
+       在这条路下会被切角,四个角上会露出两条直线撞在一起)。
+       ⚠️ 描边宽度是按「40 单位画到 --sq px」算好的,**换半径就要换对应那张环**。 */
+    .bucket-row::before, .letter-card::before, .letters-intro::before, .breath-flow::before, .config-section::before, .todo-card::before, .breath-info::before, .todo-check::before {
+      border-radius: 0;
+      padding: 0;
+      -webkit-mask: none;
+      mask: none;
+      -webkit-mask-composite: source-over;
+    }
+    .bucket-row::before, .letter-card::before, .letters-intro::before, .breath-flow::before, .config-section::before,
+    .todo-check::before { -webkit-mask-box-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,1.0 60.0,1.0 74.1,1.2 79.8,1.7 84.1,2.5 87.6,3.7 90.4,5.3 92.8,7.2 94.7,9.6 96.3,12.4 97.5,15.9 98.3,20.2 98.8,25.9 99.0,40.0 99.0,60.0 98.8,74.1 98.3,79.8 97.5,84.1 96.3,87.6 94.7,90.4 92.8,92.8 90.4,94.7 87.6,96.3 84.1,97.5 79.8,98.3 74.1,98.8 60.0,99.0 40.0,99.0 25.9,98.8 20.2,98.3 15.9,97.5 12.4,96.3 9.6,94.7 7.2,92.8 5.3,90.4 3.7,87.6 2.5,84.1 1.7,79.8 1.2,74.1 1.0,60.0 1.0,40.0 1.2,25.9 1.7,20.2 2.5,15.9 3.7,12.4 5.3,9.6 7.2,7.2 9.6,5.3 12.4,3.7 15.9,2.5 20.2,1.7 25.9,1.2 40.0,1.0 Z' fill='none' stroke='black' stroke-width='2.00'/%3E%3C/svg%3E") 40% / var(--sq) stretch; }
+    .todo-card::before { -webkit-mask-box-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,0.8 60.0,0.8 74.2,0.9 80.0,1.4 84.3,2.3 87.7,3.5 90.6,5.1 93.0,7.0 94.9,9.4 96.5,12.3 97.7,15.7 98.6,20.0 99.1,25.8 99.2,40.0 99.2,60.0 99.1,74.2 98.6,80.0 97.7,84.3 96.5,87.7 94.9,90.6 93.0,93.0 90.6,94.9 87.7,96.5 84.3,97.7 80.0,98.6 74.2,99.1 60.0,99.2 40.0,99.2 25.8,99.1 20.0,98.6 15.7,97.7 12.3,96.5 9.4,94.9 7.0,93.0 5.1,90.6 3.5,87.7 2.3,84.3 1.4,80.0 0.9,74.2 0.8,60.0 0.8,40.0 0.9,25.8 1.4,20.0 2.3,15.7 3.5,12.3 5.1,9.4 7.0,7.0 9.4,5.1 12.3,3.5 15.7,2.3 20.0,1.4 25.8,0.9 40.0,0.8 Z' fill='none' stroke='black' stroke-width='1.54'/%3E%3C/svg%3E") 40% / var(--sq) stretch; }
+    .breath-info::before { -webkit-mask-box-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,1.7 60.0,1.7 73.8,1.8 79.5,2.3 83.7,3.2 87.1,4.3 89.9,5.9 92.2,7.8 94.1,10.1 95.7,12.9 96.8,16.3 97.7,20.5 98.2,26.2 98.3,40.0 98.3,60.0 98.2,73.8 97.7,79.5 96.8,83.7 95.7,87.1 94.1,89.9 92.2,92.2 89.9,94.1 87.1,95.7 83.7,96.8 79.5,97.7 73.8,98.2 60.0,98.3 40.0,98.3 26.2,98.2 20.5,97.7 16.3,96.8 12.9,95.7 10.1,94.1 7.8,92.2 5.9,89.9 4.3,87.1 3.2,83.7 2.3,79.5 1.8,73.8 1.7,60.0 1.7,40.0 1.8,26.2 2.3,20.5 3.2,16.3 4.3,12.9 5.9,10.1 7.8,7.8 10.1,5.9 12.9,4.3 16.3,3.2 20.5,2.3 26.2,1.8 40.0,1.7 Z' fill='none' stroke='black' stroke-width='3.33'/%3E%3C/svg%3E") 40% / var(--sq) stretch; }
+    .bucket-row::after, .letter-card::after, .letters-intro::after, .breath-flow::after, .config-section::after, .todo-card::after, .breath-info::after, .todo-check::after { border-radius: 0; }
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
-  /* 浏览器不支持毛玻璃(或系统开了「降低透明度」)就退回实色 —— 半透明没了模糊会发灰糊字 */
+  /* 浏览器不支持毛玻璃(或系统开了「降低透明度」)就退回实色 —— 半透明没了模糊会发灰糊字。
+     ⚠️ 退回的时候**面、光泽、边缘高光、厚度四样一起关**,只留实色 + 一圈淡描边;
+     只关一样会剩下「实色卡片上贴着一圈亮边」,比没有还难看。 */
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     :root {
-      --glass-chrome: var(--bg); --glass-card: var(--surface); --glass-soft: var(--surface);
-      --glass-edge: transparent;
+      --g1-fill: var(--surface); --g2-fill: var(--bg); --g3-fill: var(--surface);
+      --g1-sheen: none; --g2-sheen: none; --g3-sheen: none;
+      --g1-rim: none; --g2-rim: none; --g3-rim: none;
+      --g1-depth: none; --g2-depth: none; --g3-depth: none;
+      --g1-fill-hi: var(--surface-sunken); --g3-fill-hi: var(--surface-sunken);
+      --glass-edge: var(--border);
+      --scene-hi-1: transparent; --scene-hi-2: transparent;
+      --scene-lo-1: transparent; --scene-lo-2: transparent;
+      --grain-a: 0;
     }
   }
   @media (prefers-reduced-transparency: reduce) {
     :root {
-      --glass-chrome: var(--bg); --glass-card: var(--surface); --glass-soft: var(--surface);
-      --glass-edge: transparent;
+      --g1-fill: var(--surface); --g2-fill: var(--bg); --g3-fill: var(--surface);
+      --g1-sheen: none; --g2-sheen: none; --g3-sheen: none;
+      --g1-rim: none; --g2-rim: none; --g3-rim: none;
+      --g1-depth: none; --g2-depth: none; --g3-depth: none;
+      --g1-fill-hi: var(--surface-sunken); --g3-fill-hi: var(--surface-sunken);
+      --glass-edge: var(--border);
+      --scene-hi-1: transparent; --scene-hi-2: transparent;
+      --scene-lo-1: transparent; --scene-lo-2: transparent;
+      --grain-a: 0;
     }
   }
 
@@ -256,6 +441,131 @@
     -webkit-font-smoothing: antialiased;
     -webkit-tap-highlight-color: transparent;
   }
+
+  /* ══ 场景层:玻璃背后的东西(2026-09-03 新增)═══════════════════════════
+     两片**固定**的层,躺在所有内容底下(z-index 负,body 的背景色再往下):
+       body::before = 明暗形状(两团亮、两团暗,大小位置故意不对称)
+       body::after  = 颗粒(SVG feTurbulence,`saturate 0` → **灰的**)
+     ⚠️ 它们**不参与任何交互**(pointer-events:none),也不该被任何元件盖住 z 序:
+        谁要压在上面,自己有背景就行,别去给它们加正的 z-index。
+     ⚠️ 固定定位 = 页面滚动时场景不动、玻璃在动 —— 「玻璃从东西上面滑过去」
+        这个感觉就是这么来的,**别改成 absolute**。 */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: -12vmax;                 /* 往外撑一圈,免得模糊的团在屏幕边上出现硬边 */
+    z-index: -2;
+    pointer-events: none;
+    /* 七团大小/明暗都不同的形状 —— **别改成两三团大的**:团太大太少的话,
+       一整张卡片背后是同一个明度,玻璃又变回"白盖白"。要的是**卡片会跨过明暗交界**。 */
+    background:
+      radial-gradient(38vmax 30vmax at 12% 4%,  var(--scene-hi-1), transparent 62%),
+      radial-gradient(22vmax 20vmax at 74% 12%, var(--scene-hi-2), transparent 66%),
+      radial-gradient(26vmax 34vmax at 98% 50%, var(--scene-lo-2), transparent 64%),
+      radial-gradient(44vmax 36vmax at 64% 90%, var(--scene-lo-1), transparent 62%),
+      radial-gradient(18vmax 18vmax at 26% 60%, var(--scene-hi-2), transparent 60%),
+      radial-gradient(30vmax 24vmax at -4% 94%, var(--scene-lo-2), transparent 60%),
+      radial-gradient(14vmax 12vmax at 90% 74%, var(--scene-hi-2), transparent 58%);
+  }
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: var(--grain-a);
+    /* ⚠️ 内嵌的 SVG 噪点,**不引任何外部资源**(这个后台只为字体连过一次外网)。
+       `feColorMatrix saturate 0` 是关键:feTurbulence 生成的是彩色噪点,不归零就破了黑白灰。 */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 160px 160px;
+    mix-blend-mode: overlay;
+  }
+
+  /* ══ 玻璃材质的公共实现(2026-09-03)═══════════════════════════════════
+     三档共用这一套写法,差别全在 `--g1/2/3-*` 那组变量里(见 :root)。
+     一块玻璃 = 面(半透明底色)+ 光泽(background-image 的几层渐变)
+              + 模糊(backdrop-filter,顺带 brightness/contrast 影响背后)
+              + 边缘高光(::before,mask 出来的 1px 渐变环)
+              + 厚度(::after 的**极柔**内侧明暗)
+     ⚠️ `background-color` 必须留成半透明的 rgba(演练按它对账「是不是真玻璃」),
+        **别改成 `background:` 简写**把面和光泽合成一条。
+     ⚠️ 边缘高光走 ::before,**不写进元件自己的 box-shadow** —— 08-31 那条
+        「卡片不许有 inset 高光线」仍然钉在演练里,那说的是又粗又硬的 1px 白杠。 */
+     ⚠️ **成员表就是下面这三行 `:is(...)`** —— 新加一个玻璃元件只改成员表,
+        别在元件自己那儿再抄一份 background/backdrop-filter(抄一份就会各长各的)。
+        `.detail-panel` 和 `.tabs` **刻意只进「面」那一组**:它们是滚动容器,
+        绝对定位的 ::before/::after 会跟着内容滚,所以这两个的厚度写在元件自己的 box-shadow 上。
+        `.search-bar input` 同理不进伪元素组 —— **input 上的 ::before/::after 不渲染**。 */
+  :is(.glass-1, .bucket-row, .letter-card, .letters-intro, .todo-card, .config-section, .breath-info, .breath-flow),
+  :is(.glass-2, .header, .hbtn),
+  :is(.glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button) { position: relative; }
+  .glass-1, .bucket-row, .letter-card, .letters-intro, .todo-card, .config-section,
+  .breath-info, .breath-flow {
+    background-color: var(--g1-fill);
+    background-image: var(--g1-sheen);
+    -webkit-backdrop-filter: var(--g1-blur);
+    backdrop-filter: var(--g1-blur);
+    border: 1px solid var(--glass-edge);
+  }
+  .glass-2, .header, .tabs, .detail-panel, .hbtn, .search-bar input {
+    background-color: var(--g2-fill);
+    background-image: var(--g2-sheen);
+    -webkit-backdrop-filter: var(--g2-blur);
+    backdrop-filter: var(--g2-blur);
+  }
+  /* 滚动容器 / input:厚度只能写在元件自己身上(伪元素会跟着内容滚,或者根本不渲染) */
+  .tabs, .detail-panel, .search-bar input { box-shadow: var(--g2-depth); }
+  .glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button {
+    background-color: var(--g3-fill);
+    background-image: var(--g3-sheen);
+    -webkit-backdrop-filter: var(--g3-blur);
+    backdrop-filter: var(--g3-blur);
+    border: 1px solid var(--glass-edge);
+  }
+  /* 厚度:内侧的两道**极柔**明暗(负 spread 把它摊开,所以不会出现硬线)。
+     ⚠️ 别把 blur 调小 —— 一调小就变回那道被否掉的白杠。 */
+  :is(.glass-1, .bucket-row, .letter-card, .letters-intro, .todo-card, .config-section, .breath-info, .breath-flow)::after,
+  :is(.glass-2, .header, .hbtn)::after,
+  :is(.glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button)::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+  :is(.glass-1, .bucket-row, .letter-card, .letters-intro, .todo-card, .config-section, .breath-info, .breath-flow)::after
+    { box-shadow: var(--g1-depth); }
+  :is(.glass-2, .header, .hbtn)::after { box-shadow: var(--g2-depth); }
+  :is(.glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button)::after
+    { box-shadow: var(--g3-depth); }
+  /* 边缘高光:1px 的**渐变环**。做法是画一整块渐变,再用 mask 把中间掏空。
+     ⚠️ 用 @supports 包着:不支持 mask 合成的浏览器整条不生效,退回上面那圈 --glass-edge 描边
+        (若不包,渐变会糊住整张卡)。 */
+  @supports ((-webkit-mask-composite: xor) or (mask-composite: exclude)) {
+    :is(.glass-1, .bucket-row, .letter-card, .letters-intro, .todo-card, .config-section, .breath-info, .breath-flow)::before,
+    :is(.glass-2, .header, .hbtn)::before,
+    :is(.glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button)::before {
+      content: '';
+      position: absolute;
+      inset: -1px;                 /* 盖住那 1px 边框本身,不是在它里面再画一圈 */
+      border-radius: inherit;
+      padding: 1px;
+      pointer-events: none;
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      mask-composite: exclude;
+    }
+    :is(.glass-1, .bucket-row, .letter-card, .letters-intro, .todo-card, .config-section, .breath-info, .breath-flow)::before
+      { background: var(--g1-rim); }
+    :is(.glass-2, .header, .hbtn)::before { background: var(--g2-rim); }
+    :is(.glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button)::before
+      { background: var(--g3-rim); }
+  }
+  /* 玻璃元件里的内容要压在这两层伪元素之上(伪元素本身 pointer-events:none,只是画的) */
+  .bucket-row > *, .letter-card > *, .todo-card > *, .config-section > *,
+  .letters-intro > *, .breath-flow > *, .header > *, .hbtn > *,
+  .filter-btn > *, .sort-pill > *, .todo-check > *, .todo-tag > * { position: relative; z-index: 1; }
   .serif {
     font-family: 'Cormorant Garamond', Georgia, 'Times New Roman',
                  'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', serif;
@@ -264,10 +574,8 @@
   /* ── 顶栏:标题+按钮一行、统计一行、搜索独占一行(照所有者给的效果图) ── */
   .header {
     padding: 20px 20px 14px;
-    background: var(--glass-chrome);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
-    border-bottom: 1px solid var(--border);
+    /* 玻璃 g2 档:面/模糊/边缘高光/厚度都由上面那套公共实现给,这儿不再自带一份 */
+    border-bottom: 1px solid var(--glass-edge);
     position: sticky;
     top: 0;
     z-index: 50;
@@ -304,14 +612,10 @@
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    /* ⚠️ 顶栏这几颗是**玻璃**(所有者 2026-09-03:「我要玻璃质感」):
-       白纱 + 模糊 + 一圈淡描边 + 极轻的影,和卡片同一套。
-       ~~此前描边用的是 --border-strong~~ —— 那是一道硬灰边,压在玻璃上显脏,已改成 --glass-edge。 */
-    background: var(--glass-card);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
+    /* ⚠️ 顶栏这几颗是**玻璃**(所有者 2026-09-03:「我要玻璃质感」)。
+       ~~此前和卡片同一套~~ —— 现在归 **g2 档**(比卡片更透更轻),
+       面/模糊/边缘高光/厚度全走公共实现,这儿只管形状和字色。 */
     border: 1px solid var(--glass-edge);
-    box-shadow: var(--shadow-card);
     color: var(--text-dim);
     border-radius: 999px;
     padding: 7px 14px;
@@ -322,7 +626,14 @@
     text-decoration: none;
     transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
   }
-  .hbtn:hover { color: var(--text); border-color: var(--border-strong); box-shadow: var(--shadow-card-hover); }
+  /* ⚠️ 悬停**不加大阴影**(所有者:「不要滥用阴影…更希望看到玻璃内部的明暗变化」)——
+     改成「玻璃自己亮一点」:面加厚一档 + 模糊里的 brightness 提一点。 */
+  .hbtn:hover {
+    color: var(--text);
+    background-color: var(--g1-fill-hi);
+    -webkit-backdrop-filter: var(--g1-blur);
+    backdrop-filter: var(--g1-blur);
+  }
   /* 只有图标的顶栏按钮。
      ⚠️ **是横着的椭圆(胶囊),不是正圆** —— 所有者 2026-09-03 拿图指名要这种:
      「不要这种圆形,想要这种椭圆」。~~此前是 34×34 的正圆~~,别改回去。
@@ -330,12 +641,11 @@
   .hbtn-ico { width: 52px; height: 34px; padding: 0; justify-content: center; }
   .hbtn-ico .ico { width: 17px; height: 17px; }
   .search-bar { margin-top: 12px; }
+  /* 搜索框:g2 档玻璃(面/模糊在公共实现里)。⚠️ input 上不渲染 ::before/::after,
+     所以它的边缘和厚度只能靠自己这圈描边 + box-shadow。 */
   .search-bar input {
     width: 100%;
-    background: var(--glass-soft);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
-    border: 1px solid var(--border-strong);
+    border: 1px solid var(--glass-edge);
     color: var(--text);
     padding: 11px 18px;
     border-radius: 999px;
@@ -346,7 +656,7 @@
   .search-bar input:focus {
     outline: none;
     border-color: var(--accent-text);
-    box-shadow: 0 0 0 3px var(--accent-glow);
+    box-shadow: var(--g2-depth), 0 0 0 3px var(--accent-glow);
   }
   .search-bar input::placeholder { color: var(--text-light); }
 
@@ -354,10 +664,8 @@
   .tabs {
     display: flex;
     gap: 2px;
-    background: var(--glass-chrome);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
-    border-bottom: 1px solid var(--border);
+    /* g2 档玻璃(公共实现);⚠️ 它是横向滚动容器,厚度写在自己的 box-shadow 上 */
+    border-bottom: 1px solid var(--glass-edge);
     padding: 0 20px;
     overflow-x: auto;
     scrollbar-width: none;
@@ -390,15 +698,12 @@
     font-size: 13px;
     border: 1px solid var(--glass-edge);
     border-radius: 999px;
-    background: var(--glass-soft);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
-    color: var(--chip-fg);
+    color: var(--chip-fg);              /* 面/模糊/边缘/厚度 = g3 档,见公共实现 */
     cursor: pointer;
     font-family: inherit;
-    transition: all 0.18s ease;
+    transition: background-color .18s ease, color .18s ease;
   }
-  .filter-btn:hover { border-color: var(--text-light); color: var(--text); }
+  .filter-btn:hover { color: var(--text); background-color: var(--g3-fill-hi); }
   .filter-btn.active {
     color: var(--accent-fg);
     background: var(--accent);          /* ⚠️ 这颗刻意不透明:上面压着字,透了就糊 */
@@ -406,6 +711,8 @@
     box-shadow: none;
     font-weight: 500;
   }
+  /* 选中的那颗不是玻璃了(它是实心的),边缘高光和厚度一并撤掉 —— 留着会在实色上显出一圈脏边 */
+  .filter-btn.active::before, .filter-btn.active::after { display: none; }
 
   /* ── 排序(2026-09-03 重做)──────────────────────────
      ⚠️ ~~原来是「排序」两个字 + 一个原生 `<select>`~~ —— 所有者原话「**那个排序 ui 好丑啊**」。
@@ -419,14 +726,12 @@
   .sort-pill {
     position: relative; display: inline-flex; align-items: center; gap: 6px;
     padding: 7px 12px; border-radius: var(--r-pill);
-    border: 1px solid var(--glass-edge); background: var(--glass-soft);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-edge);   /* 面/模糊/边缘/厚度 = g3 档,见公共实现 */
     color: var(--chip-fg); font-size: 13px; cursor: pointer;
-    transition: border-color .18s ease, color .18s ease;
+    transition: background-color .18s ease, color .18s ease;
   }
-  .sort-pill:hover { border-color: var(--border-strong); color: var(--text); }
-  .sort-pill:focus-within { border-color: var(--border-strong); outline: none; }
+  .sort-pill:hover { color: var(--text); background-color: var(--g3-fill-hi); }
+  .sort-pill:focus-within { background-color: var(--g3-fill-hi); outline: none; }
   .sort-pill .ico { width: 15px; height: 15px; color: var(--text-light); }
   .sort-pill .sort-caret { width: 14px; height: 14px; stroke-width: 2; }
   .sort-pill select {
@@ -442,20 +747,19 @@
     display: block;
     padding: 16px 18px;
     border-radius: var(--r-4);
-    background: var(--glass-card);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
-    border: 1px solid var(--glass-edge);
+    /* 面/模糊/光泽/边缘高光/厚度 = g1 主玻璃,全在公共实现里。
+       ⚠️ 这儿只留一点点投影 —— 所有者:「不要滥用阴影」,分层交给材质,不交给阴影。 */
     box-shadow: var(--shadow-card);
     cursor: pointer;
-    transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    transition: box-shadow 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
   }
   /* 回收站的卡片长得和记忆卡片一样,但它不可点 —— 别给手型和悬停位移 */
   .trash-row { cursor: default; }
   .trash-row:hover { transform: none; box-shadow: var(--shadow-card); }
+  /* ⚠️ 悬停**不放大阴影**,改成「这块玻璃自己厚一点、亮一点」 */
   .bucket-row:hover {
-    border-color: var(--border-strong);
-    box-shadow: var(--shadow-card-hover);
+    background-color: var(--g1-fill-hi);
+    box-shadow: var(--shadow-card);
     transform: translateY(-1px);
   }
   .row-top { display: flex; align-items: baseline; gap: 8px; }
@@ -482,6 +786,11 @@
   .ico-fill { fill: currentColor; stroke: none; }
   .bucket-row .icon .ico { width: 17px; height: 17px; }
   button .ico, .btn-secondary .ico, .btn-danger .ico { margin-right: 5px; }
+  /* ⚠️ **只有图标、没有字的按钮不能吃这 5px** —— 那点右边距会把图标整个推到左边。
+     2026-09-03 所有者在便利贴那颗勾选上看出来的(「圆圈居中」):现场量是**偏左 2.5px**
+     (= 5px 的一半,因为它是 `place-items:center` 居中的)。加这条之后为 0。
+     演练钉着一条「勾选里的圆圈居中(±1px)」。 */
+  button .ico:only-child { margin-right: 0; }
   .bucket-row .name {
     font-size: 16px;
     font-weight: 600;
@@ -549,8 +858,7 @@
 
   /* ── 信箱 ── */
   .letters-intro {
-    background: var(--glass-card); -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur); border: 1px solid var(--border);
+    border: 1px solid var(--glass-edge);   /* 面/模糊/边缘/厚度 = g1 主玻璃,见公共实现 */
     border-radius: var(--r-4); padding: 18px 20px; margin-bottom: 18px;
     line-height: 1.8; font-size: 13px; color: var(--text-dim);
     box-shadow: var(--shadow-card);
@@ -575,8 +883,7 @@
     color: var(--text);
   }
   .letter-card {
-    background: var(--glass-card); -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur); border: 1px solid var(--border);
+    border: 1px solid var(--glass-edge);   /* g1 主玻璃 */
     border-radius: var(--r-4); padding: 18px 20px; margin-bottom: 14px;
     box-shadow: var(--shadow-card);
   }
@@ -600,10 +907,7 @@
   .todo-wall { display: flex; flex-direction: column; gap: 14px; }
   .todo-card {
     padding: 4px 6px 6px;
-    background: var(--glass-card);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
-    border: 1px solid var(--glass-edge);
+    border: 1px solid var(--glass-edge);   /* g1 主玻璃 */
     border-radius: var(--r-5);
     box-shadow: var(--shadow-card);
   }
@@ -633,16 +937,16 @@
      别为了「勾上要更明显」把 --accent 填回来。 */
   .todo-check {
     flex: 0 0 auto; width: 38px; height: 38px; display: grid; place-items: center;
-    border: 1px solid var(--glass-edge); border-radius: var(--r-3);
-    background: var(--glass-soft);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
-    cursor: pointer; font-family: inherit; padding: 0;
+    /* ⚠️ 圆角走 `--r-4`(2026-09-03 所有者:「**那个方块也要圆角**」)。
+       38px 的方块上浏览器会把 20px 夹到 19px = **整块超椭圆**,正是 iOS 那种小方块;
+       ~~原来是 `--r-3`~~ 看着还是个方的。**仍然是那五档里的一档,没有新造数值。** */
+    border: 1px solid var(--glass-edge); border-radius: var(--r-4);
+    cursor: pointer; font-family: inherit; padding: 0;   /* g3 微玻璃 */
     transition: background-color .15s ease, border-color .15s ease;
   }
   .todo-check:hover { border-color: var(--border-strong); }
   .todo-check .ico { width: 20px; height: 20px; color: var(--text-light); stroke-width: 1.5; }
-  .todo-row.is-done .todo-check { background: var(--glass-card); }
+  .todo-row.is-done .todo-check { background-color: var(--g3-fill-hi); }
   .todo-row.is-done .todo-check .ico { color: var(--text); }
 
   .todo-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
@@ -655,9 +959,7 @@
 
   .todo-tag {
     flex: 0 0 auto; padding: 5px 11px; border-radius: var(--r-pill);
-    border: 1px solid var(--glass-edge); background: var(--glass-soft);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-edge);   /* g3 微玻璃 */
     color: var(--text-light); font-size: 11.5px; white-space: nowrap;
   }
   .todo-row.is-done .todo-tag { background: transparent; border-color: transparent; }
@@ -687,13 +989,11 @@
      所以这儿刻意**不走 --accent** —— 和 .btn-primary 那套不一样,别去"统一"。 */
   .todo-add button {
     flex: 0 0 auto; width: 42px; height: 42px; display: grid; place-items: center;
-    background: var(--glass-soft); border: 1px solid var(--glass-edge); color: var(--text);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-edge); color: var(--text);   /* g3 微玻璃 */
     border-radius: 50%; cursor: pointer; font-family: inherit; padding: 0;
     transition: background-color .15s ease, border-color .15s ease;
   }
-  .todo-add button:hover { background: var(--glass-card); border-color: var(--border-strong); }
+  .todo-add button:hover { background-color: var(--g3-fill-hi); }
   .todo-add button .ico { width: 19px; height: 19px; stroke-width: 2; }
 
   /* ── 详情抽屉 ── */
@@ -703,16 +1003,15 @@
     top: 0;
     width: 440px;
     height: 100vh;
-    background: var(--glass-chrome);
-    -webkit-backdrop-filter: saturate(180%) blur(30px);
-    backdrop-filter: saturate(180%) blur(30px);
-    border-left: 1px solid var(--border);
+    /* g2 档玻璃(公共实现)。⚠️ 它是滚动容器,厚度写在自己的 box-shadow 上 */
+    border-left: 1px solid var(--glass-edge);
     padding: 32px 24px;
     overflow-y: auto;
     transform: translateX(100%);
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 100;
-    box-shadow: var(--shadow-panel);
+    /* 厚度(内侧极柔的明暗)+ 一点点投影。⚠️ 抽屉是滚动容器,所以厚度写在这儿不写伪元素 */
+    box-shadow: var(--g2-depth), var(--shadow-panel);
   }
   .detail-panel.open { transform: translateX(0); }
   .detail-panel .close-btn {
@@ -788,7 +1087,7 @@
     cursor: pointer;
     transition: all 0.18s ease;
   }
-  .btn-danger:hover { background: var(--negative); color: var(--color-gray-000); }
+  .btn-danger:hover { background: var(--negative); color: var(--bg); }   /* ⚠️ 压在上面的字要跟着底走:深色下 --negative 是白的 */
   .detail-form label {
     display: block;
     color: var(--text-light);
@@ -859,11 +1158,8 @@
   .config-section {
     margin-bottom: 20px;
     padding: 20px;
-    background: var(--glass-card);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
     border-radius: var(--r-4);
-    border: 1px solid var(--border);
+    border: 1px solid var(--glass-edge);   /* g1 主玻璃 */
     box-shadow: var(--shadow-card);
   }
   .config-section h3 {
@@ -987,11 +1283,8 @@
     margin-bottom: 18px;
     line-height: 1.8;
     padding: 16px 18px;
-    background: var(--glass-card);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
     border-radius: var(--r-3);
-    border: 1px solid var(--border);
+    border: 1px solid var(--glass-edge);   /* g1 主玻璃 */
   }
   .breath-info code {
     background: var(--chip-bg);
@@ -1045,10 +1338,7 @@
     gap: 8px;
     margin-bottom: 20px;
     padding: 14px 16px;
-    background: var(--glass-card);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
-    border: 1px solid var(--border);
+    border: 1px solid var(--glass-edge);   /* g1 主玻璃 */
     border-radius: var(--r-4);
     font-size: 12px;
     overflow-x: auto;
@@ -2373,7 +2663,7 @@ function closeDetail() {
 // ⚠️ 返回的必须是 #rrggbb:`color + '15'` 这类拼接都指着它。
 function cssVar(name) {
   var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return v || '#87867f';
+  return v || '#838383';   // ⚠️ 兜底也得是纯灰(neutral-500),别用官端那个暖灰
 }
 
 /* ── 自己画的一套线性图标(2026-09-03 换掉原来那些 emoji)──
@@ -2478,11 +2768,13 @@ async function runBreathDebug() {
       return;
     }
 
+    // ⚠️ 四条评分条 2026-09-03 改成**四档灰**(整页零彩色)。四个值都在 :root 里,
+    //    深浅色各一套 —— 别写死在这儿(cssVar() 是现读,写死了深色模式会不对)。
     var barColors = {
-      topic:      cssVar('--net-dynamic'),
-      emotion:    cssVar('--net-feel'),
-      time:       cssVar('--color-sky'),
-      importance: cssVar('--positive'),
+      topic:      cssVar('--bar-topic'),
+      emotion:    cssVar('--bar-emotion'),
+      time:       cssVar('--bar-time'),
+      importance: cssVar('--bar-importance'),
     };
 
     results.innerHTML = data.results.map(function(r, i) {
