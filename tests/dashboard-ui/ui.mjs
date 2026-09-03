@@ -79,11 +79,16 @@ for (const scheme of ['light', 'dark']) {
     ok(`${name}那颗有 aria-label`, !!(await btn.getAttribute('aria-label')));
     ok(`${name}入口是链接不是请求`, (await btn.evaluate(el => el.tagName)) === 'A');
   }
-  // 两颗要长得一样大(并排放着,差一点点很显眼)
+  // 两颗要长得一样大(并排放着,差一点点很显眼);
+  // ⚠️ 而且是**横着的椭圆,不是正圆** —— 所有者 2026-09-03 拿图指名要的,别"修"回正圆。
   ok('两颗入口同样大小', await page.evaluate(() => {
     const [a, b] = ['/galaxy', '/turbulence'].map(h =>
       document.querySelector(`a.hbtn[href="${h}"]`).getBoundingClientRect());
     return Math.abs(a.width - b.width) < 1 && Math.abs(a.height - b.height) < 1;
+  }));
+  ok('入口是横着的椭圆,不是正圆', await page.evaluate(() => {
+    const r = document.querySelector('a.hbtn[href="/galaxy"]').getBoundingClientRect();
+    return r.width > r.height * 1.25;
   }));
 
   // 配色:必须落在官端色板上,而且深浅两套要真的不同

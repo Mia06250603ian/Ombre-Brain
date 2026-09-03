@@ -319,8 +319,11 @@
     transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
   }
   .hbtn:hover { color: var(--text); border-color: var(--text-light); }
-  /* 只有图标的顶栏按钮:收成正圆,不留文字按钮那种左右内边距 */
-  .hbtn-ico { width: 34px; height: 34px; padding: 0; justify-content: center; }
+  /* 只有图标的顶栏按钮。
+     ⚠️ **是横着的椭圆(胶囊),不是正圆** —— 所有者 2026-09-03 拿图指名要这种:
+     「不要这种圆形,想要这种椭圆」。~~此前是 34×34 的正圆~~,别改回去。
+     宽高比约 1.5:1,和旁边「退出」那颗文字胶囊看着是一家。 */
+  .hbtn-ico { width: 52px; height: 34px; padding: 0; justify-content: center; }
   .hbtn-ico .ico { width: 17px; height: 17px; }
   .search-bar { margin-top: 12px; }
   .search-bar input {
