@@ -343,6 +343,50 @@
     }
   }
 
+  /* ── iOS 那种连续圆角的**兜底那条路**(2026-09-03 新增)──────────────────
+     所有者:「**我要的是 Apple / iOS 系统 UI 那种自然、柔和、圆润的圆角,
+     不是普通 CSS border-radius 的圆角…没有明显的四分之一圆弧感**」。
+     ⚠️⚠️ **上面那条 `corner-shape` 只有 Chrome 139+ 认,Safari 至今不认** ——
+     也就是说**她 iPhone 上一直看到的是普通圆弧**;~~此前手册写「她的 iPhone Safari 吃到 squircle」~~
+     **那是没验过的假设,已撤销**。所以这儿再给一条兜底:用一张**超椭圆**(n=4,
+     `|x/r|⁴+|y/r|⁴=1`)的 `-webkit-mask-box-image` 直接把形状切出来。
+     `-webkit-mask-box-image` 是 WebKit 十几年的老属性,Safari/Chrome 都认。
+     **两条路给的是同一条曲线**,曲率连续、没有圆弧接缝。
+     ⚠️ **别把这段当冗余删掉**,删了她手机上就退回普通圆角。
+     ⚠️ 只挂在**卡片**上(她说的就是卡片):药丸/胶囊/输入框不参与,
+        `.detail-panel`(整屏抽屉,本来就没圆角)和登录框也不参与。
+     ⚠️ 代价一条,已知情:mask 会把**元件外面的投影**一起裁掉。卡片那点投影是
+        `0 1px 3px` 的 4%(浅)/ 30%(深),肉眼看不出;**别为了找回它去掉 mask**。
+     **改半径只改 `--sq`**(跟着 `--r-*` 那张表走);曲线本身是采样出来的折线,
+     12 段/角、两位小数,肉眼看不出折点。 */
+  @supports not (corner-shape: squircle) {
+    .bucket-row, .letter-card, .letters-intro, .breath-flow, .config-section { --sq: var(--r-4); }
+    .todo-card { --sq: var(--r-5); }
+    .breath-info, .todo-check { --sq: var(--r-3); }
+    .bucket-row, .letter-card, .letters-intro, .breath-flow, .config-section,
+  .todo-card, .breath-info, .todo-check {
+      /* ⚠️ 半径必须归零:mask 只能"减",留着圆角的话切出来的还是那段圆弧 */
+      border-radius: 0;
+      /* ⚠️ border 留着(尺寸不能变),只是不再画线 —— 边线交给下面那圈超椭圆的环 */
+      border-color: transparent;
+      -webkit-mask-box-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,0.0 60.0,0.0 74.5,0.2 80.3,0.7 84.7,1.6 88.3,2.8 91.2,4.4 93.6,6.4 95.6,8.8 97.2,11.7 98.4,15.3 99.3,19.7 99.8,25.5 100.0,40.0 100.0,60.0 99.8,74.5 99.3,80.3 98.4,84.7 97.2,88.3 95.6,91.2 93.6,93.6 91.2,95.6 88.3,97.2 84.7,98.4 80.3,99.3 74.5,99.8 60.0,100.0 40.0,100.0 25.5,99.8 19.7,99.3 15.3,98.4 11.7,97.2 8.8,95.6 6.4,93.6 4.4,91.2 2.8,88.3 1.6,84.7 0.7,80.3 0.2,74.5 0.0,60.0 0.0,40.0 0.2,25.5 0.7,19.7 1.6,15.3 2.8,11.7 4.4,8.8 6.4,6.4 8.8,4.4 11.7,2.8 15.3,1.6 19.7,0.7 25.5,0.2 40.0,0.0 Z' fill='black'/%3E%3C/svg%3E") 40% fill / var(--sq) stretch;
+    }
+    /* 边缘高光:换成**同一条超椭圆**描出来的环(原来那圈是 mask-composite 拼的矩形环,
+       在这条路下会被切角,四个角上会露出两条直线撞在一起)。
+       ⚠️ 描边宽度是按「40 单位画到 --sq px」算好的,**换半径就要换对应那张环**。 */
+    .bucket-row::before, .letter-card::before, .letters-intro::before, .breath-flow::before, .config-section::before, .todo-card::before, .breath-info::before, .todo-check::before {
+      border-radius: 0;
+      padding: 0;
+      -webkit-mask: none;
+      mask: none;
+      -webkit-mask-composite: source-over;
+    }
+    .bucket-row::before, .letter-card::before, .letters-intro::before, .breath-flow::before, .config-section::before { -webkit-mask-box-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,1.0 60.0,1.0 74.1,1.2 79.8,1.7 84.1,2.5 87.6,3.7 90.4,5.3 92.8,7.2 94.7,9.6 96.3,12.4 97.5,15.9 98.3,20.2 98.8,25.9 99.0,40.0 99.0,60.0 98.8,74.1 98.3,79.8 97.5,84.1 96.3,87.6 94.7,90.4 92.8,92.8 90.4,94.7 87.6,96.3 84.1,97.5 79.8,98.3 74.1,98.8 60.0,99.0 40.0,99.0 25.9,98.8 20.2,98.3 15.9,97.5 12.4,96.3 9.6,94.7 7.2,92.8 5.3,90.4 3.7,87.6 2.5,84.1 1.7,79.8 1.2,74.1 1.0,60.0 1.0,40.0 1.2,25.9 1.7,20.2 2.5,15.9 3.7,12.4 5.3,9.6 7.2,7.2 9.6,5.3 12.4,3.7 15.9,2.5 20.2,1.7 25.9,1.2 40.0,1.0 Z' fill='none' stroke='black' stroke-width='2.00'/%3E%3C/svg%3E") 40% / var(--sq) stretch; }
+    .todo-card::before { -webkit-mask-box-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,0.8 60.0,0.8 74.2,0.9 80.0,1.4 84.3,2.3 87.7,3.5 90.6,5.1 93.0,7.0 94.9,9.4 96.5,12.3 97.7,15.7 98.6,20.0 99.1,25.8 99.2,40.0 99.2,60.0 99.1,74.2 98.6,80.0 97.7,84.3 96.5,87.7 94.9,90.6 93.0,93.0 90.6,94.9 87.7,96.5 84.3,97.7 80.0,98.6 74.2,99.1 60.0,99.2 40.0,99.2 25.8,99.1 20.0,98.6 15.7,97.7 12.3,96.5 9.4,94.9 7.0,93.0 5.1,90.6 3.5,87.7 2.3,84.3 1.4,80.0 0.9,74.2 0.8,60.0 0.8,40.0 0.9,25.8 1.4,20.0 2.3,15.7 3.5,12.3 5.1,9.4 7.0,7.0 9.4,5.1 12.3,3.5 15.7,2.3 20.0,1.4 25.8,0.9 40.0,0.8 Z' fill='none' stroke='black' stroke-width='1.54'/%3E%3C/svg%3E") 40% / var(--sq) stretch; }
+    .breath-info::before, .todo-check::before { -webkit-mask-box-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50.0,1.7 60.0,1.7 73.8,1.8 79.5,2.3 83.7,3.2 87.1,4.3 89.9,5.9 92.2,7.8 94.1,10.1 95.7,12.9 96.8,16.3 97.7,20.5 98.2,26.2 98.3,40.0 98.3,60.0 98.2,73.8 97.7,79.5 96.8,83.7 95.7,87.1 94.1,89.9 92.2,92.2 89.9,94.1 87.1,95.7 83.7,96.8 79.5,97.7 73.8,98.2 60.0,98.3 40.0,98.3 26.2,98.2 20.5,97.7 16.3,96.8 12.9,95.7 10.1,94.1 7.8,92.2 5.9,89.9 4.3,87.1 3.2,83.7 2.3,79.5 1.8,73.8 1.7,60.0 1.7,40.0 1.8,26.2 2.3,20.5 3.2,16.3 4.3,12.9 5.9,10.1 7.8,7.8 10.1,5.9 12.9,4.3 16.3,3.2 20.5,2.3 26.2,1.8 40.0,1.7 Z' fill='none' stroke='black' stroke-width='3.33'/%3E%3C/svg%3E") 40% / var(--sq) stretch; }
+    .bucket-row::after, .letter-card::after, .letters-intro::after, .breath-flow::after, .config-section::after, .todo-card::after, .breath-info::after, .todo-check::after { border-radius: 0; }
+  }
+
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   /* 浏览器不支持毛玻璃(或系统开了「降低透明度」)就退回实色 —— 半透明没了模糊会发灰糊字。

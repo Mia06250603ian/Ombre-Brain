@@ -585,7 +585,7 @@ Artifact,不在仓库里;重做一个也不难,或者直接改 `dashboard.html` 
 ### 怎么验
 
 ```bash
-bash tests/dashboard-ui/run.sh      # 真浏览器演练 219 项(2026-09-03 现场数),深浅色各跑一遍
+bash tests/dashboard-ui/run.sh      # 真浏览器演练 233 项(2026-09-03 现场数),深浅色各跑一遍
 python3 -m pytest tests/test_trash.py -q   # 回收站存取层 6 项(真 BucketManager,临时库)
 ```
 只读:起一个假 OB(`tests/dashboard-ui/fake-ob.mjs`),**不碰线上、不碰真记忆**
@@ -643,16 +643,41 @@ python3 -m pytest tests/test_trash.py -q   # 回收站存取层 6 项(真 Bucket
 **② 连续曲率(squircle),不是正圆弧。** 这才是 iOS 那个「圆得很顺」的来源:
 普通 `border-radius` 是**一段圆弧**,直边转进圆弧时**曲率是突变的**;Apple 用的是超椭圆,
 曲率连续过渡,所以看着更饱满、没有那道"接缝"。CSS 的 `corner-shape` 正是干这个的。
-⚠️ **用 `@supports (corner-shape: squircle)` 包着** —— 支持的浏览器(她的 iPhone Safari)
-吃到 squircle,**不支持的原样退回普通圆角,不会坏**。
 ⚠️ **胶囊不参与 squircle**(会把胶囊弄丑),也不参与分档。
-⚠️ **这一条我没法在这儿验** —— 测试容器里的浏览器不一定支持 `corner-shape`,
-**以她 iPhone 上看到的为准**(同 1.11 手写体那条的处境)。
+
+⚠️⚠️ **2026-09-03 这里出过一个真错,记住结论**:~~原文写「支持的浏览器(**她的 iPhone Safari**)
+吃到 squircle,不支持的原样退回普通圆角,不会坏」~~ —— **已撤销**。
+**`corner-shape` 只有 Chrome 139+ 认,Safari 至今不认**,所以「退回普通圆角」= **她手机上一直是普通圆弧**,
+那正是她 09-03 再次提出来的事(「**我要的是 Apple / iOS 系统 UI 那种…不是普通 CSS border-radius 的圆角**」)。
+**教训和 dwell 那条同源:没验过的支持度别当结论写。**
+
+**所以卡片的圆角现在是两条路,给的是同一条曲线**(超椭圆 `|x/r|⁴+|y/r|⁴=1`):
+
+| 路 | 谁走 | 怎么做 |
+|---|---|---|
+| ① 原生 | 支持 `corner-shape` 的(Chrome 139+) | `@supports (corner-shape: squircle)`,连伪元素一起 `corner-shape: inherit` |
+| ② 兜底 | **不支持的(Safari,也就是她手机)** | `@supports not (corner-shape: squircle)`,用一张**内嵌 SVG 超椭圆**的 `-webkit-mask-box-image` 把形状切出来 |
+
+**兜底那条的三个关键点(动它之前先看)**:
+1. **半径必须归零**(`border-radius: 0`)。mask 只能"减" —— 留着圆角的话切出来的仍是那段圆弧。
+2. **边线换成同一条曲线描出来的环**:元件的 `border-color` 设成 transparent(**border 本身留着,尺寸不能变**),
+   玻璃那圈边缘高光(`::before`)改用**描边版**的 mask。~~原来那圈是 `mask-composite` 拼的矩形环~~,
+   在这条路下会被切角,**四个角上会露出两条直线撞在一起**。
+   ⚠️ 描边宽度是按「40 单位画到 `--sq` px」算好的,**每个半径一张环**(12 / 20 / 26)。
+3. **只挂在卡片上**:药丸/胶囊/输入框/抽屉/登录框不参与。
+   ⚠️ **代价一条,已知情**:mask 会把元件**外面的投影**一起裁掉。卡片那点投影是 `0 1px 3px` 的
+   4%(浅)/ 30%(深),肉眼看不出;**别为了找回它去掉 mask**。
+
+⚠️ **两条路都钉在演练里**(2026-09-03,`tests/dashboard-ui/ui.mjs` 结尾那组):除了「两条都在」,
+还**真把兜底那条演一遍**(关掉原生 `corner-shape`、把 `@supports not(...)` 里的声明原样贴上),
+再查「卡片真被切成超椭圆 / 半径归零 / 边缘高光跟着同一条曲线 / **玻璃还在**」。
+**截图落在 `/tmp/dashboard-ui/squircle-fallback-{light,dark}.png`,改完自己看一眼。**
+⚠️ 曲线是采样出来的折线(12 段/角、一位小数),和原生 squircle 并排比过、看不出差别。
 
 ⚠️ **2026-09-03 玻璃那轮补了一条,圆角本身一个数没动**:`corner-shape` **不会自动继承到伪元素**
 (`border-radius: inherit` 只管半径)。玻璃的边缘高光(`::before`)和厚度(`::after`)因此要在
 那个 `@supports` 块里显式 `corner-shape: inherit`,否则**卡片是 squircle、那圈环还是普通圆弧**,
-四个角对不齐 —— 同样只有支持 `corner-shape` 的浏览器看得见,容器里测不出来。
+四个角对不齐。⚠️ **兜底那条路同理**,它的环是另画的(见上面兜底那三点)。
 
 **测试钉着四条**:五档都在、卡片用 `--r-4`、控件用 `--r-3`、药丸仍是胶囊。
 ⚠️ **钉的是「用了那张表」,不是具体像素** —— 以后调档不会把测试弄红。

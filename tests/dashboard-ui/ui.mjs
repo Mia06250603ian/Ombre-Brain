@@ -485,6 +485,56 @@ for (const scheme of ['light', 'dark']) {
   }));
   await page.screenshot({ path: SHOTS + '/wide-' + scheme + '.png' });
 
+  // ══ iOS 那种连续圆角:**两条路都要在**(2026-09-03)══════════════════════
+  // 所有者:「我要的是 Apple / iOS 那种…不是普通 CSS border-radius 的圆角」。
+  // ⚠️ `corner-shape` 只有 Chrome 139+ 认,**Safari 不认** —— 她手机走的是 mask 那条兜底。
+  // ~~此前手册写「她的 iPhone Safari 吃到 squircle」~~ 是没验过的假设,别再照它省掉兜底。
+  const sq = await page.evaluate(() => {
+    const out = { native: false, fallbackCards: 0, fallbackRing: 0, css: '' };
+    for (const sheet of document.styleSheets) {
+      let rules; try { rules = sheet.cssRules; } catch { continue; }
+      for (const r of rules) {
+        if (!r.conditionText) continue;
+        if (/^\(corner-shape/.test(r.conditionText))
+          for (const i of r.cssRules) if (/\.bucket-row/.test(i.selectorText || '')) out.native = true;
+        if (/not \(corner-shape/.test(r.conditionText)) {
+          out.css += [...r.cssRules].map(i => i.cssText).join('\n');
+          for (const i of r.cssRules) {
+            const sel = i.selectorText || '';
+            if (/\.bucket-row(,|\s|$)/.test(sel) && /mask-box-image/.test(i.cssText)) out.fallbackCards++;
+            if (/\.bucket-row::before/.test(sel) && /mask-box-image/.test(i.cssText)) out.fallbackRing++;
+          }
+        }
+      }
+    }
+    return out;
+  });
+  ok('原生那条在(corner-shape: squircle)', sq.native);
+  ok('兜底那条在(mask 切出来的超椭圆)', sq.fallbackCards > 0 && sq.fallbackRing > 0, JSON.stringify(sq).slice(0, 120));
+  ok('兜底用的是内嵌 SVG,没有外部请求', /url\("data:image\/svg\+xml/.test(sq.css));
+
+  // 真把兜底那条演一遍:关掉原生 corner-shape,再把 @supports not(...) 里的声明原样贴上。
+  await page.addStyleTag({ content: '*, *::before, *::after { corner-shape: round !important; }\n' + sq.css });
+  await page.setViewportSize({ width: 430, height: 932 });
+  await page.waitForTimeout(250);
+  const fb = await page.locator('.bucket-row').first().evaluate(el => {
+    const cs = getComputedStyle(el), ps = getComputedStyle(el, '::before');
+    return {
+      src: (cs.webkitMaskBoxImageSource || '').slice(0, 30),
+      radius: cs.borderTopLeftRadius,
+      blur: (cs.backdropFilter || cs.webkitBackdropFilter || '').includes('blur'),
+      bg: /rgba\([^)]+, *0?\.\d+\)/.test(cs.backgroundColor),
+      ring: (ps.webkitMaskBoxImageSource || '').slice(0, 30),
+    };
+  });
+  ok('兜底路上卡片真被切成了超椭圆', fb.src.startsWith('url("data:image/svg+xml'), fb.src);
+  // ⚠️ 半径必须归零,不然 mask 只会在那段圆弧里面再切一刀,形状还是圆弧
+  ok('兜底路上圆角半径归零(形状交给 mask)', fb.radius === '0px', fb.radius);
+  ok('兜底路上边缘高光跟着同一条曲线', fb.ring.startsWith('url("data:image/svg+xml'), fb.ring);
+  // ⚠️ mask 会不会把玻璃弄没:这两条就是看着它的
+  ok('兜底路上玻璃还在(模糊 + 半透明面)', fb.blur && fb.bg, JSON.stringify(fb));
+  await page.screenshot({ path: SHOTS + '/squircle-fallback-' + scheme + '.png' });
+
   await ctx.close();
 }
 
