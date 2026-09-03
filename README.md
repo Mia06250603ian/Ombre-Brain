@@ -259,6 +259,9 @@ Ombre Brain gives it persistent memory — not cold key-value storage, but a sys
 - **记忆银河 / Memory galaxy**: 浏览器打开 `/galaxy`，把记忆桶看成一片可以穿梭的 3D 星图——时间当半径（最早的记忆在正中心，银河随日子往外长）、重要度定星星大小亮度、`domain` 定颜色；点一颗星，同类的星连成星座、正文从屏幕底部浮现。**只读**：数据走已有的 `/api/buckets` 和 `/api/bucket/{id}`，和 Dashboard 同一把锁（未登录先要口令），不写任何桶。文案和配色在 `galaxy.html` 顶部的 `CONFIG` 里改。
   Open `/galaxy` to see your memory buckets as a 3D galaxy you can fly through — time as radius (the earliest memory sits at the core), importance as size and brightness, `domain` as color; tap a star and its kin light up into a constellation while the memory text rises from the bottom. **Read-only**, reusing `/api/buckets` and `/api/bucket/{id}` behind the same login as the Dashboard. Edit the wording and palette in the `CONFIG` block at the top of `galaxy.html`.
 
+- **记忆乱流 / Memory drift**: 浏览器打开 `/turbulence`，把记忆桶看成一片持续上飘的字符场——一个桶一个字符，越靠前越亮；手指凑近，附近那几颗之间的相似度连线就亮起来；点中一颗锁住，正文和「离它最近的记忆」从底部浮出。**只读**：数据走已有的 `/api/buckets`、`/api/network` 和 `/api/bucket/{id}`，和 Dashboard 同一把锁，不写任何桶，**且不发任何外部请求**。文案和配色在 `turbulence.html` 顶部的 `CONFIG` 里改。视觉照 [fuyue](https://github.com/Mia06250603ian/fuyue) 的 `memory-constellation`（MIT）重写。
+  Open `/turbulence` to see your memory buckets as a drifting field of glyphs — one glyph per bucket, brighter the closer it sits; move the pointer near and the similarity links around it light up; lock one and its text plus nearest neighbours rise from the bottom. **Read-only**, reusing `/api/buckets`, `/api/network` and `/api/bucket/{id}` behind the same login as the Dashboard, and it makes no external requests at all. Edit the wording and palette in the `CONFIG` block at the top of `turbulence.html`. The visual is a rewrite of `memory-constellation` from [fuyue](https://github.com/Mia06250603ian/fuyue) (MIT).
+
 ## 边界说明 / Design boundaries
 
 官方记忆功能已经在做身份层的事了——你是谁，你有什么偏好，你们的关系是什么。那一层交给它，Ombre Brain不打算造重复的轮子。

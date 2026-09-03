@@ -22,6 +22,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY *.py .
 COPY dashboard.html .
 COPY galaxy.html .
+COPY turbulence.html .
 # ⚠️ 主屏图标。漏了这行线上会 404 而本地一切正常(和上面 galaxy.html 同一个坑)
 COPY apple-touch-icon.png .
 COPY config.example.yaml ./config.yaml
