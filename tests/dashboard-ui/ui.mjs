@@ -283,6 +283,22 @@ for (const scheme of ['light', 'dark']) {
       (r.classList.contains('is-done') ? 'Done' : 'To do'));
   }));
   ok('勾选是个可按的圆(不是纯文字)', (await page.locator('#todos-lines .todo-check svg.ico').count()) === 4);
+  // ⚠️ 这一页的三处控件(勾选 / 状态标签 / 发送键)**都是玻璃,不用强调色填**
+  // (所有者:「待办的按钮不想要颜色 想要玻璃质感」)。勾没勾上靠图标区分,不靠底色变颜色。
+  for (const sel of ['#todos-lines .todo-check', '#todos-lines .todo-tag', '.todo-add button']) {
+    ok('玻璃:' + sel, await page.locator(sel).first().evaluate(el => {
+      const cs = getComputedStyle(el);
+      const blur = cs.backdropFilter || cs.webkitBackdropFilter || '';
+      return blur.includes('blur') && /rgba\([^)]+, *0?\.\d+\)/.test(cs.backgroundColor);
+    }));
+  }
+  ok('勾上那颗也没被填成强调色', await page.evaluate(() => {
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+    const el = document.querySelector('#todos-lines .todo-row.is-done .todo-check');
+    if (!el) return true;
+    const bg = getComputedStyle(el).backgroundColor;
+    return /rgba/.test(bg) && bg !== accent;
+  }));
   ok('全做完那张抬头写 All done', /All done/.test(
     await page.locator('#todos-lines .todo-card').last().innerText()));
   await page.screenshot({ path: SHOTS + '/todos-' + scheme + '.png' });

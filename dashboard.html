@@ -576,16 +576,23 @@
   }
   .todo-row:hover { background: var(--chip-bg); }
   /* 勾选:灰底圆角方块 + 里面一个圈(照参考图) */
+  /* ⚠️ 勾选、状态标签、发送键**都是玻璃,不用强调色填**
+     (所有者 2026-09-03:「待办的按钮不想要颜色 想要玻璃质感」)。
+     勾没勾上靠**图标本身**(空圈 / 打勾)和字色区分,不靠底色变颜色。
+     别为了「勾上要更明显」把 --accent 填回来。 */
   .todo-check {
     flex: 0 0 auto; width: 38px; height: 38px; display: grid; place-items: center;
-    border: 0; border-radius: var(--r-3); background: var(--chip-bg);
+    border: 1px solid var(--glass-edge); border-radius: var(--r-3);
+    background: var(--glass-soft);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     cursor: pointer; font-family: inherit; padding: 0;
-    transition: background-color .15s ease;
+    transition: background-color .15s ease, border-color .15s ease;
   }
-  .todo-check:hover { background: var(--border-strong); }
+  .todo-check:hover { border-color: var(--border-strong); }
   .todo-check .ico { width: 20px; height: 20px; color: var(--text-light); stroke-width: 1.5; }
-  .todo-row.is-done .todo-check { background: var(--accent); }
-  .todo-row.is-done .todo-check .ico { color: var(--accent-fg); }
+  .todo-row.is-done .todo-check { background: var(--glass-card); }
+  .todo-row.is-done .todo-check .ico { color: var(--text); }
 
   .todo-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
   .todo-title {
@@ -597,10 +604,12 @@
 
   .todo-tag {
     flex: 0 0 auto; padding: 5px 11px; border-radius: var(--r-pill);
-    background: var(--chip-bg); color: var(--chip-fg);
-    font-size: 11.5px; white-space: nowrap;
+    border: 1px solid var(--glass-edge); background: var(--glass-soft);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    color: var(--text-light); font-size: 11.5px; white-space: nowrap;
   }
-  .todo-row.is-done .todo-tag { background: transparent; color: var(--text-light); }
+  .todo-row.is-done .todo-tag { background: transparent; border-color: transparent; }
   .todo-del {
     flex: 0 0 auto; width: 30px; height: 30px; display: grid; place-items: center;
     border: 0; border-radius: var(--r-2); background: none; color: var(--text-light);
@@ -623,13 +632,17 @@
     color: var(--text); font-family: inherit;
   }
   .todo-add input:focus { outline: none; border-color: var(--border-strong); }
-  /* 按钮配色走 --accent / --accent-fg,和 .btn-primary 同一套(别写死颜色) */
+  /* ⚠️ 发送键也是玻璃,**不是强调色实心**(她 2026-09-03 点名的「待办的按钮」)。
+     所以这儿刻意**不走 --accent** —— 和 .btn-primary 那套不一样,别去"统一"。 */
   .todo-add button {
     flex: 0 0 auto; width: 42px; height: 42px; display: grid; place-items: center;
-    background: var(--accent); border: 1px solid var(--accent); color: var(--accent-fg);
+    background: var(--glass-soft); border: 1px solid var(--glass-edge); color: var(--text);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
     border-radius: 50%; cursor: pointer; font-family: inherit; padding: 0;
+    transition: background-color .15s ease, border-color .15s ease;
   }
-  .todo-add button:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+  .todo-add button:hover { background: var(--glass-card); border-color: var(--border-strong); }
   .todo-add button .ico { width: 19px; height: 19px; stroke-width: 2; }
 
   /* ── 详情抽屉 ── */
