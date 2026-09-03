@@ -192,6 +192,45 @@ const cardBox = await pg.evaluate(() => {
 ok(cardBox.left >= 8 && cardBox.right >= 8,
    `卡片左右都留了空,不顶满屏(左 ${cardBox.left.toFixed(0)}px / 右 ${cardBox.right.toFixed(0)}px)`);
 ok(cardBox.w < cardBox.vw, `卡片比屏窄(${cardBox.w.toFixed(0)} < ${cardBox.vw})`);
+// 手机上唯一的即时反馈是「按下态」(2026-09-03 所有者:安卓味)。⚠️ 全页曾经一条 :active 都没有,
+// 而手机没有悬停 —— 点下去到内容变之间屏幕一动不动。这几处都是能点的,一个都不许漏。
+const press = await pg.evaluate(() => {
+  const want = ['#exit', '#cClose', '#cOpen', '#cNear button'];
+  const missing = [], colored = [];
+  for (const sel of want) {
+    let hit = false;
+    for (const sheet of document.styleSheets)
+      for (const rule of sheet.cssRules || []) {
+        if (!rule.selectorText || !/:active/.test(rule.selectorText)) continue;
+        if (!rule.selectorText.split(',').some(s => s.trim().startsWith(sel))) continue;
+        hit = true;
+        // 反馈只走透明度/缩放:底色或描边 = 安卓那套涟漪色块
+        if (/background|border-color/.test(rule.style.cssText)) colored.push(sel);
+      }
+    if (!hit) missing.push(sel);
+  }
+  return { missing, colored };
+});
+ok(press.missing.length === 0, '能点的几处都有按下态(手机上没有悬停,这是唯一的即时反馈)', press.missing.join('|'));
+ok(press.colored.length === 0, '按下反馈只走透明度/缩放,没有加底色或描边(那是安卓那套)', press.colored.join('|'));
+// 中文不拉字距(英文那几处刻意留着 —— 拉开正是它们好看的原因)
+const ls = await pg.evaluate(() => {
+  const zh = ['#hStat', '#legend', '#hint', '#cNear > b'].map(sel => {
+    const n = document.querySelector(sel);
+    return { sel, v:n ? parseFloat(getComputedStyle(n).letterSpacing) || 0 : -1 };
+  });
+  const en = parseFloat(getComputedStyle(document.getElementById('hTitle')).letterSpacing) || 0;
+  return { zh, en };
+});
+ok(ls.zh.every(x => x.v === 0), '中文那几行不拉字距(拉了会显散,像安卓的系统字)',
+   ls.zh.filter(x => x.v !== 0).map(x => x.sel + '=' + x.v).join('|'));
+ok(ls.en > 3, `英文标题的字距刻意留着(实得 ${ls.en.toFixed(1)}px)—— 别跟着一起清掉`);
+// 卡片弹出别太快(iOS 的弹层 .3~.4s;~~原来 .18s~~ 是「啪」一下)
+const rise = await pg.$eval('#card', n => parseFloat(getComputedStyle(n).animationDuration) || 0);
+ok(rise >= 0.28, `卡片弹出 ${rise.toFixed(2)}s,不是「啪」一下(别调回 .2s 以下)`);
+// 卡片里滚到底不许带动整页
+ok(await pg.$eval('#cScroll', n => /contain|none/.test(getComputedStyle(n).overscrollBehavior)),
+   '卡片内容滚到底就停住,不把滚动传给底下的页面');
 // iOS 那种连续圆角(超椭圆)。⚠️ 09-03 早些时候做过一次被她回退,那次是**只做上两角**;
 // 现在卡片浮起来了,四个角必须同一条曲线(她的原话:「卡片四个角保持一致」)。
 const sq = await pg.evaluate(() => {
@@ -519,6 +558,12 @@ console.log('L. 画布按屏幕的倍数画(2026-09-03 所有者:「感觉数据
   const ratio = cv.back / cv.css;
   ok(cv.dpr === 3, `这一段确实跑在 3 倍屏上(${cv.dpr}×)`, cv.dpr);
   ok(ratio >= 2, `画布至少按 2 倍画(实得 ${ratio.toFixed(2)}×,后备 ${cv.back}px / CSS ${cv.css}px)—— 低于 2 就是她说的那种糊`);
+  // 触屏上不许再锁回 30fps(2026-09-03 所有者:安卓味)。⚠️ 钉的是「明显高于 30」,不是某个具体数 ——
+  // 容器的机器和她手机不是一回事,写死 60 会变成量机器不是量代码。
+  const f0 = await mp.evaluate(() => window.__drift.frames());
+  await mp.waitForTimeout(2000);
+  const fps = (await mp.evaluate(() => window.__drift.frames()) - f0) / 2;
+  ok(fps > 40, `触屏上不再锁 30fps(实测 ${fps.toFixed(0)} fps;门槛 15ms = 上限 60)`, fps);
   await mctx.close();
 }
 

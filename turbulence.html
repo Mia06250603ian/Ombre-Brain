@@ -244,12 +244,30 @@ const CONFIG = {
     transition: opacity .35s ease;
   }
   #exit:hover, #exit:focus-visible { opacity: 1; outline: none; }
+  /* ⚠️ **按下态:手机上这是唯一的即时反馈**(2026-09-03 所有者说这一页「安卓味好重」,
+     扫下来最要命的一条就是**全页一条 `:active` 都没有**)。手机没有悬停,
+     `:hover` 那几条在她手机上等于不存在 —— 点下去到内容变之间**屏幕一动不动**。
+     ⚠️ 反馈只走**透明度和极轻的缩放**,不加底色、不加描边(那是安卓那套涟漪/色块的味道);
+     ⚠️ 缩放一律 `.97`、时长 `.06s`,**按下要立刻到位**,松手才走回弹的缓动。
+     ⚠️ 开了「减少动态效果」时只留透明度,不缩放。 */
+  #exit, #cClose, #cOpen, #cNear button {
+    transition:opacity .18s ease, transform .18s cubic-bezier(.23,1,.32,1), color .18s ease;
+  }
+  #exit:active, #cClose:active, #cOpen:active, #cNear button:active {
+    transform:scale(.97); opacity:.62; transition-duration:.06s;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #exit:active, #cClose:active, #cOpen:active, #cNear button:active { transform:none; }
+  }
   #exit svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 
-  #head p#hStat { margin-top:7px; font-size:10px; letter-spacing:.1em; color:var(--drift-faint); }
+  /* ⚠️ **中文不拉字距**(2026-09-03 所有者:安卓味):中文本来就是等宽方块字,
+     再拉字距就显散、像安卓的系统字。**英文那几处刻意留着**(`D r i f t` 的 .34em、
+     `CORE` 的 .14em、口令门标题)—— 拉开正是它们好看的原因,别一起清掉。 */
+  #head p#hStat { margin-top:7px; font-size:10px; letter-spacing:0; color:var(--drift-faint); }
   #legend {
     margin-top:9px; display:flex; flex-direction:column; align-items:center; gap:3px;
-    font-size:9.5px; letter-spacing:.06em; color:var(--drift-faint);
+    font-size:9.5px; letter-spacing:0; color:var(--drift-faint);      /* 图例两行是中文,同上 */
   }
   #legend span { display:inline-flex; align-items:center; gap:7px; }
   #legend i { width:26px; height:0; border-top:1px solid currentColor; display:inline-block; }
@@ -268,7 +286,7 @@ const CONFIG = {
   #hint {
     position:fixed; left:0; right:0; z-index:2; text-align:center; pointer-events:none;
     bottom:calc(env(safe-area-inset-bottom,0px) + 62px);
-    font-size:11px; letter-spacing:.16em; color:var(--drift-faint);
+    font-size:11px; letter-spacing:0; color:var(--drift-faint);       /* 「点一个字,看它牵着谁」是中文,同上 */
     transition:opacity .8s ease;
   }
   #hint.gone { opacity:0; }
@@ -304,7 +322,10 @@ const CONFIG = {
     background-color:var(--drift-card); background-image:var(--card-sheen);
     backdrop-filter:blur(30px) saturate(1.4); -webkit-backdrop-filter:blur(30px) saturate(1.4);
     box-shadow:var(--card-depth);
-    animation:rise .18s cubic-bezier(.23,1,.32,1) both;
+    /* ⚠️ ~~原来 .18s~~ —— 太快是「啪」一下,显生硬(2026-09-03 所有者:安卓味)。
+       iOS 的弹层大约 .3~.4s、末段缓下来,所以改成 .34s 配一条末段更平的曲线。
+       ⚠️ 别再调回 .2s 以下;开了「减少动态效果」时整条动画本来就关掉(见下面那个 media)。 */
+    animation:rise .34s cubic-bezier(.32,.72,0,1) both;
   }
   /* 边缘高光:一圈渐变的 1px 环(mask 抠出来的),不是描边;支持不了 mask 就退回上面那圈透明 border。
      ⚠️ 只有顶边和两个顶角露在屏幕里(底部弹层),环画满也无妨,顶部读起来就是玻璃的那道"唇"。 */
@@ -364,7 +385,7 @@ const CONFIG = {
      而标题是 `white-space:nowrap` 的 —— 于是"最小宽度"就是整条标题的长度,撑破容器。
      `minmax(0,1fr)` / `min-width:0` 就是把这个下限解开,让省略号真的生效。 */
   #card.on { display:grid; grid-template-columns:minmax(0,1fr); }
-  @keyframes rise { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes rise { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
   #card header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; min-width:0; }
   #card header > div { min-width:0; }
   #cKind {
@@ -384,7 +405,9 @@ const CONFIG = {
     color:var(--drift-faint); font-size:15px; font-weight:300; cursor:pointer;
   }
   #cClose:hover, #cClose:focus-visible { color:var(--drift-ink); outline:none; }
-  #cScroll { overflow-y:auto; -webkit-overflow-scrolling:touch; min-width:0; }
+  /* ⚠️ `overscroll-behavior:contain`:卡片里滚到底就停住,**别把滚动传给底下的页面**
+     (2026-09-03 所有者提的「安卓味」之一:iOS 的弹层滚到头是停住,网页默认会连整页一起橡皮筋)。 */
+  #cScroll { overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; min-width:0; }
   /* 正文是**唯一**保留框的一块(2026-09-03 所有者:「正文的部分是有一个和底色相近的
      玻璃质感框的」)。⚠️ 关键在「和底色相近」:它不是描边框,是**比卡片底再提亮一点点**的
      一层玻璃 —— 只够把正文和下面的关联列表分开,不够到看起来像另一张卡。
@@ -411,7 +434,7 @@ const CONFIG = {
     font-size:11.5px; font-weight:500; line-height:1.35; letter-spacing:.01em;
   }
   #cNear { margin-top:17px; }
-  #cNear > b { display:block; margin-bottom:9px; color:rgb(var(--drift-signal)); font-size:11.5px; font-weight:500; letter-spacing:.08em; }
+  #cNear > b { display:block; margin-bottom:9px; color:rgb(var(--drift-signal)); font-size:11.5px; font-weight:500; letter-spacing:0; }   /* 「牵着 N 条记忆」是中文,同上 */
   /* 一行一条的纯文字行:左边灰色的关系名,右边加粗的标题(照她朋友那版)。
      ⚠️ 右边那格必须写 `minmax(0,1fr)`,**不能只写 `1fr`** —— `1fr` 等于 `minmax(auto,1fr)`,
      那个 auto 下限就是内容宽度,`session_2026-07-01_…` 那种长标题照样撑破卡片。 */
@@ -480,7 +503,7 @@ const CONFIG = {
   /* 加载中 / 口令门 */
   #loading, #gate {
     position:fixed; inset:0; z-index:6; display:grid; place-items:center; padding:24px;
-    background:var(--drift-bg); color:var(--drift-faint); font-size:12px; letter-spacing:.12em;
+    background:var(--drift-bg); color:var(--drift-faint); font-size:12px; letter-spacing:0;   /* 「正在把记忆铺开…」是中文,同上 */
   }
   #gate { display:none; }
   #gate.on { display:grid; }
@@ -1013,7 +1036,14 @@ function boot(items, relations){
 
   function loop(now){
     // 手机上限到 30fps:这一页会一直转,别让它把电吃光(原版同样的做法)
-    if (running && (!coarse || now - lastFrame >= 32)) { draw(now); lastFrame = now; }
+    /* ⚠️ ~~原来触屏上每 32ms 才画一帧 = 锁在 30fps~~ —— 2026-09-03 所有者说这一页「安卓味好重」,
+       这是其中一条:iOS 全系统 60Hz 起(她那台可能 120Hz),**唯独这片字符雨在 30fps 上跑**,
+       往上飘和连线亮起来都看得出一格一格。现在放到 **60fps**(15ms 的门槛,留一点抖动余量;
+       写 16 会被 16.6ms 的帧偶尔卡掉一帧)。⚠️ **刻意不是完全不限**:她那台若是 ProMotion,
+       不限就会去顶 120fps,电量和发热翻一倍,这一页不值当。
+       ⚠️ **代价只有她手机上量得准**(容器里 7 条假记忆 / 144 个字符,她线上 399 条 + 2393 条关联):
+       隔 3 秒读两次 `window.__drift.frames()` 除以 3 = 帧率;明显掉到 30 以下就把门槛调回 32。 */
+    if (running && (!coarse || now - lastFrame >= 15)) { draw(now); lastFrame = now; }
     requestAnimationFrame(loop);
   }
 
