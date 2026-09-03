@@ -79,6 +79,13 @@ const CONFIG = {
 
   // ── 调参 ────────────────────────────────────────
   minGlyphs:      144,             // 场里至少多少个字符,不够拿装饰字符填(原版的视觉下限)
+  // ⚠️ 一屏想看见多少个字符。**这条决定「密不密」**(所有者 2026-09-03:「感觉他们一进去
+  // 的代码也比我们密集」)。~~原版是 sqrt(总数/144),377 个桶算出来世界是一屏的 2.6 倍,
+  // 等于一屏只看得见 145 个,显得稀~~。现在按这个数反推世界大小,一屏就看得见这么多。
+  // 调大 = 更密(但每个字符更挤),调小 = 更疏、可拖动的范围更大。
+  visibleGlyphs:  300,
+  tagGroupMax:    28,              // 一个标签底下超过这么多桶就当它太泛,不连线(「日常」那种)
+  tagEdgesPerNode: 4,              // 每个桶最多留几条「共享标签」的线
   driftSpeed:     0.004725,        // 上飘速度(0 = 不飘)
   interactRadius: 110,             // 手指/鼠标多近才算「凑近了」(px)
   neighborCount:  4,               // 凑近时照亮最近几颗
@@ -190,6 +197,23 @@ const CONFIG = {
   #exit:hover, #exit:focus-visible { opacity: 1; outline: none; }
   #exit svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 
+  #head p#hStat { margin-top:7px; font-size:10px; letter-spacing:.1em; color:var(--drift-faint); }
+  #legend {
+    margin-top:9px; display:flex; flex-direction:column; align-items:center; gap:3px;
+    font-size:9.5px; letter-spacing:.06em; color:var(--drift-faint);
+  }
+  #legend span { display:inline-flex; align-items:center; gap:7px; }
+  #legend i { width:26px; height:0; border-top:1px solid currentColor; display:inline-block; }
+  #legend i.l-dash { border-top-style:dashed; }
+  /* 底部那句引导。点过一次就淡出去 —— 说明只在你还不知道怎么用的时候才有用。 */
+  #hint {
+    position:fixed; left:0; right:0; z-index:2; text-align:center; pointer-events:none;
+    bottom:calc(env(safe-area-inset-bottom,0px) + 62px);
+    font-size:11px; letter-spacing:.16em; color:var(--drift-faint);
+    transition:opacity .8s ease;
+  }
+  #hint.gone { opacity:0; }
+
   /* 左下角读数 / 右下角三颗按钮 */
   .hud {
     position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 14px); z-index:3;
@@ -258,7 +282,16 @@ const CONFIG = {
     color:var(--drift-ink); font-family:inherit; cursor:pointer;
   }
   #cNear button:hover, #cNear button:focus-visible { border-color:rgba(var(--drift-signal),.55); outline:none; }
-  #cNear strong { overflow:hidden; font-size:10px; font-weight:500; text-overflow:ellipsis; white-space:nowrap; }
+  #cNear strong { overflow:hidden; font-size:10.5px; font-weight:500; text-overflow:ellipsis; white-space:nowrap; }
+  #cNear em { font-style:normal; font-size:8.5px; letter-spacing:.04em; color:var(--drift-faint); }
+  #cTags .c-date { border-style:dashed; }
+  #cOpen {
+    margin-top:14px; display:block; padding:11px; text-align:center;
+    border:1px solid var(--drift-line); border-radius:var(--r-pill, 999px);
+    background:var(--drift-input); color:var(--drift-ink);
+    font-size:12px; text-decoration:none;
+  }
+  #cOpen:hover { border-color:var(--drift-dim); }
   #cNear small { color:var(--drift-faint); font-size:8px; }
   /* ⚠️ 这儿必须写 minmax(0,1fr),**不能只写 1fr** —— `1fr` 等于 `minmax(auto,1fr)`,
      那个 auto 下限就是内容宽度,长标题照样撑破。2026-09-03 就是栽在这一处。 */
@@ -306,7 +339,16 @@ const CONFIG = {
 <div id="head">
   <h1 id="hTitle"></h1>
   <p id="hSub"></p>
+  <!-- 统计 + 图例:所有者 2026-09-03 照她朋友那版要的。
+       ⚠️ 图例说的是**两种线**;第三种(存入时关联到一起)我们取不到,所以图例里也没有它 —— 别加。 -->
+  <p id="hStat"></p>
+  <div id="legend">
+    <span><i class="l-solid"></i>说的是相近的事</span>
+    <span><i class="l-dash"></i>共享同一个标签</span>
+  </div>
 </div>
+
+<p id="hint">点一个字,看它牵着谁</p>
 
 <div id="meter" class="hud"><b id="mFps">–</b> FPS <i id="mZoom">1.00×</i></div>
 <div id="controls" class="hud">
@@ -326,7 +368,8 @@ const CONFIG = {
   <div id="cScroll">
     <div id="cBody"></div>
     <div id="cTags"></div>
-    <div id="cNear"><b>离它最近的记忆</b><div></div></div>
+    <div id="cNear"><b>牵着的记忆</b><div></div></div>
+    <a id="cOpen" href="/dashboard">在面板里打开</a>
   </div>
 </div>
 
@@ -418,7 +461,12 @@ function makeGraph(items, relations){
     });
   }
 
-  // 边:OB 只有一种边(向量相似度),按相似度从高到低定优先级(刻意不一样之二)
+  // 边有两种(2026-09-03 加的第二种):
+  //   vector = 说的是相近的事(/api/network 的相似度)—— 实线
+  //   tag    = 共享同一个标签(桶自带的 domain/tags 现算)—— 虚线
+  // ⚠️ 还差一种她朋友那版有的:「存入时关联到一起」(晏写在正文里的 [[链接]])。
+  //    **数据在,但取不出来** —— /api/buckets 只给 200 字预览,要它得给后端开新接口,
+  //    那会破掉这一页「零新增接口」的性质。2026-09-03 报给所有者了,她没定之前别做。
   const indexById = new Map();
   nodes.forEach((n, i) => { if (n.item) indexById.set(n.item.id, i); });
   const edges = [];
@@ -429,9 +477,44 @@ function makeGraph(items, relations){
     const key = Math.min(a,b) + ':' + Math.max(a,b);
     if (seen.has(key)) return;
     seen.add(key);
-    edges.push({ from:Math.min(a,b), to:Math.max(a,b), sim:r.similarity });
+    edges.push({ from:Math.min(a,b), to:Math.max(a,b), sim:r.similarity, kind:'vector' });
   });
-  edges.sort((l, r) => r.sim - l.sim);
+
+  // ── 共享标签的边 ──
+  // ⚠️ 两两比是 O(n²);改成按标签建索引。**太大的标签组直接跳过** ——
+  //    「日常」这种几乎人人都有的标签,连起来就是一团糊,既慢又没信息量。
+  //    每个桶最多留 CONFIG.tagEdgesPerNode 条,按「共享几个标签」排。
+  const byTag = new Map();
+  nodes.forEach((n, i) => {
+    if (!n.item) return;
+    [...(n.item.domain || []), ...(n.item.tags || [])].forEach(t => {
+      if (!t) return;
+      if (!byTag.has(t)) byTag.set(t, []);
+      byTag.get(t).push(i);
+    });
+  });
+  const shared = new Map();   // "a:b" → 共享几个标签
+  byTag.forEach((idxs, tag) => {
+    if (idxs.length < 2 || idxs.length > CONFIG.tagGroupMax) return;   // 太泛的标签跳过
+    for (let x = 0; x < idxs.length; x++) for (let y = x + 1; y < idxs.length; y++) {
+      const key = Math.min(idxs[x], idxs[y]) + ':' + Math.max(idxs[x], idxs[y]);
+      shared.set(key, (shared.get(key) || 0) + 1);
+    }
+  });
+  const perNode = new Array(nodes.length).fill(0);
+  [...shared.entries()]
+    .sort((l, r) => r[1] - l[1])
+    .forEach(([key, n]) => {
+      const [a, b] = key.split(':').map(Number);
+      if (seen.has(key)) return;                                   // 已经有相似度边了,不重复连
+      if (perNode[a] >= CONFIG.tagEdgesPerNode || perNode[b] >= CONFIG.tagEdgesPerNode) return;
+      seen.add(key);
+      perNode[a]++; perNode[b]++;
+      edges.push({ from:a, to:b, sim:Math.min(.95, .5 + n * .1), kind:'tag', shared:n });
+    });
+
+  // 排序:相似度边优先(实线在前),同类按相似度从高到低
+  edges.sort((l, r) => (l.kind === r.kind ? r.sim - l.sim : (l.kind === 'vector' ? -1 : 1)));
 
   // 相似的先拽到一起
   edges.forEach(function(e, i){
@@ -487,7 +570,9 @@ function makeGraph(items, relations){
   // 最后把 y 铺匀,免得上飘时一阵密一阵疏
   nodes.slice().sort((l, r) => l.y - r.y).forEach(function(n, i, all){ n.y = (i + .5) / all.length; });
 
-  return { nodes:nodes, edges:edges, worldScale:Math.sqrt(total / CONFIG.minGlyphs) };
+  // 世界铺多大 = 总字符数 / 一屏想看见多少(下限 1:世界不能比一屏还小)
+  return { nodes:nodes, edges:edges,
+           worldScale:Math.max(1, Math.sqrt(total / CONFIG.visibleGlyphs)) };
 }
 
 function makeTraces(count){
@@ -509,8 +594,13 @@ function boot(items, relations){
   document.getElementById('hTitle').textContent = CONFIG.title;
   document.getElementById('hSub').textContent   = CONFIG.subtitle;
 
+
   const graph = makeGraph(items, relations);
   const nodes = graph.nodes, edges = graph.edges;
+  indexData(items, graph.edges, graph.nodes);
+  // ⚠️ 数的是**两种线的总和**(相似度 + 共享标签),不是只有 /api/network 那一种
+  document.getElementById('hStat').textContent =
+    items.length + ' 条记忆 · ' + edges.length + ' 条关联';
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const coarse = window.matchMedia('(pointer: coarse)').matches;
   const worldScale = graph.worldScale;
@@ -580,20 +670,28 @@ function boot(items, relations){
       : [];
     const anchors = lockedIndex !== null ? [lockedIndex] : near.map(e => e.index);
 
-    // 第一圈:锚点自己的边;第二圈:第一圈邻居再往外一层(都按相似度排过)
-    const firstIdx = [...new Set(anchors.flatMap(i => edgesByNode[i]))].slice(0, coarse ? 7 : 10);
+    // 第一圈:锚点自己的边;第二圈:第一圈邻居再往外一层(都按相似度排过)。
+    // ⚠️ **点中一颗(locked)时放得很开,只是手指扫过(hover)时收着** ——
+    // 所有者 2026-09-03 拿她朋友那版比:「他们点下去牵出去七八条、横跨大半屏」,
+    // 而我们抄原版时带了两条很紧的限制,点下去只亮两三根短线,显得很怯。
+    const locked = lockedIndex !== null;
+    const cap1 = locked ? (coarse ? 14 : 20) : (coarse ? 7 : 10);
+    const cap2 = locked ? (coarse ? 16 : 24) : (coarse ? 8 : 14);
+    const firstIdx = [...new Set(anchors.flatMap(i => edgesByNode[i]))].slice(0, cap1);
     const firstSet = new Set(firstIdx);
     const ring1 = new Set();
     firstIdx.forEach(function(ei){ ring1.add(edges[ei].from); ring1.add(edges[ei].to); });
     anchors.forEach(i => ring1.delete(i));
     const secondIdx = [...new Set([...ring1].flatMap(i => edgesByNode[i]))]
       .filter(ei => !firstSet.has(ei) && !anchors.includes(edges[ei].from) && !anchors.includes(edges[ei].to))
-      .slice(0, coarse ? 8 : 14);
+      .slice(0, cap2);
 
-    // 太远的线不画:横跨半屏的连线只会变成噪声
-    const lim1 = Math.min(170, Math.max(108, W * .2));
-    const lim2 = Math.min(125, Math.max(82, H * .14));
-    const isLocal = (a, b, limit) => Math.abs(points[a].y - points[b].y) <= H * .24
+    // 多远之内才连线。⚠️ **锁住时放到大半屏**(所有者要的),手指扫过时仍然收着 ——
+    // 不收的话光是移动鼠标满屏都在闪线,那才是噪声。
+    const lim1 = locked ? Math.hypot(W, H) * .62 : Math.min(170, Math.max(108, W * .2));
+    const lim2 = locked ? Math.hypot(W, H) * .42 : Math.min(125, Math.max(82, H * .14));
+    const yLim = locked ? H * .9 : H * .24;
+    const isLocal = (a, b, limit) => Math.abs(points[a].y - points[b].y) <= yLim
       && Math.hypot(points[a].x - points[b].x, points[a].y - points[b].y) <= limit;
 
     const lockFb = lockedIndex !== null
@@ -630,19 +728,25 @@ function boot(items, relations){
         const e = edges[ei];
         if (!isLocal(e.from, e.to, lim2)) return;
         secondary.add(e.from); secondary.add(e.to);
-        ctx.strokeStyle = 'rgba(' + P.signal + ',' + (.07 * lockProgress) + ')';
+        ctx.setLineDash(e.kind === 'tag' ? [3, 5] : []);
+        ctx.strokeStyle = 'rgba(' + P.signal + ',' + (.08 * lockProgress) + ')';
         ctx.lineWidth = .45;
         ctx.beginPath(); ctx.moveTo(points[e.from].x, points[e.from].y);
         ctx.lineTo(points[e.to].x, points[e.to].y); ctx.stroke();
+        ctx.setLineDash([]);
       });
       firstIdx.forEach(function(ei){
         const e = edges[ei];
         if (!isLocal(e.from, e.to, lim1)) return;
         active.add(e.from); active.add(e.to);
-        ctx.strokeStyle = 'rgba(' + P.signal + ',' + (.28 * lockProgress) + ')';
-        ctx.lineWidth = .55;
+        // ⚠️ 两种线要看得出区别:相似度=实线,共享标签=虚线(和图例对得上)
+        ctx.setLineDash(e.kind === 'tag' ? [4, 4] : []);
+        ctx.strokeStyle = 'rgba(' + P.signal + ',' +
+          ((e.kind === 'tag' ? .2 : .34) * lockProgress) + ')';
+        ctx.lineWidth = e.kind === 'tag' ? .5 : .7;
         ctx.beginPath(); ctx.moveTo(points[e.from].x, points[e.from].y);
         ctx.lineTo(points[e.to].x, points[e.to].y); ctx.stroke();
+        ctx.setLineDash([]);
       });
       near.forEach(function(e){
         active.add(e.index);
@@ -655,6 +759,19 @@ function boot(items, relations){
       });
     }
     active.forEach(i => secondary.delete(i));
+
+    // 被点中那颗底下垫一团光(所有者:她朋友那版「选中那颗发红光」;
+    // 我们不上色 —— 整套零饱和是她定的,所以这团光就是信号色本身,只是更亮)
+    if (lockedIndex !== null && lockProgress > 0) {
+      const p = points[lockedIndex];
+      if (p.x > -40 && p.x < W + 40 && p.y > -40 && p.y < H + 40) {
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 26);
+        g.addColorStop(0, 'rgba(' + P.signal + ',' + (.34 * lockProgress) + ')');
+        g.addColorStop(1, 'rgba(' + P.signal + ',0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 26, 0, Math.PI * 2); ctx.fill();
+      }
+    }
 
     // 字符本体
     let visible = 0;
@@ -756,7 +873,7 @@ function boot(items, relations){
         lockedIndex = null; closeCard();
       } else {
         feedbacks.push({ index:i, kind:'lock', startedAt:performance.now() });
-        lockedIndex = i; openCard(nodes[i].item);
+        lockedIndex = i; openCard(nodes[i].item); fadeHint();
       }
       return;
     }
@@ -868,6 +985,10 @@ function boot(items, relations){
 
   // 演练用的观察口(照 galaxy.html 的 window.__galaxy 那套)。只读 + 一个 lockAt,
   // 页面自己一处都不用它;没有它的话测试只能靠盲点画布,点不准。
+  // 点过一次就把底部那句引导淡掉 —— 它只在你还不知道怎么用的时候才有用
+  const hintEl = document.getElementById('hint');
+  const fadeHint = () => { if (hintEl) hintEl.classList.add('gone'); };
+
   window.__drift = {
     ob: true,
     count: items.length,                 // 真桶数
@@ -903,20 +1024,39 @@ function openCard(item){
   (item.domain || []).forEach(function(d){
     const s = document.createElement('span'); s.textContent = d; tags.appendChild(s);
   });
+  if (item.created) {
+    const d = new Date(item.created);
+    if (!isNaN(d)) {
+      const s = document.createElement('span');
+      s.className = 'c-date';
+      s.textContent = (d.getMonth() + 1) + ' 月 ' + d.getDate() + ' 日';
+      tags.appendChild(s);
+    }
+  }
+  // 「在面板里打开」:跳回后台并直接展开这一条(靠 dashboard.html 认的 #bucket= 锚点)
+  const open = document.getElementById('cOpen');
+  open.href = '/dashboard#bucket=' + encodeURIComponent(item.id);
 
   // 离它最近的:直接用 /api/network 那批边,不另算
   const box = document.querySelector('#cNear > div');
-  const list = (NEIGHBOURS.get(item.id) || []).slice(0, 6);
+  const all = NEIGHBOURS.get(item.id) || [];
+  const list = all.slice(0, 8);
   box.innerHTML = '';
   document.getElementById('cNear').style.display = list.length ? '' : 'none';
+  // 抬头写清一共牵着几条、这儿列了几条(照她朋友那版:「牵着 9 条记忆(列前 8 条)」)
+  const nearHead = document.querySelector('#cNear > b');
+  nearHead.textContent = all.length > list.length
+    ? '牵着 ' + all.length + ' 条记忆(列前 ' + list.length + ' 条)'
+    : '牵着 ' + all.length + ' 条记忆';
   list.forEach(function(n){
     const b = BY_ID.get(n.id);
     if (!b) return;
     const btn = document.createElement('button');
     btn.type = 'button'; btn.dataset.id = n.id;
+    // ⚠️ 每条标出**是哪种关系**,和图上的实线/虚线、以及抬头的图例三处对得上
+    const kind = document.createElement('em'); kind.textContent = KIND_LABEL[n.kind] || '';
     const strong = document.createElement('strong'); strong.textContent = b.name || n.id;
-    const small = document.createElement('small'); small.textContent = '像 ' + Math.round(n.sim * 100) + '%';
-    btn.appendChild(strong); btn.appendChild(small);
+    btn.appendChild(kind); btn.appendChild(strong);
     box.appendChild(btn);
   });
 
@@ -956,7 +1096,9 @@ async function loadOB(){
   }).map(function(b){
     return {
       id:b.id, name:b.name || b.id, type:b.type || 'dynamic',
-      domain:b.domain || [], importance:(b.importance == null ? 5 : b.importance),
+      domain:b.domain || [], tags:b.tags || [],   // tags 是「共享标签」那种线要用的
+      created:b.created || b.last_active || '',
+      importance:(b.importance == null ? 5 : b.importance),
       pinned:!!b.pinned, resolved:!!b.resolved,
       preview:b.content_preview || '', content:null,   // 正文点中才取
     };
@@ -977,19 +1119,26 @@ async function loadOB(){
   return { items:items, relations:relations };
 }
 
-function indexData(items, relations){
+// ⚠️ 邻居表是从**画图用的那张边表**里读的,不再只读 /api/network ——
+//    这样「共享标签」那种线也会出现在卡片的「牵着哪些记忆」里,和图上看到的对得上。
+function indexData(items, graphEdges, nodes){
   BUCKETS = items;
   BY_ID = new Map(items.map(b => [b.id, b]));
   NEIGHBOURS = new Map();
-  relations.forEach(function(e){
-    if (!BY_ID.has(e.source) || !BY_ID.has(e.target)) return;
-    if (!NEIGHBOURS.has(e.source)) NEIGHBOURS.set(e.source, []);
-    if (!NEIGHBOURS.has(e.target)) NEIGHBOURS.set(e.target, []);
-    NEIGHBOURS.get(e.source).push({ id:e.target, sim:e.similarity });
-    NEIGHBOURS.get(e.target).push({ id:e.source, sim:e.similarity });
+  const idOf = i => (nodes[i] && nodes[i].item) ? nodes[i].item.id : null;
+  graphEdges.forEach(function(e){
+    const a = idOf(e.from), b = idOf(e.to);
+    if (!a || !b || a === b) return;
+    if (!NEIGHBOURS.has(a)) NEIGHBOURS.set(a, []);
+    if (!NEIGHBOURS.has(b)) NEIGHBOURS.set(b, []);
+    NEIGHBOURS.get(a).push({ id:b, sim:e.sim, kind:e.kind });
+    NEIGHBOURS.get(b).push({ id:a, sim:e.sim, kind:e.kind });
   });
-  NEIGHBOURS.forEach(list => list.sort((l, r) => r.sim - l.sim));
+  // 相似度边排前面,同类按分数从高到低
+  NEIGHBOURS.forEach(list => list.sort((l, r) =>
+    (l.kind === r.kind ? r.sim - l.sim : (l.kind === 'vector' ? -1 : 1))));
 }
+const KIND_LABEL = { vector:'说的是相近的事', tag:'共享同一个标签' };
 
 // 口令门:只做一件事,把口令交给 OB 已有的 /auth/login 换一块 cookie。
 // 口令不存、不缓存、不出这一页;登录状态是 OB 那块 cookie,跟记忆库后台同一把锁。
@@ -1034,7 +1183,6 @@ function askPassword(){
       if (e.message !== NEED_LOGIN) throw e;
       d = await askPassword();
     }
-    indexData(d.items, d.relations);
     boot(d.items, d.relations);
   } catch (e) {
     document.getElementById('loading').textContent = '记忆没铺开,稍后再来 ♡';

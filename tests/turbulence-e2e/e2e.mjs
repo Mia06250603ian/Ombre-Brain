@@ -39,7 +39,9 @@ ok(await pg.evaluate(() => !document.getElementById('gate').classList.contains('
 ok(d.ob === true, '走的是 OB 的真数据');
 ok(d.count === 7, `七个桶全部进场(实得 ${d.count};feel、已了结、超长标题那条都在)`, d.count);
 ok(d.glyphs === 144, `字符不够 144 时拿装饰字符填满(实得 ${d.glyphs})`, d.glyphs);
-ok(d.edges === 6, `/api/network 那六条边都接上了(实得 ${d.edges})`, d.edges);
+// ⚠️ 边有两种:6 条来自 /api/network(相似度),另外的来自「共享标签」(前端现算)。
+// 别写死总数会变的那个 —— 这儿钉「相似度那六条都在,而且确实多出了标签边」。
+ok(d.edges > 6, `两种边都接上了(相似度 6 条 + 共享标签若干,实得 ${d.edges})`, d.edges);
 ok(await pg.evaluate(() => window.__drift.node(0).interactive === true), '前面那些是真记忆,可点');
 ok(await pg.evaluate(() => window.__drift.node(143).interactive === false), '填充的装饰字符不可点');
 ok(await pg.evaluate(() => document.getElementById('hTitle').textContent === 'Drift'), '大标题是 Drift');
@@ -100,12 +102,20 @@ ok((await pg.textContent('#cTags')).includes('恋爱'), 'domain 变成标签显�
 // (2026-09-03 给夹具加了条超长标题的桶,顺序就变了)。钉真正该成立的性质:
 const near = await pg.$$eval('#cNear button', bs => bs.map(x => x.textContent));
 ok(near.length > 0, `「离它最近的记忆」列出了相邻的桶(实得 ${near.length} 条)`, near.join('|'));
-ok(near.every(t => /像 \d+%/.test(t)), '每条都带「像 N%」的相似度', near.join('|'));
-ok(await pg.evaluate(() => {
-  const ns = [...document.querySelectorAll('#cNear button small')]
-    .map(e => parseInt(e.textContent.replace(/\D/g, ''), 10));
-  return ns.every((v, i) => i === 0 || v <= ns[i - 1]);
-}), '相似度是从高到低排的');
+// ⚠️ 2026-09-03 改了:每条标的不再是「像 N%」,而是**是哪种关系** ——
+// 和图上的实线/虚线、抬头的图例,三处对得上。
+ok(await pg.$$eval('#cNear button em', es => es.length > 0 &&
+  es.every(e => ['说的是相近的事', '共享同一个标签'].includes(e.textContent))),
+  '每条都标着是哪种关系');
+// 相似度那种排在共享标签前面(图上实线也比虚线显眼)
+ok(await pg.$$eval('#cNear button em', es => {
+  const v = es.map(e => e.textContent === '说的是相近的事' ? 0 : 1);
+  return v.every((x, i) => i === 0 || x >= v[i - 1]);
+}), '相似度那种排在共享标签前面');
+ok(await pg.$eval('#cNear > b', e => /牵着 \d+ 条记忆/.test(e.textContent)),
+  '抬头写清一共牵着几条');
+ok(await pg.$eval('#cOpen', e => e.getAttribute('href').startsWith('/dashboard#bucket=')),
+  '「在面板里打开」带着这条桶的 id 跳回后台');
 
 console.log('D2. 超长标题不许把卡片撑破(2026-09-03 所有者在手机上撞到的)');
 // 她的真实桶名长这样:`session_2026-07-01_一整句话`。假 OB 里 b07 就是专门撞这个的。
@@ -193,7 +203,12 @@ await pg2.goto(`${NONET}/turbulence`);
 await pg2.waitForFunction('window.__drift', null, { timeout:30000 });
 const d2 = await pg2.evaluate(() => ({ count:window.__drift.count, edges:window.__drift.edges }));
 ok(d2.count === 7, '/api/network 回 500 时,桶照样铺出来了');
-ok(d2.edges === 0, '拿不到边就当没有边,不炸');
+// ⚠️ 降级现在更强了:/api/network 挂掉只丢「说的是相近的事」那种线,
+// **「共享同一个标签」那种照样在** —— 它是前端拿桶自带的 domain/tags 现算的,不依赖后端。
+ok(d2.edges > 0, `连线接口挂了,共享标签那种线照样在(实得 ${d2.edges} 条)`, d2.edges);
+ok(await pg2.$$eval('#cNear button em', es =>
+  es.every(e => e.textContent === '共享同一个标签')),
+  '这种情况下列出来的全是「共享同一个标签」');
 await pg2.evaluate(() => window.__drift.lockAt(0));
 await pg2.waitForSelector('#card.on', { timeout:8000 });
 ok(await pg2.evaluate(() => document.getElementById('cNear').style.display === 'none'), '没有邻居时,「离它最近的记忆」那块自己藏起来');

@@ -2575,7 +2575,14 @@ async function saveConfig(persist) {
   }
 }
 
-checkAuth().then(() => loadBuckets());
+// 开场:验身份 → 拉列表 →(可选)直接打开某一条。
+// ⚠️ `#bucket=<id>` 这个锚点是给**记忆乱流那页的「在面板里打开」**用的
+//    (2026-09-03 加,`/turbulence` 的详情卡底下那颗按钮跳过来时带着它)。
+//    别删:删了那颗按钮就只能跳到列表页,点开哪条还得自己找。
+checkAuth().then(() => loadBuckets()).then(() => {
+  const m = /^#bucket=(.+)$/.exec(location.hash || '');
+  if (m) showDetail(decodeURIComponent(m[1]));
+});
 
 // --- Import functions ---
 const uploadZone = document.getElementById('import-upload-zone');
