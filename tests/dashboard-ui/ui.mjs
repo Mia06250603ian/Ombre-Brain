@@ -319,27 +319,28 @@ for (const scheme of ['light', 'dark']) {
       // 2026-09-03 就栽过一次:原来量的是 #sort-select,那天它变成了胶囊里的 select。
       sortPill: g('.sort-pill'),
       pill: g('.filter-btn'),
-      scale: ['--r-1','--r-2','--r-3','--r-4','--r-5','--r-6']
+      scale: ['--r-1','--r-2','--r-3','--r-4','--r-5']
         .map(n => getComputedStyle(document.documentElement).getPropertyValue(n).trim()),
     };
   });
-  // ⚠️ 2026-09-03 由五档加到**六档**:新的 `--r-6`(42px)专给记忆卡片,理由见 dashboard.html 里那段注释。
-  ok('圆角尺度表六档都在', radii.scale.every(v => /^\d+px$/.test(v)), radii.scale.join('/'));
-  // ⚠️ 记忆卡片 2026-09-03 一路走到 **--r-6(42px)+ 超椭圆**:20 普通圆弧 → 26 超椭圆(她:「这个圆角
-  // 好安卓」)→ 26 普通圆弧(还是安卓)→ 42 超椭圆。**超椭圆在同一数值下看着更方,所以半径必须给够。**
-  ok('记忆卡片用的是新的第六档(--r-6)', radii.card === radii.scale[5], radii.card);
+  // ⚠️ ~~09-03 一度加过第六档 42px~~ —— 真机上被所有者当场否掉,回到五档。
+  ok('圆角尺度表五档都在', radii.scale.every(v => /^\d+px$/.test(v)), radii.scale.join('/'));
+  // ⚠️ 记忆卡片 2026-09-03 在预览里一路调到 42px 超椭圆,**上线后她在真机上看,当场要求改回 26**
+  // (「圆角改回去救命 你的预览和实机差很多」)。**别再照预览里的判断往上加。**
+  ok('记忆卡片用的是大面板那一档(--r-5 = 26px)', radii.card === radii.scale[4], radii.card);
   // 卡片收紧过一档,别再涨回去(2026-09-03 所有者选的 C 档)
-  ok('卡片内边距是收紧过的', await page.locator('.bucket-row').first().evaluate(el => {
+  // ⚠️ C 档(11/14 + gap 8)上线后所有者在真机上改回 **B 档**(13/15 + gap 10),上限跟着放宽
+  ok('卡片内边距是收紧过的(B 档)', await page.locator('.bucket-row').first().evaluate(el => {
     const cs = getComputedStyle(el);
-    return parseFloat(cs.paddingTop) <= 12 && parseFloat(cs.paddingLeft) <= 15;
+    return parseFloat(cs.paddingTop) <= 14 && parseFloat(cs.paddingLeft) <= 16;
   }), await page.locator('.bucket-row').first().evaluate(el => getComputedStyle(el).padding));
   ok('卡片之间挨得紧', await page.locator('.bucket-list').evaluate(
-    el => parseFloat(getComputedStyle(el).gap) <= 9),
+    el => parseFloat(getComputedStyle(el).gap) <= 11),
     await page.locator('.bucket-list').evaluate(el => getComputedStyle(el).gap));
   // 钉「分档」这件事本身:五档必须一档比一档大。比盯着某一个元件稳。
-  ok('六档是递增的', await page.evaluate(() => {
+  ok('五档是递增的', await page.evaluate(() => {
     const v = n => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n));
-    const a = ['--r-1','--r-2','--r-3','--r-4','--r-5','--r-6'].map(v);
+    const a = ['--r-1','--r-2','--r-3','--r-4','--r-5'].map(v);
     return a.every((x, i) => i === 0 || x > a[i - 1]);
   }), radii.scale.join(' < '));
   ok('排序做成了胶囊,不是原生下拉', parseFloat(radii.sortPill) > 100, radii.sortPill);
@@ -586,10 +587,10 @@ for (const scheme of ['light', 'dark']) {
   const memo = await page.evaluate(() => {
     const el = document.querySelector('.bucket-row'), cs = getComputedStyle(el);
     return { mask: (cs.webkitMaskBoxImageSource || 'none'),
-             sq: getComputedStyle(document.documentElement).getPropertyValue('--r-6').trim() };
+             sq: getComputedStyle(document.documentElement).getPropertyValue('--r-5').trim() };
   });
   ok('兜底路上记忆卡片也被切成了超椭圆', memo.mask.startsWith('url("data:image/svg+xml'), memo.mask.slice(0, 30));
-  ok('记忆卡片那一档够大(≥40px)', parseFloat(memo.sq) >= 40, memo.sq);
+  ok('记忆卡片的圆角是 26px(真机上定的)', parseFloat(memo.sq) === 26, memo.sq);
   await page.screenshot({ path: SHOTS + '/squircle-fallback-' + scheme + '.png' });
 
   await ctx.close();
