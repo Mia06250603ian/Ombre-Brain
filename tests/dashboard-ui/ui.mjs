@@ -86,13 +86,20 @@ for (const scheme of ['light', 'dark']) {
   // ⚠️ 深色 2026-09-03 也按同一套流程改了:底色纯灰、字/边/强调色偏冷、底光回到看得见。
   const wantBg = scheme === 'light' ? 'rgb(241, 241, 241)' : 'rgb(19, 19, 19)';
   const wantFg = scheme === 'light' ? 'rgb(17, 19, 21)' : 'rgb(247, 247, 249)';   // cool-950 / cool-050
-  const wantAccent = scheme === 'light' ? '#8d97a5' : '#2f3339';   // 两套 09-03 都改成了冷灰(明度沿用她 08-31 定的那档)
+  // ⚠️ 浅色那颗**转了一圈回到 #999999**:09-03 上午随「整体改冷」变成 #8d97a5,当天她说
+  // 「浅色的那个按钮的颜色能不能也换成没有饱和度的灰」,又换回来了。明度一直是 60,没动过。
+  // 深色仍是冷灰 —— 她只说了浅色那颗。
+  const wantAccent = scheme === 'light' ? '#999999' : '#2f3339';
   ok('底色 = ' + (scheme === 'light' ? '纯灰 #f1f1f1' : '纯灰 #131313'), bg === wantBg, bg);
   // 所有者原话「底色我不想要饱和度」—— 2026-09-03 起**两套都钉**(她说「深色的也按这个流程改」)。
   // ⚠️ 只管底色:字/描边/强调色两套都是偏冷的,别拿这条去"统一"它们。
   ok('底色饱和度为 0(三通道相等)', /^rgb\((\d+), \1, \1\)$/.test(bg), bg);
   ok('字色 = 反色', fg === wantFg, fg);
   ok('强调色 = 所有者定的灰', accent === wantAccent, accent);
+  if (scheme === 'light') {
+    // 所有者原话「浅色的那个按钮的颜色能不能也换成没有饱和度的灰」:三段十六进制必须相等
+    ok('浅色那颗按钮零饱和', /^#([0-9a-f]{2})\1\1$/i.test(accent), accent);
+  }
   // 强调色当填色 / 当文字是两个角色,合并回一个就会有地方看不见
   const at = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent-text').trim());
   ok('文字用的强调色是另一档', at !== accent, at);
@@ -199,7 +206,7 @@ for (const scheme of ['light', 'dark']) {
   // 整页不许再有 emoji 当图标用(小票上的 □/✓ 和 logo ◐ 不是 emoji,不受影响)
   ok('列表里没有 emoji 当图标', !/\p{Extended_Pictographic}/u.test(
     await page.locator('#bucket-list').innerText()));
-  const wantChip = scheme === 'light' ? 'rgb(141, 151, 165)' : 'rgb(47, 51, 57)';   // 两套 09-03 都改冷灰
+  const wantChip = scheme === 'light' ? 'rgb(153, 153, 153)' : 'rgb(47, 51, 57)';
   const gotChip = await page.locator('.filter-btn.active').evaluate(el => getComputedStyle(el).backgroundColor);
   ok('选中的药丸是实心强调色', gotChip === wantChip, gotChip);
   // 所有者点名:药丸上的字深浅色都用白的。⚠️ 别把这条改成"对比度要够" ——
