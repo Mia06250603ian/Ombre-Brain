@@ -110,13 +110,26 @@ for (const scheme of ['light', 'dark']) {
   // 边缘要一圈均匀的淡描边,**不许有 inset 高光线**;参照物是 Claude Code 手机端自己的面板。
   ok('卡片没有上缘高光线', await page.locator('.bucket-row').first().evaluate(
     el => !/inset/.test(getComputedStyle(el).boxShadow)));
-  // 底光要在(1%,玻璃靠它才有东西可透),但必须很淡
-  ok('页面有一层极淡的底光', await page.evaluate(() => {
-    const bi = getComputedStyle(document.body).backgroundImage;
-    if (!bi.includes('gradient')) return false;
-    const a = [...bi.matchAll(/rgba\([^)]*?,\s*([0-9.]+)\)/g)].map(m => parseFloat(m[1]));
-    return a.length > 0 && Math.max(...a) <= 0.02;   // 所有者定的 1%
-  }));
+  // 底光:玻璃靠它才有东西可透。
+  // ⚠️ 2026-09-03 改过:~~原来两套都钉「≤0.02,所有者定的 1% 纯灰」~~ —— 浅色那条已由
+  // 所有者本人推翻(她拿朋友那版来问「玻璃质感是不是做不出来」,答案是底光得有颜色)。
+  // **深色仍是 1%**,一个数没动。上限留着是防止以后有人把它调成一锅粥。
+  const washMax = scheme === 'light' ? 0.16 : 0.02;
+  ok('页面有一层底光' + (scheme === 'light' ? '(浅色:带颜色的)' : '(深色:极淡)'),
+    await page.evaluate((max) => {
+      const bi = getComputedStyle(document.body).backgroundImage;
+      if (!bi.includes('gradient')) return false;
+      const a = [...bi.matchAll(/rgba\([^)]*?,\s*([0-9.]+)\)/g)].map(m => parseFloat(m[1]));
+      return a.length > 0 && Math.max(...a) <= max;
+    }, washMax));
+  // 浅色的底光必须**真的有颜色**(三个通道不能相等)—— 这正是玻璃感的来源,别被"统一"回灰的
+  if (scheme === 'light') {
+    ok('浅色的底光是有颜色的,不是灰的', await page.evaluate(() => {
+      const bi = getComputedStyle(document.body).backgroundImage;
+      const m = [...bi.matchAll(/rgba\((\d+),\s*(\d+),\s*(\d+)/g)].map(x => x.slice(1, 4).map(Number));
+      return m.some(([r, g, b]) => !(r === g && g === b));
+    }));
+  }
 
   // 页面不许横向滚动(手机上最容易翻车的一条)
   ok('没有横向滚动', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
