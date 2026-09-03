@@ -42,18 +42,18 @@
     --color-gray-700: #3d3d3a;  --color-gray-750: #30302e;
     --color-gray-800: #262624;  --color-gray-850: #1f1e1d;
     --color-gray-900: #1a1918;  --color-gray-950: #141413;
-    /* ── 冷灰(2026-09-03 新增)──────────────────────────────
-       所有者原话:「**我是想改成冷色调一点 包括那个灰色按钮之类的**」。
-       ⚠️ **官端那套暖灰一行没删**,深色模式仍然整套用它;**只有浅色的角色表改指这套**。
-       想退回暖的:把下面浅色角色表里的 `--cool-*` 全部换回 `--color-gray-*` 即可,别删这一段。
-       做法:**明度一个不动**,逐档照搬官端的 L,只把色相搬到 215°、按深浅给一点饱和度
-       —— 明度不动 = 文档里算过的那些对比度账全部照旧成立(白字压强调色仍是 2.9 上下)。 */
-    --cool-050: #f7f7f9;  --cool-100: #eff1f3;  --cool-150: #e9ebee;
-    --cool-200: #dee1e6;  --cool-250: #d3d7dc;  --cool-300: #c5cad1;
-    --cool-400: #a3a9b2;  --cool-500: #78818e;  --cool-600: #535a64;
-    --cool-650: #434952;  --cool-700: #353a41;  --cool-750: #2a2e34;
-    --cool-800: #212429;  --cool-900: #16191b;  --cool-950: #111315;
-    /* 冷色版的近黑,给阴影/描边/底光当底(原来是暖的 rgba(20,20,19,…)) */
+    /* ── 纯灰(2026-09-03)────────────────────────────────
+       所有者:「**灰色色阶就按那个灰色按钮的颜色**」—— 那颗按钮是 `#999999`,零饱和。
+       所以整套灰阶**一律零饱和**(三通道相等),两套配色共用这一张表。
+       ⚠️ **官端那套暖灰(上面 `--color-gray-*`)一行没删**,留着当来源对照;
+       **角色表指的是这一张**。想退回官端暖灰,把角色表里的 `--neutral-*` 换回去即可。
+       **明度逐档照搬官端,一档没动** —— 所以 1.8 里那些对比度的账原样成立。
+       ⚠️ ~~当天中途这张表是「冷灰」(色相 215°)~~ —— 已按她这句改成纯灰,别再加色相。 */
+    --neutral-050: #f8f8f8;  --neutral-100: #f1f1f1;  --neutral-150: #ebebeb;
+    --neutral-200: #e2e2e2;  --neutral-250: #d8d8d8;  --neutral-300: #cbcbcb;
+    --neutral-400: #aaaaaa;  --neutral-500: #838383;  --neutral-600: #5b5b5b;
+    --neutral-650: #4b4b4b;  --neutral-700: #3b3b3b;  --neutral-750: #2f2f2f;
+    --neutral-800: #252525;  --neutral-900: #191919;  --neutral-950: #131313;
 
     /* ── 官端强调色原文 ── */
     --color-clay: #d97757;      --color-clay-hover: #c6613f;
@@ -63,7 +63,7 @@
     --color-error: #bf4d43;
 
     /* ── 角色表(浅色):照官端 :root 逐条对应 ── */
-    /* ⚠️ 2026-09-03 由 --cool-050(#f7f7f9)压到 #f1f1f1:iOS 那种质感靠的是
+    /* ⚠️ 2026-09-03 由 #f7f7f9 压到 #f1f1f1:iOS 那种质感靠的是
        **灰底 + 纯白卡片的落差**,底色和卡片太接近就分不出层,只能靠阴影撑,反而显脏。
        ⚠️ **底色是纯灰,三个通道相等,饱和度 0** —— 所有者当天原话「**底色我不想要饱和度**」。
        ~~中途试过 `#f1f1f4`(带一点蓝)~~,**已撤销,别再给底色加色**。
@@ -72,12 +72,12 @@
     --bg: #f1f1f1;                          /* background-primary(纯灰,饱和度 0) */
     --surface: var(--color-gray-000);       /* background-overlay:卡片 */
     --surface-solid: var(--color-gray-000);
-    --surface-sunken: var(--cool-100);      /* background-secondary:输入框底 */
-    --border: var(--cool-200);              /* border-tertiary */
-    --border-strong: var(--cool-300);       /* border-secondary */
-    --text: var(--cool-950);                /* foreground-primary */
-    --text-dim: var(--cool-750);            /* foreground-secondary */
-    --text-light: var(--cool-600);          /* foreground-tertiary */
+    --surface-sunken: var(--neutral-100);      /* background-secondary:输入框底 */
+    --border: var(--neutral-200);              /* border-tertiary */
+    --border-strong: var(--neutral-300);       /* border-secondary */
+    --text: var(--neutral-950);                /* foreground-primary */
+    --text-dim: var(--neutral-750);            /* foreground-secondary */
+    --text-light: var(--neutral-600);          /* foreground-tertiary */
     /* ⚠️ 强调色 2026-08-31 由所有者定成中性灰(不再是官端的 clay);其余灰阶仍是官端原文。
        它拆成三个角色,别合并回一个 —— 合了会有两处直接看不见:
        ① `#999999` 上压白字只有 2.85:1(选中的药丸糊);
@@ -93,23 +93,23 @@
        她知道白字压 `#999999` 只有 2.94:1(低于 4.5:1)。~~此前改成过近黑(6.47:1)~~,
        **是她当场否掉的,别再"修"回去。** */
     --accent-fg: var(--color-gray-000);
-    --accent-text: var(--cool-600);         /* 当文字/细线用 → 明度和官端 gray-600 一样,对比度照旧 */
+    --accent-text: var(--neutral-600);         /* 当文字/细线用 → 明度和官端 gray-600 一样,对比度照旧 */
     --accent-glow: rgba(153, 153, 153, 0.22);
-    --chip-bg: var(--cool-200);             /* button-tertiary-bg */
-    --chip-fg: var(--cool-650);             /* button-secondary-fg */
+    --chip-bg: var(--neutral-200);             /* button-tertiary-bg */
+    --chip-fg: var(--neutral-650);             /* button-secondary-fg */
     --input-bg: var(--color-gray-000);      /* input-bg */
     --positive: var(--color-olive);
     --negative: var(--color-error);
     --warning: var(--color-clay);
     /* 情绪条:所有者 2026-08-31 定的,从红→绿渐变改成强调色的深浅渐变。
        ⚠️ 代价她知情:红=负面/绿=正面那层意思没了,只剩圆点位置表示情绪值。 */
-    --vbar-from: var(--cool-200);
+    --vbar-from: var(--neutral-200);
     --vbar-to: var(--accent);
     /* 阴影 2026-09-03 定稿:**极轻的中性影**。~~当天中途试过带蓝的柔影~~,那是配彩色底光的,
        彩光撤了之后蓝影会在灰底上显脏。iOS 那种卡片阴影几乎看不见,分层交给底色落差。 */
-    --shadow-card: 0 1px 3px rgba(17, 19, 21, 0.04);
-    --shadow-card-hover: 0 4px 16px rgba(17, 19, 21, 0.08);
-    --shadow-panel: 0 8px 36px rgba(17, 19, 21, 0.12);
+    --shadow-card: 0 1px 3px rgba(19, 19, 19, 0.04);
+    --shadow-card-hover: 0 4px 16px rgba(19, 19, 19, 0.08);
+    --shadow-panel: 0 8px 36px rgba(19, 19, 19, 0.12);
     /* 毛玻璃。**2026-08-31 所有者定稿的这一版,三处都别乱动**(中间试错两轮才到这儿):
        ① 面是「白纱」不是「灰块」—— 深色下 7% 白,不是 52% 灰。
           ~~灰块那版~~ 合成出来 `#1d1d1c`,而实色卡片本来就是 `#1a1918`,**差 3/255,肉眼等于没差**。
@@ -130,7 +130,7 @@
     /* ⚠️ 2026-09-03 定稿:那一圈均匀的淡描边**留着** —— 它是玻璃的边缘,不是装饰。
        ~~当天中途去掉过(去追 iOS 那种无边白卡)~~ **已撤销**,理由同上:那一版把玻璃弄没了。
        **仍然不许有上缘高光线**(`inset`),那条 08-31 的结论没变。 */
-    --glass-edge: rgba(17, 19, 21, 0.06);
+    --glass-edge: rgba(19, 19, 19, 0.06);
     /* 底光。⚠️⚠️ 2026-09-03 当天来回改过三轮,**别照任何一版旧文改回去**,定稿是这版:
        ①原「1%、纯灰」(她 08-31 拿滑杆定的)—— 太淡,玻璃没东西可透,白盖白;
        ②改成「蓝 13% + 紫 10%」的彩光 —— 她说「**我并不想要这么高的饱和度**」;
@@ -158,28 +158,28 @@
       /* ⚠️ 2026-09-03 深色照浅色那套流程改了一遍(所有者:「深色的也按这个流程改」):
          **底色纯灰、零饱和**(她那句「底色我不想要饱和度」两套都适用),
          **字/描边/强调色改指冷灰**,**底光回到看得见**(见下面 --wash-*),玻璃保留。
-         官端那套暖灰一行没删,想退回把这一段的 --cool-* 换回 --color-gray-* 即可。 */
+         官端那套暖灰一行没删,想退回把这一段的 --neutral-* 换回 --color-gray-* 即可。 */
       --bg: #131313;                         /* 纯灰,三通道相等 */
-      --surface: var(--cool-900);
-      --surface-solid: var(--cool-900);
-      --surface-sunken: var(--cool-800);
-      --border: var(--cool-750);
-      --border-strong: var(--cool-700);
-      --text: var(--cool-050);
-      --text-dim: var(--cool-400);
-      --text-light: var(--cool-500);
-      --accent: #2f3339;                     /* 2026-09-03 由 #343434 改成同明度的冷灰(她 08-31 定的那档明度没动) */
-      --accent-hover: #3d434b;
-      --accent-fg: var(--cool-050);          /* 压在 #2f3339 上 → 明度没变,对比度照旧 */
-      --accent-text: var(--cool-400);        /* 明度同官端 gray-400,对比度照旧 */
+      --surface: var(--neutral-900);
+      --surface-solid: var(--neutral-900);
+      --surface-sunken: var(--neutral-800);
+      --border: var(--neutral-750);
+      --border-strong: var(--neutral-700);
+      --text: var(--neutral-050);
+      --text-dim: var(--neutral-400);
+      --text-light: var(--neutral-500);
+      --accent: #343434;                     /* 纯灰。⚠️ 09-03 中途改过冷灰 #2f3339,又按「灰阶照那颗按钮来」改回 —— 正好是她 08-31 定的那个值 */
+      --accent-hover: #444444;
+      --accent-fg: var(--neutral-050);       /* 压在 #343434 上 → 11.82:1 */
+      --accent-text: var(--neutral-400);        /* 明度同官端 gray-400,对比度照旧 */
       --accent-glow: rgba(255, 255, 255, 0.12);
       /* ⚠️ 深色下 `#343434` 压在卡片底 `#1a1918` 上只有 1.48:1 —— 整条会看不见。
          所以深色这条是「从她的强调色往浅里走」,浅色那条是「往深里走」,两边都读得出来。 */
       --vbar-from: var(--accent);
-      --vbar-to: var(--cool-400);
-      --chip-bg: var(--cool-800);
-      --chip-fg: var(--cool-050);
-      --input-bg: var(--cool-800);
+      --vbar-to: var(--neutral-400);
+      --chip-bg: var(--neutral-800);
+      --chip-fg: var(--neutral-050);
+      --input-bg: var(--neutral-800);
       --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.30);
       --shadow-card-hover: 0 4px 14px rgba(0, 0, 0, 0.45);
       --shadow-panel: 0 8px 40px rgba(0, 0, 0, 0.55);
