@@ -46,6 +46,13 @@ ok(await pg.evaluate(() => document.getElementById('hTitle').textContent === 'Dr
 ok(await pg.evaluate(() => document.getElementById('hSub').textContent === '记忆乱流'), '副标题是记忆乱流');
 ok(await pg.evaluate(() => getComputedStyle(document.getElementById('loading')).display === 'none'), '「正在把记忆铺开…」已经收掉');
 
+console.log('B2. 有出口能回后台');
+// ⚠️ 这一页可以被加到手机主屏,那种模式下连浏览器的返回按钮都没有 —— 没这颗就只能杀掉重开。
+ok('左上角有出口', await pg.locator('#exit').isVisible());
+ok('出口指向 /dashboard', (await pg.getAttribute('#exit', 'href')) === '/dashboard');
+ok('出口是链接不是 JS 跳转', (await pg.evaluate(() => document.getElementById('exit').tagName)) === 'A');
+ok('出口有 aria-label(它只有图标)', !!(await pg.getAttribute('#exit', 'aria-label')));
+
 console.log('C. 画布真的在画,而且是深色底');
 const px = await pg.evaluate(() => {
   const c = document.getElementById('canvas');

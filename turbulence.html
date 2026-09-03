@@ -172,6 +172,24 @@ const CONFIG = {
   }
   #head p { margin-top:5px; font-size:10px; letter-spacing:.22em; text-indent:.22em; color:var(--drift-faint); }
 
+  /* 左上角的出口:回记忆库后台。
+     ⚠️ **这颗必须有**(所有者 2026-09-03:「乱流加一个出口」)——
+     这一页可以被**加到手机主屏**,那种模式下 Safari 那圈壳没了、**连返回按钮都没有**,
+     没这颗就只能杀掉重开。⚠️ 用 `<a>` 不用 JS 跳转:点了才走,不带来任何请求。 */
+  #exit {
+    position: fixed; z-index: 3;
+    top: calc(env(safe-area-inset-top,0px) + 16px);
+    left: calc(env(safe-area-inset-left,0px) + 14px);
+    width: 52px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--drift-line); border-radius: 999px;
+    background: var(--drift-panel);
+    -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+    color: var(--drift-dim); text-decoration: none;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  #exit:hover, #exit:focus-visible { color: var(--drift-ink); border-color: var(--drift-dim); outline: none; }
+  #exit svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
   /* 左下角读数 / 右下角三颗按钮 */
   .hud {
     position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 14px); z-index:3;
@@ -273,6 +291,10 @@ const CONFIG = {
 <body>
 
 <div id="stage"><canvas id="canvas"></canvas></div>
+
+<a id="exit" href="/dashboard" aria-label="回记忆库后台" title="回记忆库后台">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+</a>
 
 <div id="head">
   <h1 id="hTitle"></h1>
