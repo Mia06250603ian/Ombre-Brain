@@ -171,8 +171,15 @@ for (const scheme of ['light', 'dark']) {
   // 筛选药丸整排不要表情;卡片上那颗状态图标要留着
   ok('药丸一个表情都没有',
     !/\p{Extended_Pictographic}/u.test(await page.locator('#filters').innerText()));
-  ok('卡片上那颗图标还在',
-    /\p{Extended_Pictographic}/u.test(await page.locator('.bucket-row .icon').first().innerText()));
+  // ⚠️ 2026-09-03:卡片那颗图标由 emoji 换成**自己画的内嵌 SVG**(所有者:「能把现在的
+  // 表情换成自己画的 ui 吗」),所以不能再用 emoji 正则判 —— 改成查真的画了一颗 svg。
+  ok('卡片上那颗图标还在', await page.locator('.bucket-row .icon svg.ico').first().isVisible());
+  // 图标跟着文字颜色走(stroke: currentColor),深浅色都不用另配色
+  ok('图标跟着文字颜色走', await page.locator('.bucket-row .icon svg.ico').first().evaluate(
+    el => getComputedStyle(el).stroke === getComputedStyle(el).color));
+  // 整页不许再有 emoji 当图标用(小票上的 □/✓ 和 logo ◐ 不是 emoji,不受影响)
+  ok('列表里没有 emoji 当图标', !/\p{Extended_Pictographic}/u.test(
+    await page.locator('#bucket-list').innerText()));
   const wantChip = scheme === 'light' ? 'rgb(141, 151, 165)' : 'rgb(47, 51, 57)';   // 两套 09-03 都改冷灰
   const gotChip = await page.locator('.filter-btn.active').evaluate(el => getComputedStyle(el).backgroundColor);
   ok('选中的药丸是实心强调色', gotChip === wantChip, gotChip);

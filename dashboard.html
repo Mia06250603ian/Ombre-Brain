@@ -390,7 +390,20 @@
     transform: translateY(-1px);
   }
   .row-top { display: flex; align-items: baseline; gap: 8px; }
-  .bucket-row .icon { font-size: 16px; flex: none; }
+  .bucket-row .icon { flex: none; display: inline-flex; color: var(--text-light); }
+  /* ── 自己画的图标(2026-09-03,所有者:「能把现在的表情换成自己画的 ui 吗」)──
+     全是内嵌 SVG,**不引任何图标库** —— 这个后台不该为一套图标再多一个外部依赖。
+     `stroke: currentColor` = 跟着所在位置的文字颜色走,深浅色自动都对。
+     ⚠️ 想换某个图标只改 JS 里那张 ICONS 表的一条 path,别去改用法。 */
+  .ico {
+    width: 16px; height: 16px; flex: none;
+    fill: none; stroke: currentColor; stroke-width: 1.6;
+    stroke-linecap: round; stroke-linejoin: round;
+    vertical-align: -3px;
+  }
+  .ico-fill { fill: currentColor; stroke: none; }
+  .bucket-row .icon .ico { width: 17px; height: 17px; }
+  button .ico, .btn-secondary .ico, .btn-danger .ico { margin-right: 5px; }
   .bucket-row .name {
     font-size: 16px;
     font-weight: 600;
@@ -1052,7 +1065,7 @@
     <p style="color:var(--text-dim);font-size:13px;">支持 Claude JSON、ChatGPT 导出、DeepSeek、Markdown、纯文本格式</p>
 
     <div id="import-upload-zone" style="border:2px dashed var(--border);border-radius:16px;padding:40px;text-align:center;cursor:pointer;margin:20px 0;transition:border-color .2s;">
-      <div style="font-size:32px;margin-bottom:8px;">📁</div>
+      <div style="margin-bottom:8px;color:var(--text-light);"><svg class="ico" style="width:30px;height:30px" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5V4.5"/><path d="m8 8.5 4-4 4 4"/><path d="M4.5 15v3.5a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1V15"/></svg></div>
       <div>拖拽文件到此处，或 <span style="color:var(--accent-text);text-decoration:underline;">点击选择</span></div>
       <input type="file" id="import-file-input" accept=".json,.txt,.md,.jsonl" style="display:none" />
     </div>
@@ -1076,7 +1089,7 @@
         <span>原文: <b id="import-raw">0</b></span>
       </div>
       <div style="margin-top:12px;">
-        <button id="import-pause-btn" onclick="pauseImport()" style="display:none;">⏸ 暂停</button>
+        <button id="import-pause-btn" onclick="pauseImport()" style="display:none;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 5.5v13M14.5 5.5v13"/></svg>暂停</button>
       </div>
     </div>
 
@@ -1090,7 +1103,7 @@
     <hr style="border-color:var(--border);margin:24px 0;" />
 
     <h3>高频模式检测</h3>
-    <button onclick="detectPatterns()">🔍 检测高频模式</button>
+    <button onclick="detectPatterns()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m15.5 15.5 4 4"/></svg>检测高频模式</button>
     <div id="import-patterns" style="margin-top:16px;"></div>
   </div>
 </div>
@@ -1949,7 +1962,8 @@ function renderBuckets(buckets) {
     return;
   }
   list.innerHTML = buckets.map(function(b) {
-    var icon = b.pinned ? '📌' : b.type === 'feel' ? '🫧' : b.digested ? '🌿' : b.resolved ? '💤' : '💭';
+    // 状态图标(2026-09-03 由 emoji 换成自己画的,含义一一对应)
+    var icon = ico(b.pinned ? 'pin' : b.type === 'feel' ? 'drop' : b.digested ? 'leaf' : b.resolved ? 'check' : 'bubble');
     var vPos = Math.round(b.valence * 100);
     var modelV = b.model_valence != null ? ' → V' + b.model_valence.toFixed(1) : '';
     var timeAgo = formatTimeAgo(b.last_active || b.created);
@@ -2027,10 +2041,10 @@ function renderDetailView() {
     '</div>' +
     '<div class="detail-content">' + esc(b.content) + '</div>' +
     '<div class="detail-actions">' +
-      '<button class="btn-secondary" onclick="renderDetailEdit()">✎ 编辑</button>' +
+      '<button class="btn-secondary" onclick="renderDetailEdit()">' + ico('pencil') + '编辑</button>' +
       // feel 桶永不归档(规格),这里就不给按钮
-      (meta.type === 'feel' ? '' : '<button class="btn-secondary" onclick="archiveBucket()">🗄 归档</button>') +
-      '<button class="btn-danger" onclick="deleteBucket()">🗑 删除</button>' +
+      (meta.type === 'feel' ? '' : '<button class="btn-secondary" onclick="archiveBucket()">' + ico('box') + '归档</button>') +
+      '<button class="btn-danger" onclick="deleteBucket()">' + ico('trash') + '删除</button>' +
     '</div>' +
     '<div class="detail-msg" id="detail-msg"></div>';
 }
@@ -2195,6 +2209,32 @@ function cssVar(name) {
   return v || '#87867f';
 }
 
+/* ── 自己画的一套线性图标(2026-09-03 换掉原来那些 emoji)──
+   一律 24×24 视框、1.6 描边、跟着 currentColor 走。**别引图标库**:
+   这个后台只为字体连了一次外网,不该再为图标多一个。
+   ⚠️ 卡片上那五个标的是记忆的状态,和原来的 emoji 一一对应:
+      pin=📌钉选 / drop=🫧feel / leaf=🌿已消化 / check=💤已解决 / bubble=💭普通 */
+var ICONS = {
+  pin:    '<path d="M9 4h6M10 4v6l-3 3.5h10L14 10V4"/><path d="M12 17v3"/>',
+  drop:   '<path d="M12 3.5c3 3.6 5 6.2 5 8.6a5 5 0 0 1-10 0c0-2.4 2-5 5-8.6Z"/>',
+  leaf:   '<path d="M5 19c0-7 4.5-11 14-11 0 8-4 12-9.5 12A4.5 4.5 0 0 1 5 19Z"/><path d="M9 19c1.5-3.5 3.5-6 6-7.5"/>',
+  check:  '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.3l2.4 2.4 4.6-5"/>',
+  bubble: '<path d="M20 12.5c0 3.6-3.6 6.5-8 6.5-1 0-2-.15-2.9-.43L5 20l1.2-3.1A6.2 6.2 0 0 1 4 12.5C4 8.9 7.6 6 12 6s8 2.9 8 6.5Z"/>',
+  pencil: '<path d="M4 20h4l10-10-4-4L4 16v4Z"/><path d="M13.5 6.5l4 4"/>',
+  box:    '<path d="M3.5 7.5h17v3h-17z"/><path d="M5 10.5V19a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8.5"/><path d="M10 14h4"/>',
+  trash:  '<path d="M4.5 7h15"/><path d="M9.5 7V5h5v2"/><path d="M6.5 7l1 12.5a1 1 0 0 0 1 .9h7a1 1 0 0 0 1-.9L17.5 7"/>',
+  star:   '<path d="m12 4 2.5 5.1 5.6.8-4 4 .9 5.6-5-2.6-5 2.6.9-5.6-4-4 5.6-.8Z"/>',
+  upload: '<path d="M12 15.5V4.5"/><path d="m8 8.5 4-4 4 4"/><path d="M4.5 15v3.5a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1V15"/>',
+  pause:  '<path d="M9.5 5.5v13M14.5 5.5v13"/>',
+  search: '<circle cx="11" cy="11" r="6"/><path d="m15.5 15.5 4 4"/>',
+  clock:  '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 1.8"/>',
+  cross:  '<path d="m7 7 10 10M17 7 7 17"/>',
+};
+function ico(name, extra) {
+  var body = ICONS[name] || '';
+  return '<svg class="ico' + (extra ? ' ' + extra : '') + '" viewBox="0 0 24 24" aria-hidden="true">' + body + '</svg>';
+}
+
 function esc(s) {
   if (!s) return '';
   var d = document.createElement('div');
@@ -2278,7 +2318,7 @@ async function runBreathDebug() {
     results.innerHTML = data.results.map(function(r, i) {
       var s = r.scores;
       var passed = r.passed_threshold;
-      var icon = r.pinned ? '📌' : r.resolved ? '💤' : r.type === 'feel' ? '🫧' : '💭';
+      var icon = ico(r.pinned ? 'pin' : r.resolved ? 'check' : r.type === 'feel' ? 'drop' : 'bubble');
       var bars = Object.entries(s).map(function(entry) {
         var key = entry[0], val = entry[1];
         var pct = Math.round(val * 100);
@@ -2424,7 +2464,12 @@ function updateImportUI(s) {
   document.getElementById('import-created').textContent = s.memories_created;
   document.getElementById('import-merged').textContent = s.memories_merged;
   document.getElementById('import-raw').textContent = s.memories_raw;
-  const statusMap = { running: '⏳ 导入中…', paused: '⏸ 已暂停', completed: '✅ 完成', error: '❌ 出错' };
+  const statusMap = {
+        running:   ico('clock') + '导入中…',
+        paused:    ico('pause') + '已暂停',
+        completed: ico('check') + '完成',
+        error:     ico('cross') + '出错',
+      };
   document.getElementById('import-status-text').textContent = statusMap[s.status] || s.status;
   document.getElementById('import-pause-btn').style.display = s.status === 'running' ? '' : 'none';
   if (s.status !== 'running') clearInterval(importPollTimer);
@@ -2459,9 +2504,9 @@ async function loadImportResults() {
         <p style="font-size:13px;margin:6px 0;white-space:pre-wrap;">${b.content}</p>
         <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">${(b.tags||[]).map(t=>'#'+t).join(' ')}</div>
         <div style="display:flex;gap:8px;">
-          <button onclick="reviewAction('${b.id}','pin')" title="固定为永久记忆">📌 固定</button>
-          <button onclick="reviewAction('${b.id}','important')" title="标为重要">⭐ 重要</button>
-          <button onclick="reviewAction('${b.id}','noise')" title="标为噪声并resolve">🗑 噪声</button>
+          <button onclick="reviewAction('${b.id}','pin')" title="固定为永久记忆">${ico('pin')}固定</button>
+          <button onclick="reviewAction('${b.id}','important')" title="标为重要">${ico('star')}重要</button>
+          <button onclick="reviewAction('${b.id}','noise')" title="标为噪声并resolve">${ico('trash')}噪声</button>
           <button onclick="if(confirm('确定删除？'))reviewAction('${b.id}','delete')" title="彻底删除" style="color:var(--negative);">✕ 删除</button>
         </div>
       </div>
@@ -2484,9 +2529,9 @@ async function detectPatterns() {
         </div>
         <p style="font-size:13px;margin:6px 0;">${p.pattern_content}</p>
         <div style="display:flex;gap:8px;">
-          <button onclick="reviewAction('${p.bucket_ids[0]}','pin')">📌 固定</button>
-          <button onclick="reviewAction('${p.bucket_ids[0]}','important')">⭐ 重要</button>
-          <button onclick="batchReview('${JSON.stringify(p.bucket_ids).replace(/'/g, "\\'").replace(/"/g, '&quot;')}','noise')">🗑 噪声</button>
+          <button onclick="reviewAction('${p.bucket_ids[0]}','pin')">${ico('pin')}固定</button>
+          <button onclick="reviewAction('${p.bucket_ids[0]}','important')">${ico('star')}重要</button>
+          <button onclick="batchReview('${JSON.stringify(p.bucket_ids).replace(/'/g, "\\'").replace(/"/g, '&quot;')}','noise')">${ico('trash')}噪声</button>
         </div>
       </div>
     `).join('');
