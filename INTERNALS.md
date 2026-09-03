@@ -2,6 +2,7 @@
 
 > 本文档面向开发者和维护者。记录功能总览、环境变量、模块依赖、硬编码值和核心设计决策。
 > 最后更新：2026-09-03(**「记忆网络」标签页已按所有者决定删除**,见第 1.10 节开头;
+> **新增第 1.12 节「记忆乱流 `/turbulence`」** —— 照 `/galaxy` 那套架构新开的一页;
 > 2026-09-01 新增第 1.10 节「记忆网络页为什么会打不开」与 1.11 节「便利贴页」;此前各节的日期以节内标注为准)
 
 ---
@@ -696,6 +697,69 @@ bash tests/dashboard-ui/run.sh                                     # 浏览器�
 **交互跟着形状改了**:小票上摆一排按钮不像小票,所以**点一行 = 勾掉/取消**,
 右边一个 `×` = 撕掉(仍然二次确认)。页面顶部有一行小字说明这件事。
 
+## 1.12 记忆乱流 `/turbulence`(2026-09-03 新增)
+
+把桶画成**一片持续上飘的字符场**:一个桶一个字符,越靠前越亮;手指/鼠标凑近 →
+附近那几颗之间的相似度连线亮起来;点中一颗锁住 → 底部浮出正文和「离它最近的记忆」。
+
+**出处**:所有者拿 `Mia06250603ian/fuyue`(赴约)来问能不能用它那个,决定照它做一页。
+**架构照 1.9 的 `/galaxy` 那套原样来**(她的原话:「把那个乱流做成和星图一样的架构」):
+
+| 事 | 实际情况 |
+|---|---|
+| 后端代码 | `server.py` 里**只有一条 `/turbulence` 路由**(约 20 行),照 `/galaxy` 抄的,只发一个静态文件 |
+| 数据从哪来 | **已有的三条**:`GET /api/buckets`(铺场)+ `GET /api/network`(连线)+ `GET /api/bucket/{id}`(点中才取正文)。**没有为它新增任何接口** |
+| 写操作 | **零**。整条链路上没有一个 POST/PATCH/DELETE(登录那次 POST 除外) |
+| 开销 | 开一次页 = 一次 `/api/buckets` + 一次 `/api/network`;**不轮询、不定时刷新、没有后台任务** |
+| 出错时 | 路由内就地兜住异常,只影响这一页,碰不到 `/mcp` |
+| 登录 | 复用 OB 自己的 `/auth/login` 和那块 `ombre_session` cookie,**和记忆库后台同一把锁** |
+| 外部依赖 | **零**。⚠️ 这点和 `/galaxy` **不一样** —— 那个的 three.js 走 CDN,这一页一个外部请求都不发(演练里有一条专门钉这个) |
+
+⚠️ **`/api/network` 是 2026-09-03 上午刚被腾出来的那条**:它原本只服务后台的「记忆网络」标签页,
+那页当天按所有者决定删了(见 1.10 开头),接口刻意留着 —— **留对了,这一页正好接上**。
+它要现算相似度(438 桶实测约 1.3 秒,见 1.10),所以**页面把它当可选**:取不到就当没有边,
+场照样铺得出来、只是凑近了不亮线。演练里有一条钉这个降级路径。
+
+### 和 fuyue 原版刻意不一样的三处(别当成抄漏了)
+
+原版是 `packages/ui/src/memory-constellation.tsx`,**React 19 + lucide-react + esbuild**;
+这一页是**用普通 JS 重写的**,因为后台这边不引外部依赖。三处行为差别:
+
+1. **不足 144 个时的填充法**。原版把同一条记忆**复制成多个「投影」**凑够 144,于是连线要在
+   一堆投影里找最近的那个,代码复杂一大截。这里改成**填充不可点的装饰字符**(更暗、不连线、
+   不可选中)。她 400+ 个桶本来就用不到填充,那套复杂度买不到任何东西。
+2. **边的优先级**。原版的边分 `explicit/source/tag/vector` 四种、按种类排;OB 只有一种边
+   (向量相似度),所以改成**按相似度从高到低**排。
+3. **分层**。原版按 `core/semantic/episodic/working/archive` 定字号和位置;OB 没有这套,
+   改成按 `type + pinned + resolved` 映射,见 `turbulence.html` 里的 `layerOf()`。
+
+**授权**:`packages/ui` 单独采用 MIT(Copyright 2026 TangfanOVO),与本仓库的 MIT 兼容;
+**MIT 全文和版权声明抄在 `turbulence.html` 的头注释里**,那是 MIT 要求的,别删。
+⚠️ **别去抄 fuyue 的 `apps/` 那部分 —— 那是 AGPL-3.0**,拿进来会污染整个仓库的授权。
+
+### 怎么验
+
+```bash
+bash tests/turbulence-e2e/run.sh    # 40 项浏览器演练(2026-09-03 全绿)
+```
+起两个假 OB(一个正常、一个把 `/api/network` 打成 500),**不碰真 OB**,同 `tests/galaxy-e2e/`。
+钉着的除了功能,还有三条底线:**零外部请求**、**除登录外零非 GET 请求**、**只碰那三条已有接口**。
+⚠️ 演练里把 `driftSpeed` 换成 0 好让点击落得准 —— **只替换测试时发出去的那份 HTML,
+`turbulence.html` 本身一个字不动**(同 galaxy 那套做法)。
+
+### 三条别踩
+
+1. **⚠️ `Dockerfile` 里必须有 `COPY turbulence.html .`** —— 漏了这行镜像里没有这个文件,
+   线上 `/turbulence` 回 404 而本地一切正常。**这是 1.9 已经踩过一次的坑**(galaxy.html 那次),
+   往根目录加静态文件都同理。
+2. **别把 `nearestAt()` 改成每帧对所有节点排序**。它现在是插入到一个长度为 4 的小数组里,
+   438 个节点每帧扫一遍是够用的;真要扩到几千个桶,该做的是空间分桶,不是排序。
+   同理 `makeGraph` 里那十轮松弛**已经是网格分桶了,别改回两两比** —— 那是 1.10 讲的同一个病。
+3. **`window.__drift` 是给演练用的观察口,页面自己一处都不用**(照 `galaxy.html` 的
+   `window.__galaxy` 那套)。删了它演练就只能盲点画布,点不准;**别为了「干净」把它拿掉。**
+
+**改文案/调参**:标题、颜色、上飘速度、感应半径、字符表都在 `turbulence.html` 顶部的 `CONFIG` 里。
+
 ## 2. 模块结构与依赖关系
 
 ```
@@ -722,6 +786,7 @@ bash tests/dashboard-ui/run.sh                                     # 浏览器�
 | `embedding_engine.py` | 向量化引擎：Gemini embedding API + SQLite + 余弦搜索 | `utils` | `server.py`, `backfill_embeddings.py` |
 | `utils.py` | 配置加载、日志、路径安全、ID 生成、token 估算 | 无 | 所有模块 |
 | `galaxy.html` | **记忆银河**(2026-08-29 新增):把桶画成 3D 星图的单文件页面。**纯前端、只读**,靠 `/api/buckets` + `/api/bucket/{id}` 取数,不新增任何接口 | 无(three.js 走 CDN) | `server.py` 的 `/galaxy` 路由 |
+| `turbulence.html` | **记忆乱流**(2026-09-03 新增):把桶画成一片上飘的字符场。**纯前端、只读**,靠 `/api/buckets` + `/api/network` + `/api/bucket/{id}` 取数,不新增任何接口。视觉照 fuyue 的 `memory-constellation`(MIT)重写,见 1.12 | **无 —— 零外部依赖**(和 galaxy 不一样,那个要 CDN 上的 three.js) | `server.py` 的 `/turbulence` 路由 |
 | `write_memory.py` | 手动写入记忆 CLI（绕过 MCP） | 无（独立脚本） | 无 |
 | `backfill_embeddings.py` | 为存量桶批量生成 embedding | `utils`, `bucket_manager`, `embedding_engine` | 无 |
 | `check_buckets.py` | 桶数据完整性检查 | `bucket_manager`, `utils` | 无 |

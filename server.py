@@ -3026,6 +3026,34 @@ async def galaxy(request):
         return HTMLResponse("<h1>星图暂时打不开</h1>", status_code=500)
 
 
+@mcp.custom_route("/turbulence", methods=["GET"])
+async def turbulence(request):
+    """Serve the memory drift page (read-only glyph field of buckets).
+
+    记忆乱流:把桶画成一片持续上飘的字符场,凑近了亮出相似度连线,点中一颗浮出正文。
+    视觉照 Mia06250603ian/fuyue 的 memory-constellation(MIT)用普通 JS 重写,
+    2026-09-03 建。⚠️ 架构和 /galaxy 一模一样,只读、OB 优先:
+      - 这条路由只发一个静态文件,不读桶、不写桶、不起后台任务;
+      - 数据全走已有的 /api/buckets + /api/network + /api/bucket/{id}(三条都要登录),
+        没有为它新增任何接口;
+      - 页面开一次 = 一次 /api/buckets + 一次 /api/network;不轮询、不定时刷新;
+      - 这里出任何岔子都就地兜住,只影响这一页,不往上抛、碰不到 /mcp。
+    ⚠️ turbulence.html 必须在 Dockerfile 里 COPY,不然线上 404 而本地正常(同 galaxy.html 那个坑)。
+    细节见 INTERNALS.md 第 1.12 节。
+    """
+    from starlette.responses import HTMLResponse
+    import os
+    page_path = os.path.join(os.path.dirname(__file__), "turbulence.html")
+    try:
+        with open(page_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    except FileNotFoundError:
+        return HTMLResponse("<h1>turbulence.html not found</h1>", status_code=404)
+    except Exception as e:
+        logger.warning("turbulence page failed: %s", e)
+        return HTMLResponse("<h1>记忆乱流暂时打不开</h1>", status_code=500)
+
+
 @mcp.custom_route("/api/config", methods=["GET"])
 async def api_config_get(request):
     """Get current runtime config (safe fields only, API key masked)."""

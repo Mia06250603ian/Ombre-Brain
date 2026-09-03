@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#01050a">
+<title>Drift · 记忆乱流</title>
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Drift">
+
+<!-- ═══════════════════════════════════════════════════════════
+     记忆乱流 · Memory Drift(2026-09-03 建)
+     把 OB 的记忆桶画成一片持续上飘的字符场:每个桶一个字符,越亮越靠前;
+     手指/鼠标凑近 → 附近那几颗之间的相似度连线亮起来;点一颗锁住 → 正文浮现。
+
+     配套 server.py 的 /turbulence 路由(约 20 行,只发这个文件),架构照 /galaxy 那套:
+     ⚠️ **只读,而且刻意做成「OB 优先」**:
+       - 这条路由只发一个静态文件,不读桶、不写桶、不起后台任务;
+       - 数据全走**已有的**三条接口:/api/buckets(铺场)、/api/network(连线)、
+         /api/bucket/{id}(点中才取正文)。**没有为它新增任何接口**;
+       - 页面开一次 = 一次 /api/buckets + 一次 /api/network;**不轮询、不定时刷新**;
+       - 登录复用 OB 自己的 /auth/login 和那块 ombre_session cookie,和记忆库后台同一把锁;
+       - 这里出任何岔子都就地兜住,只影响这一页,碰不到 /mcp。
+     细节和验证记录见 INTERNALS.md 第 1.12 节。
+     ⚠️ 文件要在 Dockerfile 里 COPY,不然线上 404 而本地正常(同 galaxy.html 那个坑,见 1.9)。
+
+     ── 这段视觉是从哪来的 ────────────────────────────────
+     照 Mia06250603ian/fuyue(赴约)的 packages/ui/src/memory-constellation.tsx 重写。
+     那个包单独采用 MIT,与本仓库兼容;**原文是 React + lucide + esbuild,这里用普通 JS
+     重写了一遍**,因为这个后台不引外部依赖。⚠️ 别去抄 fuyue 的 apps/ 那部分 —— 那是 AGPL。
+
+     MIT License · Copyright (c) 2026 TangfanOVO
+     Permission is hereby granted, free of charge, to any person obtaining a copy
+     of this software and associated documentation files (the "Software"), to deal
+     in the Software without restriction, including without limitation the rights
+     to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+     copies of the Software, and to permit persons to whom the Software is
+     furnished to do so, subject to the following conditions:
+     The above copyright notice and this permission notice shall be included in all
+     copies or substantial portions of the Software.
+     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+     IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+     FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+     AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+     LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+     SOFTWARE.
+
+     ── 和原版刻意不一样的三处(别当成抄漏了,理由见 INTERNALS 1.12) ──
+     ① 原版记忆不足 144 条时,把同一条记忆复制成多个「投影」凑数,于是连线要在
+        投影之间找最近的那个,代码复杂一大截。这里改成**填充不可点的装饰字符**:
+        它们不参与连线、不可选中、更暗。她 400+ 个桶本来就用不到填充。
+     ② 原版的边分 explicit/source/tag/vector 四种、按种类定优先级。OB 的边只有一种
+        (向量相似度),所以改成**按相似度从高到低**定优先级。
+     ③ 原版按 core/semantic/episodic/working/archive 分层定颜色和字号。OB 没有这套分层,
+        改成按**桶的 type + pinned + resolved** 映射,见下面 layerOf()。
+     ═══════════════════════════════════════════════════════════ -->
+
+<!-- ═══════════════════════════════════════════════════════════
+     ① CONFIG —— 只改这里就能调这片场
+     ═══════════════════════════════════════════════════════════ -->
+<script>
+const CONFIG = {
+  // ── 上方那两行字 ──────────────────────────────────
+  title:    'Drift',
+  subtitle: '记忆乱流',
+
+  // ── 记忆从哪来(全是已有的只读 GET,靠你自己浏览器里的登录)──
+  obSource:  true,
+  obBuckets: 'api/buckets',        // 铺场:每个桶一个字符
+  obNetwork: 'api/network',        // 连线:桶之间的相似度边(相似度 >0.5,每桶封顶 6 条)
+  obDetail:  'api/bucket/',        // 正文:点中一颗才取
+
+  // ── 哪些桶要变成字符 ────────────────────────────────
+  includeFeel:    true,            // 晏自己的 feel 桶
+  includeResolved:true,            // 已了结/衰减的桶(会画得更暗)
+
+  // ── 调参 ────────────────────────────────────────
+  minGlyphs:      144,             // 场里至少多少个字符,不够拿装饰字符填(原版的视觉下限)
+  driftSpeed:     0.004725,        // 上飘速度(0 = 不飘)
+  interactRadius: 110,             // 手指/鼠标多近才算「凑近了」(px)
+  neighborCount:  4,               // 凑近时照亮最近几颗
+  glyphs:         'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%*()[]{}',
+
+  // ── 颜色(深色底,和 /galaxy 一个路子)────────────────
+  bg:      '#01050a',
+  signal:  '205,105,111',          // 高亮/连线/光迹的颜色(rgb 三个数)
+  node:    '116,128,141',          // 平时那些字符的颜色
+};
+</script>
+
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { height:100%; overflow:hidden; background:#01050a; }
+  body {
+    color:#eef2f7;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,"PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  #stage { position:fixed; inset:0; }
+  #canvas { display:block; width:100%; height:100%; touch-action:none; cursor:crosshair; }
+
+  /* 顶上那两行字 */
+  #head {
+    position:fixed; top:calc(env(safe-area-inset-top,0px) + 18px); left:0; right:0;
+    text-align:center; pointer-events:none; z-index:3;
+  }
+  #head h1 {
+    font-family:ui-serif,Georgia,"Times New Roman",serif;
+    font-size:19px; font-weight:400; letter-spacing:.34em; text-indent:.34em;
+    color:rgba(238,242,247,.82);
+  }
+  #head p { margin-top:5px; font-size:10px; letter-spacing:.22em; text-indent:.22em; color:rgba(174,182,192,.5); }
+
+  /* 左下角读数 / 右下角三颗按钮 */
+  .hud {
+    position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 14px); z-index:3;
+    font-family:"SFMono-Regular",Menlo,Consolas,monospace; font-size:10px; letter-spacing:.08em;
+  }
+  #meter {
+    left:14px; display:flex; align-items:center; gap:8px; height:34px; padding:0 11px;
+    border:1px solid #252b32; border-radius:7px; background:rgba(4,7,11,.9);
+    color:#aeb6c0; pointer-events:none;
+  }
+  #meter b { color:#eef2f7; font-weight:500; }
+  #meter i { padding-left:8px; border-left:1px solid #252b32; font-style:normal; letter-spacing:0; }
+  #controls { right:14px; display:flex; gap:5px; }
+  #controls button {
+    width:38px; height:38px; display:grid; place-items:center;
+    border:1px solid #252b32; border-radius:7px; background:rgba(4,7,11,.9);
+    color:#aeb6c0; font-size:15px; font-family:inherit; cursor:pointer;
+    transition:transform .14s cubic-bezier(.23,1,.32,1), border-color .14s ease, color .14s ease;
+  }
+  #controls button:hover, #controls button:focus-visible {
+    border-color:rgba(205,105,111,.5); color:#eef2f7; outline:none;
+  }
+  #controls button:active { transform:scale(.97); }
+
+  /* 点中一颗之后从底下浮上来的那张卡 */
+  #card {
+    position:fixed; left:0; right:0; bottom:0; z-index:4;
+    max-height:58vh; padding:16px 16px calc(env(safe-area-inset-bottom,0px) + 16px);
+    display:none; grid-template-rows:auto 1fr; gap:11px;
+    border-top:1px solid #20252b; border-radius:16px 16px 0 0;
+    background:rgba(4,7,11,.94); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
+    animation:rise .18s cubic-bezier(.23,1,.32,1) both;
+  }
+  #card.on { display:grid; }
+  @keyframes rise { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+  #card header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  #card header > div { min-width:0; }
+  #cKind {
+    display:block; color:rgb(205,105,111);
+    font-family:"SFMono-Regular",Menlo,Consolas,monospace; font-size:8px; letter-spacing:.14em;
+  }
+  #cName {
+    margin-top:4px; font-size:13px; font-weight:600; line-height:1.45;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  #cClose {
+    width:34px; height:34px; flex:0 0 auto; display:grid; place-items:center;
+    border:1px solid #252b32; border-radius:9px; background:transparent;
+    color:#aeb6c0; font-size:15px; cursor:pointer;
+  }
+  #cScroll { overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  #cBody { color:#c3cad3; font-size:12px; line-height:1.75; white-space:pre-wrap; word-break:break-word; }
+  #cTags { margin-top:11px; display:flex; flex-wrap:wrap; gap:5px; }
+  #cTags span { padding:4px 8px; border:1px solid #252b32; border-radius:999px; color:#8b939d; font-size:9px; }
+  #cNear { margin-top:13px; }
+  #cNear > b { display:block; margin-bottom:7px; color:rgb(205,105,111); font-size:9px; font-weight:500; letter-spacing:.08em; }
+  #cNear > div { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+  #cNear button {
+    min-width:0; padding:9px; display:grid; gap:3px; text-align:left;
+    border:1px solid #252b32; border-radius:10px; background:rgba(255,255,255,.02);
+    color:#eef2f7; font-family:inherit; cursor:pointer;
+  }
+  #cNear button:hover, #cNear button:focus-visible { border-color:rgba(205,105,111,.55); outline:none; }
+  #cNear strong { overflow:hidden; font-size:10px; font-weight:500; text-overflow:ellipsis; white-space:nowrap; }
+  #cNear small { color:#8b939d; font-size:8px; }
+  @media (max-width:520px) { #cNear > div { grid-template-columns:1fr; } }
+
+  /* 加载中 / 口令门 */
+  #loading, #gate {
+    position:fixed; inset:0; z-index:6; display:grid; place-items:center; padding:24px;
+    background:#01050a; color:#8b939d; font-size:12px; letter-spacing:.12em;
+  }
+  #gate { display:none; }
+  #gate.on { display:grid; }
+  #gate form { width:min(280px,100%); display:grid; gap:11px; text-align:center; }
+  #gTitle {
+    font-family:ui-serif,Georgia,serif; font-size:19px; letter-spacing:.34em;
+    text-indent:.34em; color:rgba(238,242,247,.82);
+  }
+  #gate input {
+    width:100%; height:42px; padding:0 13px; border:1px solid #252b32; border-radius:10px;
+    background:rgba(255,255,255,.03); color:#eef2f7; font-family:inherit; font-size:14px; text-align:center;
+  }
+  #gate input:focus { border-color:rgba(205,105,111,.55); outline:none; }
+  #gate button {
+    height:42px; border:1px solid rgba(205,105,111,.42); border-radius:10px;
+    background:rgba(205,105,111,.1); color:rgb(205,105,111);
+    font-family:inherit; font-size:13px; cursor:pointer;
+  }
+  #gate button:disabled { opacity:.5; cursor:default; }
+  #gErr { min-height:14px; color:#c96; font-size:11px; letter-spacing:.06em; }
+
+  @media (prefers-reduced-motion: reduce) {
+    #card { animation:none; }
+    #controls button { transition-property:border-color,color; }
+  }
+</style>
+</head>
+<body>
+
+<div id="stage"><canvas id="canvas"></canvas></div>
+
+<div id="head">
+  <h1 id="hTitle"></h1>
+  <p id="hSub"></p>
+</div>
+
+<div id="meter" class="hud"><b id="mFps">–</b> FPS <i id="mZoom">1.00×</i></div>
+<div id="controls" class="hud">
+  <button type="button" data-action="in"    aria-label="放大">＋</button>
+  <button type="button" data-action="out"   aria-label="缩小">－</button>
+  <button type="button" data-action="reset" aria-label="复位">↺</button>
+</div>
+
+<div id="card">
+  <header>
+    <div>
+      <span id="cKind"></span>
+      <div id="cName"></div>
+    </div>
+    <button type="button" id="cClose" aria-label="关掉">✕</button>
+  </header>
+  <div id="cScroll">
+    <div id="cBody"></div>
+    <div id="cTags"></div>
+    <div id="cNear"><b>离它最近的记忆</b><div></div></div>
+  </div>
+</div>
+
+<div id="loading">正在把记忆铺开…</div>
+<div id="gate">
+  <form id="gForm">
+    <div id="gTitle"></div>
+    <input id="gPass" type="password" autocomplete="current-password" placeholder="口令">
+    <button type="submit" id="gGo">进去</button>
+    <div id="gErr"></div>
+  </form>
+</div>
+
+<script>
+'use strict';
+
+/* ══ ② 小工具:和原版同一套确定性随机,保证同一批桶每次铺出来一模一样 ══ */
+function hashText(s){
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function seededUnit(seed){
+  let v = seed || 1;
+  return function(){ v = (Math.imul(v, 1664525) + 1013904223) >>> 0; return v / 4294967296; };
+}
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+
+/* OB 的桶 → 原版那套「层」。原版是 core/semantic/episodic/working/archive,
+   OB 没有这套东西,所以按 type + pinned + resolved 映射(刻意不一样之三)。 */
+function layerOf(b){
+  if (b.resolved || b.type === 'archived') return 'archive';
+  if (b.pinned || b.importance >= 9)       return 'core';
+  if (b.type === 'feel')                   return 'episodic';
+  if (b.type === 'permanent')              return 'semantic';
+  return 'working';
+}
+const LAYER_CENTER = {
+  core:     [.58, .42],
+  semantic: [.62, .52],
+  episodic: [.38, .48],
+  working:  [.44, .57],
+  archive:  [.22, .66],
+};
+const LAYER_LABEL = {
+  core:'CORE · 核心', semantic:'PERMANENT · 长期', episodic:'FEEL · 自省',
+  working:'DYNAMIC · 当前', archive:'ARCHIVE · 已了结',
+};
+
+/* ══ ③ 铺场:把桶摆成一片字符,再按相似度把相关的拽到一起 ══ */
+function makeGraph(items, relations){
+  const total = Math.max(CONFIG.minGlyphs, items.length);
+  const nodes = [];
+  for (let i = 0; i < total; i++) {
+    // 超出真实桶数的部分是装饰字符:不可点、不连线、更暗(刻意不一样之一)
+    const item = i < items.length ? items[i] : null;
+    const seed = hashText(item ? item.id : ('filler:' + i));
+    const rnd = seededUnit(seed);
+    const center = LAYER_CENTER[item ? layerOf(item) : 'working'];
+    const goldenX = (i * .61803398875 + rnd() * .21) % 1;
+    const evenY   = (i * .75487766625 + rnd() * .05) % 1;
+    nodes.push({
+      item: item,
+      interactive: !!item,
+      x: clamp(goldenX * .86 + center[0] * .14, .018, .982),
+      y: evenY,
+      depth: .28 + rnd() * .72,
+      glyph: CONFIG.glyphs[Math.floor(rnd() * CONFIG.glyphs.length)],
+      nextMutation: 420 + rnd() * 780,
+    });
+  }
+
+  // 边:OB 只有一种边(向量相似度),按相似度从高到低定优先级(刻意不一样之二)
+  const indexById = new Map();
+  nodes.forEach((n, i) => { if (n.item) indexById.set(n.item.id, i); });
+  const edges = [];
+  const seen = new Set();
+  relations.forEach(function(r){
+    const a = indexById.get(r.source), b = indexById.get(r.target);
+    if (a === undefined || b === undefined || a === b) return;
+    const key = Math.min(a,b) + ':' + Math.max(a,b);
+    if (seen.has(key)) return;
+    seen.add(key);
+    edges.push({ from:Math.min(a,b), to:Math.max(a,b), sim:r.similarity });
+  });
+  edges.sort((l, r) => r.sim - l.sim);
+
+  // 相似的先拽到一起
+  edges.forEach(function(e, i){
+    const anchor = nodes[e.from], follower = nodes[e.to];
+    const rnd = seededUnit(hashText(anchor.item.id + ':' + follower.item.id + ':' + i));
+    const radius = e.sim >= .75 ? .038 + rnd() * .035 : .052 + rnd() * .045;
+    const angle  = rnd() * Math.PI * 2;
+    follower.x = clamp(anchor.x + Math.cos(angle) * radius, .018, .982);
+    follower.y = ((anchor.y + Math.sin(angle) * radius) % 1 + 1) % 1;
+  });
+
+  // 再松弛十轮:太挤的推开、连着的拉近(网格分桶,不是两两比,别改成 O(n²))
+  const gap = Math.min(.026, .72 / Math.sqrt(nodes.length));
+  for (let iter = 0; iter < 10; iter++) {
+    const cells = new Map();
+    for (let bi = 0; bi < nodes.length; bi++) {
+      const second = nodes[bi];
+      const cx = Math.floor(second.x / gap), cy = Math.floor(second.y / gap);
+      for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+        const near = cells.get((cx+ox) + ':' + (cy+oy));
+        if (!near) continue;
+        for (let k = 0; k < near.length; k++) {
+          const first = nodes[near[k]];
+          let dx = second.x - first.x, dy = second.y - first.y;
+          let dist = Math.hypot(dx, dy);
+          if (dist >= gap) continue;
+          if (dist < .0001) {
+            const a = seededUnit(hashText(bi + ':' + near[k] + ':' + iter))() * Math.PI * 2;
+            dx = Math.cos(a) * .001; dy = Math.sin(a) * .001; dist = .001;
+          }
+          const push = (gap - dist) * .34;
+          const px = dx / dist * push, py = dy / dist * push;
+          first.x  = clamp(first.x  - px, .018, .982); first.y  = clamp(first.y  - py, .012, .988);
+          second.x = clamp(second.x + px, .018, .982); second.y = clamp(second.y + py, .012, .988);
+        }
+      }
+      const key = Math.floor(second.x / gap) + ':' + Math.floor(second.y / gap);
+      if (!cells.has(key)) cells.set(key, []);
+      cells.get(key).push(bi);
+    }
+    edges.forEach(function(e){
+      const first = nodes[e.from], second = nodes[e.to];
+      const dx = second.x - first.x, dy = second.y - first.y;
+      const dist = Math.max(.0001, Math.hypot(dx, dy));
+      const target = e.sim >= .75 ? .062 : .086;
+      if (dist <= target * 1.18) return;
+      const pull = (dist - target) * .025;
+      second.x = clamp(second.x - dx / dist * pull, .018, .982);
+      second.y = clamp(second.y - dy / dist * pull, .012, .988);
+    });
+  }
+
+  // 最后把 y 铺匀,免得上飘时一阵密一阵疏
+  nodes.slice().sort((l, r) => l.y - r.y).forEach(function(n, i, all){ n.y = (i + .5) / all.length; });
+
+  return { nodes:nodes, edges:edges, worldScale:Math.sqrt(total / CONFIG.minGlyphs) };
+}
+
+function makeTraces(count){
+  const rnd = seededUnit(50817);
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    out.push({ x:rnd(), y:rnd(), length:.09 + rnd() * .38, speed:.10 + rnd() * .18, alpha:.14 + rnd() * .18 });
+  }
+  return out;
+}
+
+/* ══ ④ 引擎 ══ */
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d', { alpha:false });
+let BUCKETS = [], BY_ID = new Map(), NEIGHBOURS = new Map();
+
+function boot(items, relations){
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('hTitle').textContent = CONFIG.title;
+  document.getElementById('hSub').textContent   = CONFIG.subtitle;
+
+  const graph = makeGraph(items, relations);
+  const nodes = graph.nodes, edges = graph.edges;
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const coarse = window.matchMedia('(pointer: coarse)').matches;
+  const worldScale = graph.worldScale;
+  const traces = makeTraces(Math.round((coarse ? 34 : 56) * worldScale * worldScale));
+  const minScale = Math.max(.12, 1 / worldScale);
+
+  const edgesByNode = nodes.map(() => []);
+  edges.forEach(function(e, i){ edgesByNode[e.from].push(i); edgesByNode[e.to].push(i); });
+
+  let W = 0, H = 0, worldW = 0, worldH = 0;
+  let scale = 1, panX = 0, panY = 0;
+  let pointer = null, drag = null, pinch = null;
+  const touches = new Map();
+  let running = true, lastFrame = 0, frames = 0, fpsAt = performance.now();
+  let lockedIndex = null, feedbacks = [];
+
+  const fpsEl = document.getElementById('mFps'), zoomEl = document.getElementById('mZoom');
+
+  const clampScale = v => clamp(v, minScale, 3.2);
+  function clampPan(){
+    const pad = Math.min(W, H) * .28;
+    const mx = Math.max(0, (worldW * scale - W) / 2) + pad;
+    const my = Math.max(0, (worldH * scale - H) / 2) + pad;
+    panX = clamp(panX, -mx, mx); panY = clamp(panY, -my, my);
+  }
+  function zoomAround(next, fx, fy){
+    const cx = (fx - W / 2 - panX) / scale, cy = (fy - H / 2 - panY) / scale;
+    scale = clampScale(next);
+    panX = fx - W / 2 - cx * scale; panY = fy - H / 2 - cy * scale;
+    clampPan();
+  }
+  function wrappedY(node, now){
+    const travel = reduceMotion ? 0 : now * CONFIG.driftSpeed;
+    const span = Math.max(1, worldH);
+    const y0 = (node.y - .5) * span;
+    return ((y0 + travel + span / 2) % span + span) % span - span / 2;
+  }
+  function pointOf(node, now){
+    return {
+      x:(node.x - .5) * worldW * scale + W / 2 + panX,
+      y:wrappedY(node, now) * scale + H / 2 + panY,
+    };
+  }
+  function nearestAt(x, y, count, now){
+    const out = [];
+    for (let i = 0; i < nodes.length; i++) {
+      const p = pointOf(nodes[i], now);
+      const d = Math.hypot(p.x - x, p.y - y);
+      let at = -1;
+      for (let k = 0; k < out.length; k++) { if (d < out[k].distance) { at = k; break; } }
+      if (at < 0) out.push({ index:i, distance:d }); else out.splice(at, 0, { index:i, distance:d });
+      if (out.length > count) out.pop();
+    }
+    return out;
+  }
+
+  function draw(now){
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = CONFIG.bg;
+    ctx.fillRect(0, 0, W, H);
+
+    const points = nodes.map(n => pointOf(n, now));
+    const center = lockedIndex !== null ? points[lockedIndex] : pointer;
+    const near = center
+      ? nearestAt(center.x, center.y, CONFIG.neighborCount, now).filter(e => e.distance < CONFIG.interactRadius)
+      : [];
+    const anchors = lockedIndex !== null ? [lockedIndex] : near.map(e => e.index);
+
+    // 第一圈:锚点自己的边;第二圈:第一圈邻居再往外一层(都按相似度排过)
+    const firstIdx = [...new Set(anchors.flatMap(i => edgesByNode[i]))].slice(0, coarse ? 7 : 10);
+    const firstSet = new Set(firstIdx);
+    const ring1 = new Set();
+    firstIdx.forEach(function(ei){ ring1.add(edges[ei].from); ring1.add(edges[ei].to); });
+    anchors.forEach(i => ring1.delete(i));
+    const secondIdx = [...new Set([...ring1].flatMap(i => edgesByNode[i]))]
+      .filter(ei => !firstSet.has(ei) && !anchors.includes(edges[ei].from) && !anchors.includes(edges[ei].to))
+      .slice(0, coarse ? 8 : 14);
+
+    // 太远的线不画:横跨半屏的连线只会变成噪声
+    const lim1 = Math.min(170, Math.max(108, W * .2));
+    const lim2 = Math.min(125, Math.max(82, H * .14));
+    const isLocal = (a, b, limit) => Math.abs(points[a].y - points[b].y) <= H * .24
+      && Math.hypot(points[a].x - points[b].x, points[a].y - points[b].y) <= limit;
+
+    const lockFb = lockedIndex !== null
+      ? feedbacks.slice().reverse().find(f => f.index === lockedIndex && f.kind === 'lock') : null;
+    const lockProgress = lockFb ? easeOutCubic(clamp((now - lockFb.startedAt) / 180, 0, 1)) : 1;
+
+    // 背景光迹
+    traces.forEach(function(t){
+      const len = t.length * H;
+      const span = worldH + len;
+      const raw = (t.y - .5) * worldH - (reduceMotion ? 0 : now * t.speed);
+      const wy = ((raw + worldH / 2 + len) % span + span) % span - len - worldH / 2;
+      const x = (t.x - .5) * worldW * scale + W / 2 + panX;
+      const y = wy * scale + H / 2 + panY;
+      const l = len * scale;
+      if (x < -3 || x > W + 3 || y > H + l + 3 || y + l < -3) return;
+      const g = ctx.createLinearGradient(x, y, x, y + l);
+      g.addColorStop(0,  'rgba(' + CONFIG.signal + ',' + t.alpha + ')');
+      g.addColorStop(.55,'rgba(' + CONFIG.signal + ',' + (t.alpha * .5) + ')');
+      g.addColorStop(1,  'rgba(' + CONFIG.signal + ',0)');
+      ctx.strokeStyle = g;
+      ctx.lineWidth = t.alpha > .23 ? 1.1 : .78;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + l); ctx.stroke();
+      ctx.fillStyle = 'rgba(' + CONFIG.signal + ',' + Math.min(.46, t.alpha * 1.4) + ')';
+      ctx.fillRect(x - .5, y - 1, 1, 2);
+    });
+
+    const active = new Set(anchors), secondary = new Set();
+    if (center) {
+      secondIdx.forEach(function(ei){
+        const e = edges[ei];
+        if (!isLocal(e.from, e.to, lim2)) return;
+        secondary.add(e.from); secondary.add(e.to);
+        ctx.strokeStyle = 'rgba(' + CONFIG.signal + ',' + (.07 * lockProgress) + ')';
+        ctx.lineWidth = .45;
+        ctx.beginPath(); ctx.moveTo(points[e.from].x, points[e.from].y);
+        ctx.lineTo(points[e.to].x, points[e.to].y); ctx.stroke();
+      });
+      firstIdx.forEach(function(ei){
+        const e = edges[ei];
+        if (!isLocal(e.from, e.to, lim1)) return;
+        active.add(e.from); active.add(e.to);
+        ctx.strokeStyle = 'rgba(' + CONFIG.signal + ',' + (.28 * lockProgress) + ')';
+        ctx.lineWidth = .55;
+        ctx.beginPath(); ctx.moveTo(points[e.from].x, points[e.from].y);
+        ctx.lineTo(points[e.to].x, points[e.to].y); ctx.stroke();
+      });
+      near.forEach(function(e){
+        active.add(e.index);
+        if (e.distance < 1) return;
+        ctx.strokeStyle = 'rgba(' + CONFIG.signal + ',' +
+          (.5 * (1 - e.distance / CONFIG.interactRadius) * lockProgress) + ')';
+        ctx.lineWidth = .5;
+        ctx.beginPath(); ctx.moveTo(points[e.index].x, points[e.index].y);
+        ctx.lineTo(center.x, center.y); ctx.stroke();
+      });
+    }
+    active.forEach(i => secondary.delete(i));
+
+    // 字符本体
+    let visible = 0;
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i], p = points[i];
+      const isActive = active.has(i), isSecondary = secondary.has(i);
+      if (!reduceMotion && now >= n.nextMutation) {
+        const rnd = seededUnit(hashText((n.item ? n.item.id : i) + ':' + Math.floor(now / 8)));
+        n.glyph = CONFIG.glyphs[Math.floor(rnd() * CONFIG.glyphs.length)];
+        n.nextMutation = now + (isActive ? 1 : 420 + rnd() * 780);
+      }
+      if (p.x < -24 || p.x > W + 24 || p.y < -24 || p.y > H + 24) continue;
+      visible++;
+      const layer = n.item ? layerOf(n.item) : 'working';
+      const isCore = layer === 'core';
+      const size = ((isCore ? 12 : 9.75) + n.depth * 1.55) * clamp(scale, .46, 2.1);
+      ctx.font = (isCore ? 500 : 400) + ' ' + size + 'px "SFMono-Regular", Menlo, Consolas, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = isSecondary ? 'rgba(' + CONFIG.signal + ',.4)'
+        : isActive ? 'rgba(' + CONFIG.signal + ',.98)'
+        : 'rgba(' + CONFIG.node + ',' +
+          (!n.item ? .12 : layer === 'archive' ? .19 : .28 + n.depth * .17) + ')';
+      ctx.fillText(n.glyph, p.x, p.y);
+    }
+
+    // 选中那颗的四角括号
+    feedbacks = feedbacks.filter(function(f){
+      const dur = f.kind === 'lock' ? 180 : 160;
+      const el = now - f.startedAt;
+      if (el >= dur) return false;
+      const t = reduceMotion ? 1 : easeOutCubic(clamp(el / dur, 0, 1));
+      const p = points[f.index];
+      if (!p || p.x < -30 || p.x > W + 30 || p.y < -30 || p.y > H + 30) return true;
+      const d   = f.kind === 'lock' ? 16 - t * 7 : 9 + t * 8;
+      const arm = f.kind === 'lock' ? 4.5 + t * 1.5 : 6 - t * 1.5;
+      const a   = f.kind === 'lock' ? 1 - t * .18 : 1 - t;
+      ctx.strokeStyle = 'rgba(' + CONFIG.signal + ',' + a + ')';
+      ctx.lineWidth = f.kind === 'lock' ? 1 : .75;
+      ctx.beginPath();
+      ctx.moveTo(p.x-d, p.y-d+arm); ctx.lineTo(p.x-d, p.y-d); ctx.lineTo(p.x-d+arm, p.y-d);
+      ctx.moveTo(p.x+d-arm, p.y-d); ctx.lineTo(p.x+d, p.y-d); ctx.lineTo(p.x+d, p.y-d+arm);
+      ctx.moveTo(p.x+d, p.y+d-arm); ctx.lineTo(p.x+d, p.y+d); ctx.lineTo(p.x+d-arm, p.y+d);
+      ctx.moveTo(p.x-d+arm, p.y+d); ctx.lineTo(p.x-d, p.y+d); ctx.lineTo(p.x-d, p.y+d-arm);
+      ctx.stroke();
+      return true;
+    });
+
+    if (zoomEl) zoomEl.textContent = scale.toFixed(2) + '×';
+    frames++;
+    if (now - fpsAt > 500) {
+      const fps = Math.round(frames * 1000 / (now - fpsAt));
+      frames = 0; fpsAt = now;
+      if (fpsEl) fpsEl.textContent = String(clamp(fps, 1, 120));
+    }
+  }
+
+  function loop(now){
+    // 手机上限到 30fps:这一页会一直转,别让它把电吃光(原版同样的做法)
+    if (running && (!coarse || now - lastFrame >= 32)) { draw(now); lastFrame = now; }
+    requestAnimationFrame(loop);
+  }
+
+  function resize(){
+    const b = canvas.getBoundingClientRect();
+    W = b.width; H = b.height;
+    worldW = W * worldScale; worldH = H * worldScale;
+    const dpr = Math.min(window.devicePixelRatio || 1, coarse ? 1.5 : 2);
+    canvas.width  = Math.max(1, Math.round(W * dpr));
+    canvas.height = Math.max(1, Math.round(H * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw(performance.now());
+  }
+
+  /* ── 交互 ── */
+  const local = e => { const b = canvas.getBoundingClientRect(); return { x:e.clientX - b.left, y:e.clientY - b.top }; };
+  function pinchMetrics(){
+    const [a, b] = [...touches.values()];
+    if (!a || !b) return null;
+    return { cx:(a.x + b.x) / 2, cy:(a.y + b.y) / 2, dist:Math.max(12, Math.hypot(b.x - a.x, b.y - a.y)) };
+  }
+  function beginPinch(){
+    const m = pinchMetrics();
+    if (!m) return;
+    pinch = { cx:m.cx, cy:m.cy, dist:m.dist, scale:scale, panX:panX, panY:panY };
+    pointer = null;
+    if (drag) drag.moved = true;
+  }
+  function hitTest(clientX, clientY){
+    const b = canvas.getBoundingClientRect();
+    const hit = nearestAt(clientX - b.left, clientY - b.top, 1, performance.now())
+      .find(e => nodes[e.index].interactive);
+    return hit && hit.distance <= (coarse ? 38 : 26) ? hit.index : null;
+  }
+  function toggleAt(clientX, clientY){
+    const i = hitTest(clientX, clientY);
+    if (i !== null) {
+      if (lockedIndex === i) {
+        feedbacks.push({ index:i, kind:'release', startedAt:performance.now() });
+        lockedIndex = null; closeCard();
+      } else {
+        feedbacks.push({ index:i, kind:'lock', startedAt:performance.now() });
+        lockedIndex = i; openCard(nodes[i].item);
+      }
+      return;
+    }
+    if (lockedIndex !== null) feedbacks.push({ index:lockedIndex, kind:'release', startedAt:performance.now() });
+    lockedIndex = null; closeCard();
+  }
+
+  canvas.addEventListener('pointerdown', function(e){
+    canvas.setPointerCapture(e.pointerId);
+    if (e.pointerType === 'touch') {
+      const p = local(e);
+      touches.set(e.pointerId, p);
+      if (touches.size === 1) { pointer = p; drag = { x:e.clientX, y:e.clientY, panX:panX, panY:panY, moved:false }; }
+      else if (touches.size === 2) beginPinch();
+      return;
+    }
+    drag = { x:e.clientX, y:e.clientY, panX:panX, panY:panY, moved:false };
+  });
+  canvas.addEventListener('pointermove', function(e){
+    const p = local(e);
+    if (touches.has(e.pointerId)) {
+      touches.set(e.pointerId, p);
+      if (touches.size >= 2) {
+        if (!pinch) beginPinch();
+        const m = pinchMetrics();
+        if (!pinch || !m) return;
+        const cx = (pinch.cx - W / 2 - pinch.panX) / pinch.scale;
+        const cy = (pinch.cy - H / 2 - pinch.panY) / pinch.scale;
+        scale = clampScale(pinch.scale * m.dist / pinch.dist);
+        panX = m.cx - W / 2 - cx * scale; panY = m.cy - H / 2 - cy * scale;
+        clampPan(); pointer = null;
+        if (drag) drag.moved = true;
+        return;
+      }
+      pointer = p;
+      if (drag && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 4) drag.moved = true;
+      return;
+    }
+    pointer = p;
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (Math.hypot(dx, dy) > 4) drag.moved = true;
+    panX = drag.panX + dx; panY = drag.panY + dy;
+    clampPan();
+  });
+  canvas.addEventListener('pointerup', function(e){
+    if (touches.has(e.pointerId)) {
+      const wasPinching = touches.size >= 2 || pinch !== null;
+      touches.delete(e.pointerId);
+      if (!wasPinching && drag && !drag.moved) toggleAt(e.clientX, e.clientY);
+      pinch = null;
+      const rest = [...touches.values()][0] || null;
+      pointer = rest;
+      drag = rest ? { x:rest.x, y:rest.y, panX:panX, panY:panY, moved:true } : null;
+      return;
+    }
+    if (drag && !drag.moved) toggleAt(e.clientX, e.clientY);
+    drag = null;
+  });
+  canvas.addEventListener('pointercancel', function(e){
+    touches.delete(e.pointerId);
+    if (touches.size < 2) pinch = null;
+    pointer = [...touches.values()][0] || null;
+    if (touches.size === 0) drag = null;
+  });
+  canvas.addEventListener('pointerleave', function(){
+    if (touches.size > 0) return;
+    pointer = null; drag = null;
+  });
+  canvas.addEventListener('wheel', function(e){
+    e.preventDefault();
+    const b = canvas.getBoundingClientRect();
+    zoomAround(scale + (e.deltaY < 0 ? .12 : -.12), e.clientX - b.left, e.clientY - b.top);
+  }, { passive:false });
+
+  document.getElementById('controls').addEventListener('click', function(e){
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    if (btn.dataset.action === 'reset') { scale = 1; panX = 0; panY = 0; return; }
+    zoomAround(clampScale(scale + (btn.dataset.action === 'in' ? .22 : -.22)), W / 2, H / 2);
+    if (btn.dataset.action === 'out' && scale <= minScale + .001) { panX = 0; panY = 0; }
+  });
+
+  // 页面看不见就停手,别在后台白转(省电)
+  document.addEventListener('visibilitychange', function(){ running = !document.hidden; });
+  window.addEventListener('resize', resize);
+
+  // 关卡片 = 松开锁定
+  document.getElementById('cClose').addEventListener('click', function(){
+    if (lockedIndex !== null) feedbacks.push({ index:lockedIndex, kind:'release', startedAt:performance.now() });
+    lockedIndex = null; closeCard();
+  });
+  // 卡片里点「离它最近的记忆」→ 跳过去锁住那颗
+  document.querySelector('#cNear > div').addEventListener('click', function(e){
+    const btn = e.target.closest('button[data-id]');
+    if (!btn) return;
+    const i = nodes.findIndex(n => n.item && n.item.id === btn.dataset.id);
+    if (i < 0) return;
+    feedbacks.push({ index:i, kind:'lock', startedAt:performance.now() });
+    lockedIndex = i; openCard(nodes[i].item);
+  });
+
+  // 演练用的观察口(照 galaxy.html 的 window.__galaxy 那套)。只读 + 一个 lockAt,
+  // 页面自己一处都不用它;没有它的话测试只能靠盲点画布,点不准。
+  window.__drift = {
+    ob: true,
+    count: items.length,                 // 真桶数
+    glyphs: nodes.length,                // 场里的字符总数(含填充的装饰字符)
+    edges: edges.length,
+    node: i => ({ id:nodes[i].item && nodes[i].item.id, interactive:nodes[i].interactive }),
+    point: i => pointOf(nodes[i], performance.now()),
+    locked: () => (lockedIndex === null ? null : (nodes[lockedIndex].item || {}).id),
+    lockAt: function(i){
+      feedbacks.push({ index:i, kind:'lock', startedAt:performance.now() });
+      lockedIndex = i;
+      openCard(nodes[i].item);
+    },
+    clear: function(){ lockedIndex = null; closeCard(); },
+    scale: () => scale,
+  };
+
+  resize();
+  requestAnimationFrame(loop);
+}
+
+/* ══ ⑤ 点中一颗之后那张卡 ══ */
+function closeCard(){ document.getElementById('card').classList.remove('on'); }
+function openCard(item){
+  if (!item) return;
+  const card = document.getElementById('card');
+  document.getElementById('cKind').textContent = LAYER_LABEL[layerOf(item)] || '';
+  document.getElementById('cName').textContent = item.name || item.id;
+  document.getElementById('cBody').textContent = item.content != null
+    ? item.content : (item.preview || '正在取正文…');
+  const tags = document.getElementById('cTags');
+  tags.innerHTML = '';
+  (item.domain || []).forEach(function(d){
+    const s = document.createElement('span'); s.textContent = d; tags.appendChild(s);
+  });
+
+  // 离它最近的:直接用 /api/network 那批边,不另算
+  const box = document.querySelector('#cNear > div');
+  const list = (NEIGHBOURS.get(item.id) || []).slice(0, 6);
+  box.innerHTML = '';
+  document.getElementById('cNear').style.display = list.length ? '' : 'none';
+  list.forEach(function(n){
+    const b = BY_ID.get(n.id);
+    if (!b) return;
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.dataset.id = n.id;
+    const strong = document.createElement('strong'); strong.textContent = b.name || n.id;
+    const small = document.createElement('small'); small.textContent = '像 ' + Math.round(n.sim * 100) + '%';
+    btn.appendChild(strong); btn.appendChild(small);
+    box.appendChild(btn);
+  });
+
+  card.classList.add('on');
+  document.getElementById('cScroll').scrollTop = 0;
+
+  // 正文点中才取(和 /galaxy 同一个做法:铺场时不拉正文)
+  if (item.content == null) {
+    fetch(CONFIG.obDetail + encodeURIComponent(item.id), { credentials:'same-origin' })
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(function(d){
+        item.content = d.content || '(这颗记忆是空的)';
+        if (document.getElementById('cName').textContent === (item.name || item.id))
+          document.getElementById('cBody').textContent = item.content;
+      })
+      .catch(function(){
+        item.content = item.preview || '(这颗记忆的正文没取回来)';
+        document.getElementById('cBody').textContent = item.content;
+      });
+  }
+}
+
+/* ══ ⑥ 取数据 + 口令门(整套照 /galaxy 那版) ══ */
+const NEED_LOGIN = 'need-login';
+
+async function loadOB(){
+  const r = await fetch(CONFIG.obBuckets, { credentials:'same-origin' });
+  if (r.status === 401) throw new Error(NEED_LOGIN);
+  if (!r.ok) throw new Error('OB ' + r.status);
+  const raw = await r.json();
+  if (!Array.isArray(raw) || !raw.length) throw new Error('OB 没有记忆');
+
+  const items = raw.filter(function(b){
+    if (!CONFIG.includeFeel && b.type === 'feel') return false;
+    if (!CONFIG.includeResolved && b.resolved) return false;
+    return true;
+  }).map(function(b){
+    return {
+      id:b.id, name:b.name || b.id, type:b.type || 'dynamic',
+      domain:b.domain || [], importance:(b.importance == null ? 5 : b.importance),
+      pinned:!!b.pinned, resolved:!!b.resolved,
+      preview:b.content_preview || '', content:null,   // 正文点中才取
+    };
+  });
+  if (!items.length) throw new Error('筛完一个不剩');
+
+  // 连线单独一条接口。⚠️ 它要现算相似度(438 桶实测约 1.3 秒,见 INTERNALS 1.10),
+  // 所以取不到就当没有边 —— 场照样铺得出来,只是凑近了不亮线。
+  let relations = [];
+  try {
+    const n = await fetch(CONFIG.obNetwork, { credentials:'same-origin' });
+    if (n.ok) {
+      const j = await n.json();
+      if (j && Array.isArray(j.edges)) relations = j.edges;
+    }
+  } catch (e) { console.info('连线没取到,只铺场：', e); }
+
+  return { items:items, relations:relations };
+}
+
+function indexData(items, relations){
+  BUCKETS = items;
+  BY_ID = new Map(items.map(b => [b.id, b]));
+  NEIGHBOURS = new Map();
+  relations.forEach(function(e){
+    if (!BY_ID.has(e.source) || !BY_ID.has(e.target)) return;
+    if (!NEIGHBOURS.has(e.source)) NEIGHBOURS.set(e.source, []);
+    if (!NEIGHBOURS.has(e.target)) NEIGHBOURS.set(e.target, []);
+    NEIGHBOURS.get(e.source).push({ id:e.target, sim:e.similarity });
+    NEIGHBOURS.get(e.target).push({ id:e.source, sim:e.similarity });
+  });
+  NEIGHBOURS.forEach(list => list.sort((l, r) => r.sim - l.sim));
+}
+
+// 口令门:只做一件事,把口令交给 OB 已有的 /auth/login 换一块 cookie。
+// 口令不存、不缓存、不出这一页;登录状态是 OB 那块 cookie,跟记忆库后台同一把锁。
+function askPassword(){
+  return new Promise(function(resolve){
+    const gate = document.getElementById('gate'), inp = document.getElementById('gPass'),
+          go = document.getElementById('gGo'), err = document.getElementById('gErr');
+    document.getElementById('gTitle').textContent = CONFIG.title;
+    document.getElementById('loading').style.display = 'none';
+    gate.classList.add('on');
+    setTimeout(() => inp.focus(), 120);
+    document.getElementById('gForm').addEventListener('submit', async function(e){
+      e.preventDefault();
+      const pwd = inp.value;
+      if (!pwd) return;
+      go.disabled = true; err.textContent = '';
+      try {
+        const r = await fetch('auth/login', {
+          method:'POST', credentials:'same-origin',
+          headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ password:pwd }),
+        });
+        // 非 2xx 一律当口令不对:OB 对含非 ASCII 字符的口令会回 500 而不是 401
+        // (2026-08-29 实测,是 OB 本来就有的毛病,已报备所有者;见 INTERNALS 1.9 末尾)
+        if (!r.ok) { err.textContent = '口令不对'; go.disabled = false; inp.select(); return; }
+        const d = await loadOB();
+        gate.classList.remove('on'); inp.value = '';
+        document.getElementById('loading').style.display = '';
+        resolve(d);
+      } catch (e2) {
+        err.textContent = '连不上记忆库,稍后再来 ♡';
+        go.disabled = false;
+      }
+    });
+  });
+}
+
+(async function(){
+  try {
+    let d;
+    try { d = await loadOB(); }
+    catch (e) {
+      if (e.message !== NEED_LOGIN) throw e;
+      d = await askPassword();
+    }
+    indexData(d.items, d.relations);
+    boot(d.items, d.relations);
+  } catch (e) {
+    document.getElementById('loading').textContent = '记忆没铺开,稍后再来 ♡';
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>
