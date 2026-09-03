@@ -184,8 +184,9 @@ for (const scheme of ['light', 'dark']) {
     const g = (sel, side) => getComputedStyle(document.querySelector(sel))['borderTopLeftRadius'];
     return {
       card: g('.bucket-row'),
-      // ⚠️ 别拿 #search-input 量:搜索框本来就是胶囊(999px),不参与分档。
-      control: g('#sort-select'),
+      // ⚠️ 别拿具体某个控件当"控件档"的样本 —— 它可能哪天被改成胶囊。
+      // 2026-09-03 就栽过一次:原来量的是 #sort-select,那天它变成了胶囊里的 select。
+      sortPill: g('.sort-pill'),
       pill: g('.filter-btn'),
       scale: ['--r-1','--r-2','--r-3','--r-4','--r-5']
         .map(n => getComputedStyle(document.documentElement).getPropertyValue(n).trim()),
@@ -193,7 +194,13 @@ for (const scheme of ['light', 'dark']) {
   });
   ok('圆角尺度表五档都在', radii.scale.every(v => /^\d+px$/.test(v)), radii.scale.join('/'));
   ok('卡片用的是卡片那一档(--r-4)', radii.card === radii.scale[3], radii.card);
-  ok('控件用的是控件那一档(--r-3)', radii.control === radii.scale[2], radii.control);
+  // 钉「分档」这件事本身:五档必须一档比一档大。比盯着某一个元件稳。
+  ok('五档是递增的', await page.evaluate(() => {
+    const v = n => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n));
+    const a = ['--r-1','--r-2','--r-3','--r-4','--r-5'].map(v);
+    return a.every((x, i) => i === 0 || x > a[i - 1]);
+  }), radii.scale.join(' < '));
+  ok('排序做成了胶囊,不是原生下拉', parseFloat(radii.sortPill) > 100, radii.sortPill);
   // 筛选药丸是胶囊,**刻意不参与分档、也不上 squircle**(squircle 会把胶囊弄丑)
   ok('筛选药丸仍是胶囊', parseFloat(radii.pill) > 100, radii.pill);
 

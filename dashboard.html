@@ -397,6 +397,35 @@
     font-weight: 500;
   }
 
+  /* ── 排序(2026-09-03 重做)──────────────────────────
+     ⚠️ ~~原来是「排序」两个字 + 一个原生 `<select>`~~ —— 所有者原话「**那个排序 ui 好丑啊**」。
+     现在做成**和筛选药丸同款的一颗玻璃胶囊**,右对齐、贴着药丸那一行下面。
+     ⚠️ **里面仍然是真的 `<select>`**,只是把原生外观关掉(`appearance:none`)、
+     自己画了左边那个排序图标和右边的小箭头 —— **别改成自制下拉菜单**:
+     原生 select 在手机上会拉起 iOS 自己的滚轮选择器,那比任何自制的都好按,
+     而且不用管无障碍和键盘操作。
+     ⚠️ 选项文字里原来带 ↑↓ 箭头,已去掉(胶囊里塞不下,也和右边的小箭头打架)。 */
+  .sort-bar { display: flex; justify-content: flex-end; padding: 2px 0 12px; }
+  .sort-pill {
+    position: relative; display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 12px; border-radius: var(--r-pill);
+    border: 1px solid var(--glass-edge); background: var(--glass-soft);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    color: var(--chip-fg); font-size: 13px; cursor: pointer;
+    transition: border-color .18s ease, color .18s ease;
+  }
+  .sort-pill:hover { border-color: var(--border-strong); color: var(--text); }
+  .sort-pill:focus-within { border-color: var(--border-strong); outline: none; }
+  .sort-pill .ico { width: 15px; height: 15px; color: var(--text-light); }
+  .sort-pill .sort-caret { width: 14px; height: 14px; stroke-width: 2; }
+  .sort-pill select {
+    appearance: none; -webkit-appearance: none;
+    border: 0; background: none; padding: 0; margin: 0;
+    color: inherit; font-family: inherit; font-size: inherit; line-height: 1.2;
+    cursor: pointer; outline: none;
+  }
+
   /* ── 记忆桶:卡片式(照效果图) ── */
   .bucket-list { display: flex; flex-direction: column; gap: 12px; }
   .bucket-row {
@@ -1092,15 +1121,18 @@
 
 <div class="content" id="list-view">
   <div class="filters" id="filters"></div>
-  <div class="sort-bar" style="padding:4px 0 8px;display:flex;align-items:center;gap:8px;">
-    <label for="sort-select" style="font-size:12px;color:var(--text-dim);">排序</label>
-    <select id="sort-select" style="background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r-3);padding:5px 10px;font-size:12px;cursor:pointer;">
-      <option value="default">综合分（默认）</option>
-      <option value="active_desc">最近活跃 ↓</option>
-      <option value="active_asc">最早活跃 ↑</option>
-      <option value="created_desc">最新创建 ↓</option>
-      <option value="created_asc">最早创建 ↑</option>
-    </select>
+  <div class="sort-bar">
+    <label class="sort-pill" for="sort-select">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h13M4 12h9M4 17h5"/></svg>
+      <select id="sort-select" aria-label="排序方式">
+        <option value="default">综合分</option>
+        <option value="active_desc">最近活跃</option>
+        <option value="active_asc">最早活跃</option>
+        <option value="created_desc">最新创建</option>
+        <option value="created_asc">最早创建</option>
+      </select>
+      <svg class="ico sort-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
+    </label>
   </div>
   <div class="bucket-list" id="bucket-list">
     <div class="loading">加载中…</div>
