@@ -336,10 +336,10 @@
        容器里的 chromium 测不出来。**圆角本身一个数没动,五档还是那五档。** */
     :is(.glass-1, .bucket-row, .letter-card, .letters-intro, .todo-card, .config-section, .breath-info, .breath-flow,
         .glass-2, .header, .hbtn,
-        .glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button, .bucket-row .dchip)::before,
+        .glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button)::before,
     :is(.glass-1, .bucket-row, .letter-card, .letters-intro, .todo-card, .config-section, .breath-info, .breath-flow,
         .glass-2, .header, .hbtn,
-        .glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button, .bucket-row .dchip)::after {
+        .glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button)::after {
       corner-shape: inherit;
     }
   }
@@ -498,7 +498,7 @@
         `.search-bar input` 同理不进伪元素组 —— **input 上的 ::before/::after 不渲染**。 */
   :is(.glass-1, .bucket-row, .letter-card, .letters-intro, .todo-card, .config-section, .breath-info, .breath-flow),
   :is(.glass-2, .header, .hbtn),
-  :is(.glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button, .bucket-row .dchip) { position: relative; }
+  :is(.glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button) { position: relative; }
   .glass-1, .bucket-row, .letter-card, .letters-intro, .todo-card, .config-section,
   .breath-info, .breath-flow {
     background-color: var(--g1-fill);
@@ -515,7 +515,7 @@
   }
   /* 滚动容器 / input:厚度只能写在元件自己身上(伪元素会跟着内容滚,或者根本不渲染) */
   .tabs, .detail-panel, .search-bar input { box-shadow: var(--g2-depth); }
-  .glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button, .bucket-row .dchip {
+  .glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button {
     background-color: var(--g3-fill);
     background-image: var(--g3-sheen);
     -webkit-backdrop-filter: var(--g3-blur);
@@ -526,7 +526,7 @@
      ⚠️ 别把 blur 调小 —— 一调小就变回那道被否掉的白杠。 */
   :is(.glass-1, .bucket-row, .letter-card, .letters-intro, .todo-card, .config-section, .breath-info, .breath-flow)::after,
   :is(.glass-2, .header, .hbtn)::after,
-  :is(.glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button, .bucket-row .dchip)::after {
+  :is(.glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button)::after {
     content: '';
     position: absolute;
     inset: 0;
@@ -536,7 +536,7 @@
   :is(.glass-1, .bucket-row, .letter-card, .letters-intro, .todo-card, .config-section, .breath-info, .breath-flow)::after
     { box-shadow: var(--g1-depth); }
   :is(.glass-2, .header, .hbtn)::after { box-shadow: var(--g2-depth); }
-  :is(.glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button, .bucket-row .dchip)::after
+  :is(.glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button)::after
     { box-shadow: var(--g3-depth); }
   /* 边缘高光:1px 的**渐变环**。做法是画一整块渐变,再用 mask 把中间掏空。
      ⚠️ 用 @supports 包着:不支持 mask 合成的浏览器整条不生效,退回上面那圈 --glass-edge 描边
@@ -544,7 +544,7 @@
   @supports ((-webkit-mask-composite: xor) or (mask-composite: exclude)) {
     :is(.glass-1, .bucket-row, .letter-card, .letters-intro, .todo-card, .config-section, .breath-info, .breath-flow)::before,
     :is(.glass-2, .header, .hbtn)::before,
-    :is(.glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button, .bucket-row .dchip)::before {
+    :is(.glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button)::before {
       content: '';
       position: absolute;
       inset: -1px;                 /* 盖住那 1px 边框本身,不是在它里面再画一圈 */
@@ -559,7 +559,7 @@
     :is(.glass-1, .bucket-row, .letter-card, .letters-intro, .todo-card, .config-section, .breath-info, .breath-flow)::before
       { background: var(--g1-rim); }
     :is(.glass-2, .header, .hbtn)::before { background: var(--g2-rim); }
-    :is(.glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button, .bucket-row .dchip)::before
+    :is(.glass-3, .filter-btn, .sort-pill, .todo-check, .todo-tag, .todo-add button)::before
       { background: var(--g3-rim); }
   }
   /* 玻璃元件里的内容要压在这两层伪元素之上(伪元素本身 pointer-events:none,只是画的) */
@@ -834,38 +834,15 @@
     align-items: center;
     gap: 10px;
   }
-  /* ⚠️ 卡片底行的「域」**2026-09-03 由一串纯文字改成小胶囊**
-     (所有者拿她朋友那版比:「还有别人的正文胶囊」)。~~原来是 `自省, 心理` 这样逗号连起来的一行字~~。
-     ⚠️ **类名 `.domain` 一个字没改** —— 它现在是**容器**,里面每个域一颗 `.dchip`;
-     `renderBuckets()` 这一份渲染被搜索结果等处共用,改类名会连带搞坏别处(1.8 那条老规矩)。
-     ⚠️ **回收站那份底行仍是纯文字**(它要连 type 和副本数一起写),没跟着改。 */
+  /* ⚠️ **2026-09-03 试过把这里改成一串小胶囊,当天撤销** —— 所有者:「这玩意我根本没要」。
+     她说的「正文胶囊」不是这个,别再照那次自作主张做回来(要做先问清是哪一颗)。 */
   .bucket-row .domain {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    flex: 1 1 auto;      /* ⚠️ 要占住剩下的宽,不然胶囊会被挤成「社…」(第一版就是这样) */
     font-size: 12px;
     color: var(--text-light);
     overflow: hidden;
-    min-width: 0;
-  }
-  /* 域胶囊:**比筛选药丸再小一档**,材质仍是 g3 微玻璃(手册里 g3 那档本来就写着「小标签」)。
-     ⚠️⚠️ **不许上颜色** —— 她朋友那版的标签是彩色的,但这一页是她定死的**整页零彩色**
-     (2026-09-03:「我要的是 monochrome glass material」),彩色标签会当场破掉那条,演练也会红。 */
-  .bucket-row .dchip {
-    flex: 0 1 auto;
-    max-width: 10em;     /* ⚠️ 按字宽给上限,**别写百分比** —— 百分比是相对那个被挤扁的容器算的 */
-    /* ⚠️ 宽度也量过:她朋友那版两字标签约 **34pt**(1206px @3x 截图上 ~104px),
-       我们第一版 40px 偏宽 —— 收到 `2px 6px` 约 36px。⚠️ 别再往回加横向 padding。 */
-    padding: 2px 6px;
-    border-radius: var(--r-pill);
-    border: 1px solid var(--glass-edge);
-    color: var(--chip-fg);
-    font-size: 11px;
-    line-height: 1.3;
-    overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
   }
   .bucket-row .score {
     margin-left: auto;
@@ -2474,8 +2451,7 @@ function renderBuckets(buckets) {
       '</div>' +
       '<div class="preview">' + esc(b.content_preview) + '</div>' +
       '<div class="row-bottom">' +
-        '<span class="domain">' + (b.domain || []).slice(0, 3)
-            .map(function(d){ return '<span class="dchip">' + esc(d) + '</span>'; }).join('') + '</span>' +
+        '<span class="domain">' + esc((b.domain || []).join(', ')) + '</span>' +
         '<span class="score">' + b.score.toFixed(2) + '</span>' +
         '<span class="emotion"><span class="v-bar"><span class="v-dot" style="left:' + vPos + '%"></span></span>' + modelV + '</span>' +
       '</div>' +

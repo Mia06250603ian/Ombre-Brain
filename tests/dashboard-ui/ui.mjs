@@ -141,21 +141,6 @@ for (const scheme of ['light', 'dark']) {
   ok('排序胶囊跟着同档', await page.locator('.sort-pill').first().evaluate(
     el => el.getBoundingClientRect().height <= 31));
 
-  // 卡片底行的「域」是**小胶囊**不是一串纯文字(2026-09-03 所有者:「还有别人的正文胶囊」)
-  const chips = await page.locator('.bucket-row .dchip');
-  ok('卡片底行的域做成了胶囊', await chips.count() > 0, String(await chips.count()));
-  ok('域胶囊真的是胶囊(圆角 ≥ 半个高)', await chips.first().evaluate(el => {
-    const r = parseFloat(getComputedStyle(el).borderTopLeftRadius);
-    return r >= el.getBoundingClientRect().height / 2 - 0.5;
-  }));
-  // ⚠️ 第一版把上限写成 `max-width:46%`,百分比是相对那个被挤扁的容器算的 → 全被截成「社…」
-  ok('短域名不许被截成省略号', await chips.first().evaluate(el => el.scrollWidth <= el.clientWidth + 1),
-    await chips.first().evaluate(el => el.textContent + ' ' + el.scrollWidth + '/' + el.clientWidth));
-  ok('域胶囊比筛选药丸再小一档', await page.evaluate(() => {
-    const c = document.querySelector('.bucket-row .dchip'), f = document.querySelector('.filter-btn');
-    return c.getBoundingClientRect().height < f.getBoundingClientRect().height;
-  }));
-
   // 右上角那几颗也收窄了(她指的是**宽度**:我们约 50pt,她朋友那版约 35pt)
   const ico = await page.locator('.hbtn-ico').first().evaluate(el => {
     const r = el.getBoundingClientRect(); return { w:r.width, h:r.height };
