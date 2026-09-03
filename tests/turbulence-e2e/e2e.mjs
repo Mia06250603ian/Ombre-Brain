@@ -120,6 +120,16 @@ const framed = await pg.evaluate(() => {
 ok(framed.length === 0, '✕ / 关联列表 / 「在面板里打开」三处都没有描边框', framed.join('|'));
 ok(await pg.$eval('#cOpen', n => getComputedStyle(n).backgroundColor !== 'rgba(0, 0, 0, 0)'),
    '「在面板里打开」是实心按钮(照她们那版),不是空心胶囊');
+// 「正文的部分是有一个和底色相近的玻璃质感框的」—— 正文是唯一保留框的一块,而且是玻璃不是描边
+const bodyBox = await pg.$eval('#cBody', n => {
+  const s = getComputedStyle(n);
+  return { bw:s.borderTopWidth, bg:s.backgroundColor, r:parseFloat(s.borderTopLeftRadius),
+           pad:parseFloat(s.paddingTop), blur:(s.backdropFilter || s.webkitBackdropFilter || '') };
+});
+ok(bodyBox.bw === '0px', '正文那块是玻璃,不是描边框', bodyBox.bw);
+ok(/^rgba\(255, 255, 255/.test(bodyBox.bg), '正文那块的底是「把卡片底再提亮一点」的一层白', bodyBox.bg);
+ok(bodyBox.r >= 10 && bodyBox.pad >= 10, `正文那块有圆角(${bodyBox.r}px)和内边距(${bodyBox.pad}px)`);
+ok(/blur/.test(bodyBox.blur), '正文那块真的开了玻璃模糊', bodyBox.blur);
 // ⚠️ 别钉「几条」「第一条是谁」—— 假 OB 的边一改这些就红,而那不是 bug
 // (2026-09-03 给夹具加了条超长标题的桶,顺序就变了)。钉真正该成立的性质:
 const near = await pg.$$eval('#cNear button', bs => bs.map(x => x.textContent));
