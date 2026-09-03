@@ -146,7 +146,6 @@ const CONFIG = {
     --drift-card:   rgba(250,249,245,.94);
     /* 正文那块玻璃:比卡片底再亮一档,浅色靠白、深色靠白的一点点透明度 */
     --drift-sheet:  rgba(255,255,255,.62);
-    --drift-btn:    #5c5c5c;          /* 「在面板里打开」的底:中性灰,零饱和 */
     --drift-input:  rgba(20,20,19,.03);
   }
   @media (prefers-color-scheme: dark) {
@@ -165,7 +164,6 @@ const CONFIG = {
       --drift-panel:  rgba(4,7,11,.9);
       --drift-card:   rgba(4,7,11,.94);
       --drift-sheet:  rgba(255,255,255,.045);
-      --drift-btn:    #3a3a3a;
       --drift-input:  rgba(255,255,255,.03);
     }
   }
@@ -254,7 +252,7 @@ const CONFIG = {
   /* 点中一颗之后从底下浮上来的那张卡 */
   #card {
     position:fixed; left:0; right:0; bottom:0; z-index:4;
-    max-height:58vh; padding:16px 16px calc(env(safe-area-inset-bottom,0px) + 16px);
+    max-height:66vh; padding:20px 18px calc(env(safe-area-inset-bottom,0px) + 18px);
     display:none; grid-template-rows:auto 1fr; gap:11px;
     border-top:1px solid var(--drift-line); border-radius:16px 16px 0 0;
     background:var(--drift-card); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
@@ -274,7 +272,7 @@ const CONFIG = {
     font-family:"SFMono-Regular",Menlo,Consolas,monospace; font-size:8px; letter-spacing:.14em;
   }
   #cName {
-    margin-top:4px; font-size:13px; font-weight:600; line-height:1.45;
+    margin-top:4px; font-size:17px; font-weight:600; line-height:1.35;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
   /* ⚠️ 2026-09-03 所有者:「**我不要那个框**」。她朋友那版的卡上**一个框都没有** ——
@@ -283,7 +281,7 @@ const CONFIG = {
   #cClose {
     width:34px; height:34px; flex:0 0 auto; display:grid; place-items:center;
     border:0; background:none; padding:0;
-    color:var(--drift-dim); font-size:17px; cursor:pointer;
+    color:var(--drift-faint); font-size:15px; font-weight:300; cursor:pointer;
   }
   #cClose:hover, #cClose:focus-visible { color:var(--drift-ink); outline:none; }
   #cScroll { overflow-y:auto; -webkit-overflow-scrolling:touch; min-width:0; }
@@ -292,10 +290,10 @@ const CONFIG = {
      一层玻璃 —— 只够把正文和下面的关联列表分开,不够到看起来像另一张卡。
      别给它加 `border`,一描边就变回上面那三处被她砍掉的框了。 */
   #cBody {
-    padding:14px; border-radius:14px;
+    padding:17px; border-radius:17px;
     background:var(--drift-sheet);
     backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
-    color:var(--drift-dim); font-size:12px; line-height:1.75; white-space:pre-wrap; word-break:break-word;
+    color:var(--drift-dim); font-size:13.5px; line-height:1.8; white-space:pre-wrap; word-break:break-word;
   }
   /* 标签(2026-09-03 所有者:「不要那么有安卓味,按苹果 ui 设计走」)。
      安卓味来自哪儿:实心高饱和的大色块 + 描边胶囊,一个标签恨不得有三层装饰。
@@ -305,37 +303,37 @@ const CONFIG = {
      颜色直接取 --drift-signal(她亲手拖的那个),不另配色。 */
   #cTags { margin-top:6px; display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; }
   #cTags .c-tag {
-    padding:3px 9px; border-radius:var(--r-pill, 999px);
+    padding:4px 11px; border-radius:var(--r-pill, 999px);
     background:rgba(var(--drift-signal),.13); color:rgb(var(--drift-signal));
-    font-size:11px; font-weight:500; line-height:1.5; letter-spacing:.01em;
+    font-size:12.5px; font-weight:500; line-height:1.5; letter-spacing:.01em;
   }
-  #cNear { margin-top:13px; }
-  #cNear > b { display:block; margin-bottom:7px; color:rgb(var(--drift-signal)); font-size:9px; font-weight:500; letter-spacing:.08em; }
+  #cNear { margin-top:17px; }
+  #cNear > b { display:block; margin-bottom:9px; color:rgb(var(--drift-signal)); font-size:11.5px; font-weight:500; letter-spacing:.08em; }
   /* 一行一条的纯文字行:左边灰色的关系名,右边加粗的标题(照她朋友那版)。
      ⚠️ 右边那格必须写 `minmax(0,1fr)`,**不能只写 `1fr`** —— `1fr` 等于 `minmax(auto,1fr)`,
      那个 auto 下限就是内容宽度,`session_2026-07-01_…` 那种长标题照样撑破卡片。 */
   #cNear > div { display:flex; flex-direction:column; }
   #cNear button {
-    width:100%; padding:5px 0; display:grid; grid-template-columns:auto minmax(0,1fr);
+    width:100%; padding:7px 0; display:grid; grid-template-columns:auto minmax(0,1fr);
     align-items:baseline; gap:10px; text-align:left;
     border:0; background:none; color:var(--drift-ink); font-family:inherit; cursor:pointer;
   }
   #cNear button:hover strong, #cNear button:focus-visible strong { color:rgb(var(--drift-signal)); }
   #cNear button:focus-visible { outline:none; }
-  #cNear strong { overflow:hidden; font-size:11.5px; font-weight:600; text-overflow:ellipsis; white-space:nowrap; }
-  #cNear em { font-style:normal; font-size:11px; color:var(--drift-faint); }
+  #cNear strong { overflow:hidden; font-size:13px; font-weight:600; text-overflow:ellipsis; white-space:nowrap; }
+  #cNear em { font-style:normal; font-size:12.5px; color:var(--drift-faint); }
   /* 日期:纯文字,不做成第二个胶囊(苹果的卡片抬头都是这么排的) */
-  #cTags .c-date { color:var(--drift-faint); font-size:11px; letter-spacing:.02em; }
+  #cTags .c-date { color:var(--drift-faint); font-size:12.5px; letter-spacing:.02em; }
   #cOpen {
-    margin:16px auto 0; display:block; width:fit-content; padding:9px 22px; text-align:center;
+    margin-top:18px; display:block; padding:14px; text-align:center;
     border:0; border-radius:var(--r-pill, 999px);
-    background:var(--drift-btn); color:#ffffff;
-    font-size:11.5px; font-weight:500; text-decoration:none;
+    background:rgba(var(--drift-signal),.13); color:rgb(var(--drift-signal));
+    font-size:14px; font-weight:600; text-decoration:none;
   }
-  /* ⚠️ 2026-09-03 所有者:「这个按钮能不能改成灰色呢?或者改小一点,上面的字我要白色」——
-     两样都做了:底换成中性灰(零饱和,和后台那颗灰按钮同一路)、字白、个头收窄成
-     **只有文字那么宽**、不再通栏。⚠️ **底不能用 `--drift-signal`**:她挑的两个色都很浅,
-     白字压上去看不清 —— 灰底正是为了让白字站得住。 */
+  /* ⚠️ 2026-09-03 所有者定的:「**改成和恋爱那个按钮一样的,黑白两版本都改成那个样的**」——
+     就是上面那颗标签的做法:**同色的极淡底(.13)+ 强调色的字,不描边**。
+     深浅两套自动跟着 `--drift-signal` 走,**别再给它单独配底色或字色**
+     (灰底白字那版、signal 实心底那版都是她否掉的)。 */
   #cOpen:hover { opacity:.85; }
   #cNear small { color:var(--drift-faint); font-size:8px; }
   /* ⚠️ 窄屏上关系名太长会把标题挤没,所以叠成两行(宽屏才并排)。 */
