@@ -251,13 +251,14 @@ const light = await readScheme('light');
 ok(dark.canvas[0] < 20 && dark.canvas[2] < 30, `深色下画布底是深的 rgb(${dark.canvas.join(',')})`, dark.canvas.join(','));
 ok(light.canvas[0] > 200 && light.canvas[1] > 200, `浅色下画布底是浅的 rgb(${light.canvas.join(',')})`, light.canvas.join(','));
 ok(dark.signal !== light.signal, `连线那个颜色两套不一样(深 ${dark.signal} / 浅 ${light.signal})`);
-// 所有者 2026-09-03:「线和这个界面上的红色字能不能改成饱和度低的蓝色」——
-// 钉两件事:是蓝的(蓝通道最大),而且饱和度低(最大最小通道差不超过 70)。
-for (const [name, v] of [['深色', dark.signal], ['浅色', light.signal]]) {
-  const [r, g, b] = v.split(',').map(Number);
-  ok(b > r && b > g, `${name}的连线是蓝的(不是原版那个玫瑰红)`, v);
-  ok(Math.max(r, g, b) - Math.min(r, g, b) <= 70, `${name}的蓝是低饱和的`, v);
-}
+// ⚠️⚠️ 这两个值是**所有者 2026-09-03 在全色域取色器上亲手拖出来的**,钉死。
+// ~~当天我先按「饱和度低」自己算过一版(125,153,185 / 61,85,113),她说「不是这种蓝」~~;
+// ~~也写过一条「最大最小通道差 ≤70」的断言~~ —— 她拖出来的比那个艳,**是我的标准错了,不是她的色错了**。
+// 要改先照 INTERNALS 1.12《怎么再调一次》给她取色器,别自己挑,也别把这两条改回"某种范围"。
+ok(dark.signal === '150,180,253', `深色是她拖的那个(偏蓝紫)`, dark.signal);
+ok(light.signal === '144,206,216', `浅色是她拖的那个(偏青)`, light.signal);
+// 两套刻意不是同一个色相 —— 这是她拖出来的结果,别去"统一"
+ok(dark.signal !== light.signal, '两套是两个不同的颜色,不是同一个色算出来的深浅');
 ok(dark.bodyBg !== light.bodyBg, '页面底色两套不一样');
 ok(dark.headInk !== light.headInk, '标题的字色两套不一样');
 ok(dark.errs.length === 0 && light.errs.length === 0, '两套配色下都零报错',
