@@ -378,7 +378,10 @@ const CONFIG = {
   }
   #cNear button:hover strong, #cNear button:focus-visible strong { color:rgb(var(--drift-signal)); }
   #cNear button:focus-visible { outline:none; }
-  #cNear strong { overflow:hidden; font-size:13px; font-weight:600; text-overflow:ellipsis; white-space:nowrap; }
+  /* ⚠️ 关联标题**不加粗**(2026-09-03 所有者:「桶112/桶109 等等不要加粗字体」)。
+     它和左边关系名的层次靠**字色**分(标题走亮的 --drift-ink,关系名走暗的 --drift-faint),不靠字重。
+     ~~原来是 font-weight:600~~,别改回去。 */
+  #cNear strong { overflow:hidden; font-size:13px; font-weight:400; text-overflow:ellipsis; white-space:nowrap; }
   #cNear em { font-style:normal; font-size:12.5px; color:var(--drift-faint); }
   /* 日期:纯文字,不做成第二个胶囊(苹果的卡片抬头都是这么排的) */
   #cTags .c-date { color:var(--drift-faint); font-size:12.5px; letter-spacing:.02em; }
