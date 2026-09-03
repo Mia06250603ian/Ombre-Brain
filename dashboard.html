@@ -319,6 +319,9 @@
     transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
   }
   .hbtn:hover { color: var(--text); border-color: var(--text-light); }
+  /* 只有图标的顶栏按钮:收成正圆,不留文字按钮那种左右内边距 */
+  .hbtn-ico { width: 34px; height: 34px; padding: 0; justify-content: center; }
+  .hbtn-ico .ico { width: 17px; height: 17px; }
   .search-bar { margin-top: 12px; }
   .search-bar input {
     width: 100%;
@@ -1093,11 +1096,24 @@
     <div class="header-top">
       <h1><span class="logo">◐</span>Ombre Brain</h1>
       <div class="header-acts">
-        <!-- Vesper = 记忆银河 /galaxy(同一台 OB 的只读星图,复用同一块 ombre_session cookie)。
-             用 <a> 不用 fetch —— 这颗按钮不该带来任何请求,点了才跳。
-             ⚠️ 所有者 2026-08-31 定:文字用「Vesper」(和星图自己的大标题一致),
-             前面那颗小星图缩略图不要。别再加图标回去。 -->
-        <a class="hbtn" href="/galaxy" title="Vesper · 记忆银河(只读星图)">Vesper</a>
+        <!-- 顶栏那两颗:一颗去星图,一颗去乱流。
+             ⚠️⚠️ **2026-09-03 所有者改了 08-31 的决定**,原话:「不用命名了,你画两个 ui,
+             一个星球 ui 一个 clawd 的 ui」。~~此前是一颗写着「Vesper」的文字按钮、
+             刻意不带图标~~ —— **已撤销**。
+             ⚠️ 两颗都**只有图标没有字**,所以 `aria-label` 和 `title` 必须留着,
+             不然读屏和鼠标悬停都不知道这是什么。 -->
+        <a class="hbtn hbtn-ico" href="/galaxy" aria-label="记忆银河" title="记忆银河(只读星图)">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="5.4"/>
+            <ellipse cx="12" cy="12" rx="10.2" ry="3.9" transform="rotate(-22 12 12)"/>
+          </svg>
+        </a>
+        <a class="hbtn hbtn-ico" href="/turbulence" aria-label="记忆乱流" title="记忆乱流(只读字符场)">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2.6v18.8M2.6 12h18.8M5.4 5.4l13.2 13.2M18.6 5.4 5.4 18.6"/>
+            <path d="M12 7.2v9.6M7.2 12h9.6" stroke-width="2.6"/>
+          </svg>
+        </a>
         <button class="hbtn" onclick="doLogout()" title="退出登录">退出</button>
       </div>
     </div>

@@ -66,13 +66,25 @@ for (const scheme of ['light', 'dark']) {
       res.status() + ' ' + (res.headers()['content-type'] || ''));
   }
 
-  // 星图入口
-  const gal = page.locator('a.hbtn[href="/galaxy"]');
-  ok('顶栏有星图入口', await gal.isVisible());
-  ok('按钮上写的是 Vesper', (await gal.innerText()).trim() === 'Vesper');
-  ok('按钮里没有图标', (await gal.locator('span, img, svg').count()) === 0);
-  ok('入口指向 /galaxy', (await gal.getAttribute('href')) === '/galaxy');
-  ok('入口是链接不是请求', (await gal.evaluate(el => el.tagName)) === 'A');
+  // 顶栏那两颗入口:一颗去星图,一颗去乱流。
+  // ⚠️ 2026-09-03 所有者改了 08-31 的决定,原话「不用命名了,你画两个 ui,
+  // 一个星球 ui 一个 clawd 的 ui」。~~原来钉的是「按钮上写的是 Vesper」+「按钮里没有图标」~~
+  // —— 两条都已撤销;现在反过来钉「只有图标、没有字」。
+  for (const [href, name] of [['/galaxy', '星图'], ['/turbulence', '乱流']]) {
+    const btn = page.locator(`a.hbtn[href="${href}"]`);
+    ok(`顶栏有${name}入口`, await btn.isVisible());
+    ok(`${name}那颗是画的图标`, (await btn.locator('svg.ico').count()) === 1);
+    ok(`${name}那颗不带字`, (await btn.innerText()).trim() === '');
+    // 只有图标的按钮必须留 aria-label,否则读屏什么都读不出来
+    ok(`${name}那颗有 aria-label`, !!(await btn.getAttribute('aria-label')));
+    ok(`${name}入口是链接不是请求`, (await btn.evaluate(el => el.tagName)) === 'A');
+  }
+  // 两颗要长得一样大(并排放着,差一点点很显眼)
+  ok('两颗入口同样大小', await page.evaluate(() => {
+    const [a, b] = ['/galaxy', '/turbulence'].map(h =>
+      document.querySelector(`a.hbtn[href="${h}"]`).getBoundingClientRect());
+    return Math.abs(a.width - b.width) < 1 && Math.abs(a.height - b.height) < 1;
+  }));
 
   // 配色:必须落在官端色板上,而且深浅两套要真的不同
   const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
