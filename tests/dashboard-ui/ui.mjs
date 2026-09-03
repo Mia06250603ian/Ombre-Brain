@@ -269,8 +269,12 @@ for (const scheme of ['light', 'dark']) {
     await page.locator('#todos-lines .todo-card-head h3').first().innerText()));
   ok('抬头带星期(英文)', /Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday/.test(
     await page.locator('#todos-lines .todo-card-head h3').first().innerText()));
-  ok('抬头字重是细的(不是 700)', await page.locator('#todos-lines .todo-card-head h3').first()
-    .evaluate(el => parseInt(getComputedStyle(el).fontWeight, 10) < 600));
+  // ⚠️ 抬头是**分组小标题**,不是大标题:又细又小(她原话「字体细一点」「英文太大了好傻啊」)
+  ok('抬头又细又小(不是大标题)', await page.locator('#todos-lines .todo-card-head h3').first()
+    .evaluate(el => {
+      const cs = getComputedStyle(el);
+      return parseInt(cs.fontWeight, 10) < 600 && parseFloat(cs.fontSize) <= 14;
+    }));
   ok('四条待办都在', (await page.locator('#todos-lines .todo-row').count()) === 4);
   ok('她贴的那条标着 from you', await page.locator('#todos-lines .todo-row.by-owner').first()
     .evaluate(el => el.innerText.includes('from you')));
