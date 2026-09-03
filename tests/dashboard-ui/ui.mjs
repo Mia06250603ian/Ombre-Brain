@@ -171,6 +171,25 @@ for (const scheme of ['light', 'dark']) {
   // 筛选药丸整排不要表情;卡片上那颗状态图标要留着
   ok('药丸一个表情都没有',
     !/\p{Extended_Pictographic}/u.test(await page.locator('#filters').innerText()));
+  // 圆角照 Apple 那套分档(2026-09-03):卡片一档、控件一档,不是到处一个数。
+  // ⚠️ 钉的是「用了那张尺度表」,不是具体像素 —— 换档只改 :root 里那五个数。
+  const radii = await page.evaluate(() => {
+    const g = (sel, side) => getComputedStyle(document.querySelector(sel))['borderTopLeftRadius'];
+    return {
+      card: g('.bucket-row'),
+      // ⚠️ 别拿 #search-input 量:搜索框本来就是胶囊(999px),不参与分档。
+      control: g('#sort-select'),
+      pill: g('.filter-btn'),
+      scale: ['--r-1','--r-2','--r-3','--r-4','--r-5']
+        .map(n => getComputedStyle(document.documentElement).getPropertyValue(n).trim()),
+    };
+  });
+  ok('圆角尺度表五档都在', radii.scale.every(v => /^\d+px$/.test(v)), radii.scale.join('/'));
+  ok('卡片用的是卡片那一档(--r-4)', radii.card === radii.scale[3], radii.card);
+  ok('控件用的是控件那一档(--r-3)', radii.control === radii.scale[2], radii.control);
+  // 筛选药丸是胶囊,**刻意不参与分档、也不上 squircle**(squircle 会把胶囊弄丑)
+  ok('筛选药丸仍是胶囊', parseFloat(radii.pill) > 100, radii.pill);
+
   // ⚠️ 2026-09-03:卡片那颗图标由 emoji 换成**自己画的内嵌 SVG**(所有者:「能把现在的
   // 表情换成自己画的 ui 吗」),所以不能再用 emoji 正则判 —— 改成查真的画了一颗 svg。
   ok('卡片上那颗图标还在', await page.locator('.bucket-row .icon svg.ico').first().isVisible());
