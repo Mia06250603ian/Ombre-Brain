@@ -203,6 +203,13 @@ for (const scheme of ['light', 'dark']) {
   // 图标跟着文字颜色走(stroke: currentColor),深浅色都不用另配色
   ok('图标跟着文字颜色走', await page.locator('.bucket-row .icon svg.ico').first().evaluate(
     el => getComputedStyle(el).stroke === getComputedStyle(el).color));
+  // ⚠️ 图标要和标题**看齐**(所有者 2026-09-03 报的:「为什么钉选那些你画的 ui 整体高于标题」)。
+  // 病根:SVG 的基线是它自己的底边,跟着 align-items:baseline 走就会被顶到基线以上。
+  ok('图标和标题竖直看齐(差 ≤2px)', await page.locator('.bucket-row').first().evaluate(row => {
+    const i = row.querySelector('.icon').getBoundingClientRect();
+    const t = row.querySelector('.name').getBoundingClientRect();
+    return Math.abs((i.top + i.bottom) / 2 - (t.top + t.bottom) / 2) <= 2;
+  }));
   // 整页不许再有 emoji 当图标用(logo ◐、排序 ↑↓ 这些不是 emoji,不受影响)
   ok('列表里没有 emoji 当图标', !/\p{Extended_Pictographic}/u.test(
     await page.locator('#bucket-list').innerText()));

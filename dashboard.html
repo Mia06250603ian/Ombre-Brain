@@ -420,7 +420,16 @@
     transform: translateY(-1px);
   }
   .row-top { display: flex; align-items: baseline; gap: 8px; }
-  .bucket-row .icon { flex: none; display: inline-flex; color: var(--text-light); }
+  /* ⚠️ 这颗图标必须 `align-self: center`,不能跟着 .row-top 的 `align-items: baseline` 走。
+     **原因(2026-09-03 所有者发现并报的:「为什么钉选那些你画的 ui 整体高于标题」)**:
+     SVG 是替换元素,它的「基线」是**自己的底边**;按基线对齐 = 图标底边贴着文字基线,
+     于是整颗图标被顶到基线以上,看着就浮起来了。换成居中对齐才和标题看齐。
+     ⚠️ 换成 emoji 的时代没这个问题(emoji 是文字,有真基线)—— 别照老写法改回 baseline。 */
+  .bucket-row .icon {
+    flex: none; display: inline-flex; align-items: center; align-self: center;
+    color: var(--text-light);
+  }
+  .bucket-row .icon .ico { vertical-align: baseline; }
   /* ── 自己画的图标(2026-09-03,所有者:「能把现在的表情换成自己画的 ui 吗」)──
      全是内嵌 SVG,**不引任何图标库** —— 这个后台不该为一套图标再多一个外部依赖。
      `stroke: currentColor` = 跟着所在位置的文字颜色走,深浅色自动都对。
