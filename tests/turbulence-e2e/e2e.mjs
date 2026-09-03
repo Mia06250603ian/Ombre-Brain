@@ -286,6 +286,33 @@ const s2 = await pg.evaluate(() => window.__drift.scale());
 ok(s2 < s1, `滚轮往下 = 缩小(${s1.toFixed(2)} → ${s2.toFixed(2)})`);
 ok(typeof s2 === 'number', '倍数读得出来');
 
+// 双击画布 = 回到原样。⚠️ 这是 ↺ 删掉之后**唯一**的复位路(2026-09-03 所有者要的),别让它悄悄没掉。
+// 先把视图弄乱:放大 + 拖偏,再双击,量倍数和位置有没有一起回去。
+await pg.mouse.move(500, 400);
+await pg.mouse.wheel(0, -600);
+await pg.mouse.move(500, 400); await pg.mouse.down();
+await pg.mouse.move(560, 450, { steps:6 }); await pg.mouse.up();
+await pg.waitForTimeout(120);
+const messy = await pg.evaluate(() => ({ s:window.__drift.scale(), p:window.__drift.pan() }));
+ok(messy.s > 1.05 && (Math.abs(messy.p.x) > 4 || Math.abs(messy.p.y) > 4),
+  `先把视图弄乱了(${messy.s.toFixed(2)}× / 偏 ${messy.p.x.toFixed(0)},${messy.p.y.toFixed(0)})`);
+await pg.mouse.dblclick(300, 250);
+await pg.waitForTimeout(120);
+const back = await pg.evaluate(() => ({ s:window.__drift.scale(), p:window.__drift.pan() }));
+ok(Math.abs(back.s - 1) < 0.001, `双击 → 倍数回到 1.00×(实得 ${back.s.toFixed(3)})`);
+ok(Math.abs(back.p.x) < 0.001 && Math.abs(back.p.y) < 0.001,
+  `双击 → 位置也回正中(实得 ${back.p.x.toFixed(1)},${back.p.y.toFixed(1)})`);
+// 单击不许复位,否则点一颗字看正文就会把视图打回去
+await pg.mouse.wheel(0, -240); await pg.waitForTimeout(120);
+const zoomed = await pg.evaluate(() => window.__drift.scale());
+await pg.mouse.click(300, 250);
+await pg.waitForTimeout(400);                 // 等过双击判定窗口(320ms)
+ok(Math.abs(await pg.evaluate(() => window.__drift.scale()) - zoomed) < 0.001,
+  '单击不复位(隔开的两下不算双击)');
+await pg.evaluate(() => window.__drift.clear());
+await pg.mouse.dblclick(300, 250);            // 收拾干净,后面几段从 1.00× 开始
+await pg.waitForTimeout(120);
+
 console.log('G. 只读 + 零外部请求(这一页的底线)');
 const external = requests.filter(r => !r.url.startsWith(OB) && !r.url.startsWith('data:') && !r.url.startsWith('about:'));
 ok(external.length === 0, `一个外部请求都没发(实得 ${external.length})`, external.map(r => r.url).join(' | '));

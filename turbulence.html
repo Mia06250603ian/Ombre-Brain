@@ -261,7 +261,8 @@ const CONFIG = {
      ① 左下角「30 FPS | 1.00×」的读数(`#meter`),2026-09-03 删
         (「下方的 30fps 1.00x 那一行能不能删掉」)—— 给开发看的,对她没用;
      ② 右下角那三颗按钮(＋ / － / ↺,`#controls` 和它们共用的 `.hud`),2026-09-03 删
-        (「先把右下角这仨玩意删了」)。缩放本身没删:滚轮和双指捏合照旧。
+        (「先把右下角这仨玩意删了」)。缩放本身没删:滚轮和双指捏合照旧,
+        **复位改成双击画布**(同日她要的,见下面 `tapAt()` 那段注释)。
      演练里量「动画在转 / 缩放生效」一律读 `window.__drift` 的 `frames()` 和 `scale()`,
      不依赖屏幕上有任何一块读数或按钮;并且各钉了一条「它没回来」。 */
 
@@ -977,6 +978,26 @@ function boot(items, relations){
     lockedIndex = null; closeCard();
   }
 
+  /* 双击/双指之外的那只手指连点两下 = 回到原样(1.00×、正中)。
+     ⚠️ 这是右下角那颗 ↺ 删掉之后唯一的复位路(2026-09-03 所有者要的),**别删**。
+     ⚠️ 鼠标和手指共用这一个漏斗:两边的「算不算一次点」都在 pointerup 里判过
+     (拖过就不算),所以这里不另外挂 dblclick —— 挂了就成了两套判定。
+     ⚠️ **第一下照常生效、不延迟**:要区分单双击就得把开卡片压后 300ms,
+     那是每一次点都变迟钝,不值当。所以连点第二下时卡片可能已经开着,这是知情的取舍。 */
+  const DOUBLE_MS = 320, DOUBLE_SLOP = 28;    // 两下之间最多隔多久、最多差多远才算「双击」
+  let lastTapAt = 0, lastTapX = 0, lastTapY = 0;
+  function resetView(){ scale = 1; panX = 0; panY = 0; }
+  function tapAt(clientX, clientY){
+    const now = performance.now();
+    if (now - lastTapAt <= DOUBLE_MS && Math.hypot(clientX - lastTapX, clientY - lastTapY) <= DOUBLE_SLOP) {
+      lastTapAt = 0;                          // 用掉了,免得连点三下又触发一次
+      resetView();
+      return;
+    }
+    lastTapAt = now; lastTapX = clientX; lastTapY = clientY;
+    toggleAt(clientX, clientY);
+  }
+
   canvas.addEventListener('pointerdown', function(e){
     canvas.setPointerCapture(e.pointerId);
     if (e.pointerType === 'touch') {
@@ -1019,14 +1040,14 @@ function boot(items, relations){
     if (touches.has(e.pointerId)) {
       const wasPinching = touches.size >= 2 || pinch !== null;
       touches.delete(e.pointerId);
-      if (!wasPinching && drag && !drag.moved) toggleAt(e.clientX, e.clientY);
+      if (!wasPinching && drag && !drag.moved) tapAt(e.clientX, e.clientY);
       pinch = null;
       const rest = [...touches.values()][0] || null;
       pointer = rest;
       drag = rest ? { x:rest.x, y:rest.y, panX:panX, panY:panY, moved:true } : null;
       return;
     }
-    if (drag && !drag.moved) toggleAt(e.clientX, e.clientY);
+    if (drag && !drag.moved) tapAt(e.clientX, e.clientY);
     drag = null;
   });
   canvas.addEventListener('pointercancel', function(e){
@@ -1095,6 +1116,7 @@ function boot(items, relations){
     },
     clear: function(){ lockedIndex = null; closeCard(); },
     scale: () => scale,
+    pan: () => ({ x:panX, y:panY }),   // 演练拿它判「双击复位是不是也把位置带回正中」
     frames: () => frames,      // 只增不减:演练拿它判「动画真的在转」(原来是读屏幕上那块 FPS)
   };
 
