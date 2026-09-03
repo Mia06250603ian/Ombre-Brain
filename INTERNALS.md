@@ -1192,7 +1192,7 @@ bash tests/turbulence-e2e/run.sh    # 96 项浏览器演练(2026-09-03 现场数
 ⚠️ 演练里把 `driftSpeed` 换成 0 好让点击落得准 —— **只替换测试时发出去的那份 HTML,
 `turbulence.html` 本身一个字不动**(同 galaxy 那套做法)。
 
-### 三条别踩
+### 四条别踩(~~原写「三条」~~,第 4 条 2026-09-03 加进来时没改标题,已更正)
 
 1. **⚠️ `Dockerfile` 里必须有 `COPY turbulence.html .`** —— 漏了这行镜像里没有这个文件,
    线上 `/turbulence` 回 404 而本地一切正常。**这是 1.9 已经踩过一次的坑**(galaxy.html 那次),
