@@ -108,6 +108,18 @@ const tagCss = await pg.$eval('#cTags .c-tag', n => {
 ok(tagCss.bw === '0px', '标签不描边(描边+实心那套是安卓味)', tagCss.bw);
 ok(/^rgba\(/.test(tagCss.bg) && tagCss.bg !== 'rgba(0, 0, 0, 0)',
    '标签的底是同色的极淡一层,不是实心色块', tagCss.bg);
+// 2026-09-03 所有者:「**我不要那个框**」。她朋友那版的卡上一个描边框都没有。别加回来:
+const framed = await pg.evaluate(() => {
+  const bad = [];
+  for (const sel of ['#cClose', '#cNear button', '#cOpen']) {
+    const n = document.querySelector(sel);
+    if (n && parseFloat(getComputedStyle(n).borderTopWidth) > 0) bad.push(sel);
+  }
+  return bad;
+});
+ok(framed.length === 0, '✕ / 关联列表 / 「在面板里打开」三处都没有描边框', framed.join('|'));
+ok(await pg.$eval('#cOpen', n => getComputedStyle(n).backgroundColor !== 'rgba(0, 0, 0, 0)'),
+   '「在面板里打开」是实心按钮(照她们那版),不是空心胶囊');
 // ⚠️ 别钉「几条」「第一条是谁」—— 假 OB 的边一改这些就红,而那不是 bug
 // (2026-09-03 给夹具加了条超长标题的桶,顺序就变了)。钉真正该成立的性质:
 const near = await pg.$$eval('#cNear button', bs => bs.map(x => x.textContent));

@@ -272,11 +272,15 @@ const CONFIG = {
     margin-top:4px; font-size:13px; font-weight:600; line-height:1.45;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
+  /* ⚠️ 2026-09-03 所有者:「**我不要那个框**」。她朋友那版的卡上**一个框都没有** ——
+     ✕ 是光秃秃一个符号、关联列表是纯文字行、底下那颗是实心按钮。
+     我们原来三处全套了描边框。**别再把框加回来**(留 34px 是手指的点击范围,不是框)。 */
   #cClose {
     width:34px; height:34px; flex:0 0 auto; display:grid; place-items:center;
-    border:1px solid var(--drift-line); border-radius:9px; background:transparent;
-    color:var(--drift-dim); font-size:15px; cursor:pointer;
+    border:0; background:none; padding:0;
+    color:var(--drift-dim); font-size:17px; cursor:pointer;
   }
+  #cClose:hover, #cClose:focus-visible { color:var(--drift-ink); outline:none; }
   #cScroll { overflow-y:auto; -webkit-overflow-scrolling:touch; min-width:0; }
   #cBody { color:var(--drift-dim); font-size:12px; line-height:1.75; white-space:pre-wrap; word-break:break-word; }
   /* 标签(2026-09-03 所有者:「不要那么有安卓味,按苹果 ui 设计走」)。
@@ -293,28 +297,36 @@ const CONFIG = {
   }
   #cNear { margin-top:13px; }
   #cNear > b { display:block; margin-bottom:7px; color:rgb(var(--drift-signal)); font-size:9px; font-weight:500; letter-spacing:.08em; }
-  #cNear > div { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+  /* 一行一条的纯文字行:左边灰色的关系名,右边加粗的标题(照她朋友那版)。
+     ⚠️ 右边那格必须写 `minmax(0,1fr)`,**不能只写 `1fr`** —— `1fr` 等于 `minmax(auto,1fr)`,
+     那个 auto 下限就是内容宽度,`session_2026-07-01_…` 那种长标题照样撑破卡片。 */
+  #cNear > div { display:flex; flex-direction:column; }
   #cNear button {
-    min-width:0; padding:9px; display:grid; gap:3px; text-align:left;
-    border:1px solid var(--drift-line); border-radius:10px; background:var(--drift-input);
-    color:var(--drift-ink); font-family:inherit; cursor:pointer;
+    width:100%; padding:5px 0; display:grid; grid-template-columns:auto minmax(0,1fr);
+    align-items:baseline; gap:10px; text-align:left;
+    border:0; background:none; color:var(--drift-ink); font-family:inherit; cursor:pointer;
   }
-  #cNear button:hover, #cNear button:focus-visible { border-color:rgba(var(--drift-signal),.55); outline:none; }
-  #cNear strong { overflow:hidden; font-size:10.5px; font-weight:500; text-overflow:ellipsis; white-space:nowrap; }
-  #cNear em { font-style:normal; font-size:8.5px; letter-spacing:.04em; color:var(--drift-faint); }
+  #cNear button:hover strong, #cNear button:focus-visible strong { color:rgb(var(--drift-signal)); }
+  #cNear button:focus-visible { outline:none; }
+  #cNear strong { overflow:hidden; font-size:11.5px; font-weight:600; text-overflow:ellipsis; white-space:nowrap; }
+  #cNear em { font-style:normal; font-size:11px; color:var(--drift-faint); }
   /* 日期:纯文字,不做成第二个胶囊(苹果的卡片抬头都是这么排的) */
   #cTags .c-date { color:var(--drift-faint); font-size:11px; letter-spacing:.02em; }
   #cOpen {
-    margin-top:14px; display:block; padding:11px; text-align:center;
-    border:1px solid var(--drift-line); border-radius:var(--r-pill, 999px);
-    background:var(--drift-input); color:var(--drift-ink);
-    font-size:12px; text-decoration:none;
+    margin-top:16px; display:block; padding:12px; text-align:center;
+    border:0; border-radius:var(--r-pill, 999px);
+    background:rgb(var(--drift-signal)); color:#12161c;
+    font-size:12.5px; font-weight:600; text-decoration:none;
   }
-  #cOpen:hover { border-color:var(--drift-dim); }
+  /* ⚠️ 字色写死成近黑,**不能用白** —— 她挑的两个 signal 都是浅色
+     (浅 144,206,216 / 深 150,180,253),白字在上面根本看不清。 */
+  #cOpen:hover { opacity:.85; }
   #cNear small { color:var(--drift-faint); font-size:8px; }
-  /* ⚠️ 这儿必须写 minmax(0,1fr),**不能只写 1fr** —— `1fr` 等于 `minmax(auto,1fr)`,
-     那个 auto 下限就是内容宽度,长标题照样撑破。2026-09-03 就是栽在这一处。 */
-  @media (max-width:520px) { #cNear > div { grid-template-columns:minmax(0,1fr); } }
+  /* ⚠️ 窄屏上关系名太长会把标题挤没,所以叠成两行(宽屏才并排)。 */
+  @media (max-width:380px) {
+    #cNear button { grid-template-columns:minmax(0,1fr); gap:1px; }
+    #cNear em { font-size:9.5px; }
+  }
 
   /* 加载中 / 口令门 */
   #loading, #gate {
