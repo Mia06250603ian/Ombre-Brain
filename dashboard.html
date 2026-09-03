@@ -101,13 +101,11 @@
     --glass-edge: rgba(20, 20, 19, 0.07);        /* 均匀描边,不是高光线 */
     --wash-a: rgba(20, 20, 19, 0.010);
     --wash-b: rgba(20, 20, 19, 0.008);
-    /* 记忆网络 / Breath 画布用(JS 靠 cssVar() 现读,别写死在 JS 里) */
+    /* Breath 评分条用(JS 靠 cssVar() 现读,别写死在 JS 里)。
+       ⚠️ 原来这里还有 --net-permanent / --net-archived / --net-line / --canvas-bg 四个,
+       是「记忆网络」页的画布在用;那一页 2026-09-03 已删,四个变量跟着删掉。 */
     --net-dynamic: var(--color-clay);
-    --net-permanent: var(--color-mineral);
     --net-feel: var(--color-fig);
-    --net-archived: var(--color-gray-400);
-    --net-line: var(--color-gray-350);
-    --canvas-bg: var(--color-gray-000);
   }
 
   /* 跟随系统深浅色。官端自己是靠 class 切的,我们没有开关,就认系统。 */
@@ -144,8 +142,6 @@
       --glass-edge: rgba(255, 255, 255, 0.10);   /* 均匀描边 */
       --wash-a: rgba(255, 255, 255, 0.010);
       --wash-b: rgba(255, 255, 255, 0.008);
-      --net-line: var(--color-gray-650);
-      --canvas-bg: var(--color-gray-900);
     }
   }
 
@@ -763,29 +759,6 @@
   }
   .btn-secondary:hover { color: var(--text); }
 
-  #network-canvas {
-    width: 100%;
-    height: calc(100vh - 200px);
-    background: var(--canvas-bg);
-    border-radius: 16px;
-    border: 1px solid var(--border);
-  }
-  .network-legend {
-    display: flex;
-    gap: 18px;
-    margin-bottom: 14px;
-    font-size: 12px;
-    color: var(--text-dim);
-    flex-wrap: wrap;
-  }
-  .legend-item { display: flex; align-items: center; gap: 6px; }
-  .legend-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    display: inline-block;
-  }
-
   .loading {
     text-align: center;
     color: var(--text-light);
@@ -973,7 +946,6 @@
 <div class="tabs">
   <div class="tab active" data-tab="list">记忆桶</div>
   <div class="tab" data-tab="breath">Breath 模拟</div>
-  <div class="tab" data-tab="network">记忆网络</div>
   <div class="tab" data-tab="letters">信箱</div>
   <div class="tab" data-tab="todos">便利贴</div>
   <div class="tab" data-tab="config">配置</div>
@@ -1026,16 +998,6 @@
   <div id="breath-results">
     <div class="loading">输入 query 后点击「模拟 Breath」查看评分链路</div>
   </div>
-</div>
-
-<div class="content" id="network-view" style="display:none">
-  <div class="network-legend">
-    <div class="legend-item"><span class="legend-dot" style="background:var(--net-dynamic)"></span> dynamic</div>
-    <div class="legend-item"><span class="legend-dot" style="background:var(--net-permanent)"></span> permanent</div>
-    <div class="legend-item"><span class="legend-dot" style="background:var(--net-feel)"></span> feel</div>
-    <div class="legend-item"><span class="legend-dot" style="background:var(--net-archived)"></span> archived</div>
-  </div>
-  <canvas id="network-canvas"></canvas>
 </div>
 
 <div class="content" id="import-view" style="display:none">
@@ -1451,14 +1413,12 @@ document.querySelectorAll('.tab').forEach(tab => {
     const target = tab.dataset.tab;
     document.getElementById('list-view').style.display = target === 'list' ? '' : 'none';
     document.getElementById('breath-view').style.display = target === 'breath' ? '' : 'none';
-    document.getElementById('network-view').style.display = target === 'network' ? '' : 'none';
     document.getElementById('letters-view').style.display = target === 'letters' ? '' : 'none';
     document.getElementById('todos-view').style.display = target === 'todos' ? '' : 'none';
     document.getElementById('config-view').style.display = target === 'config' ? '' : 'none';
     document.getElementById('import-view').style.display = target === 'import' ? '' : 'none';
     document.getElementById('trash-view').style.display = target === 'trash' ? '' : 'none';
     document.getElementById('settings-view').style.display = target === 'settings' ? '' : 'none';
-    if (target === 'network') loadNetwork();
     if (target === 'letters') loadLetters();
     if (target === 'todos') loadTodos();
     if (target === 'config') loadConfig();
@@ -2182,149 +2142,11 @@ function closeDetail() {
   detailBucket = null;
 }
 
-var networkData = null;
-async function loadNetwork() {
-  var canvas = document.getElementById('network-canvas');
-  var ctx = canvas.getContext('2d');
-  canvas.width = canvas.offsetWidth * window.devicePixelRatio;
-  canvas.height = canvas.offsetHeight * window.devicePixelRatio;
-  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-  var W = canvas.offsetWidth, H = canvas.offsetHeight;
-
-  ctx.fillStyle = cssVar('--canvas-bg');
-  ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = cssVar('--text-light');
-  ctx.font = '14px Inter, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('加载记忆网络…', W/2, H/2);
-
-  try {
-    var res = await fetch(BASE + '/api/network');
-    networkData = await res.json();
-    drawNetwork(ctx, W, H, networkData);
-  } catch(e) {
-    ctx.fillText('加载失败: ' + e.message, W/2, H/2 + 24);
-  }
-}
-
-function drawNetwork(ctx, W, H, data) {
-  var nodes = data.nodes, edges = data.edges;
-  if (!nodes.length) {
-    ctx.fillStyle = cssVar('--text-light');
-    ctx.fillText('没有记忆桶', W/2, H/2);
-    return;
-  }
-
-  var positions = {};
-  var cx = W / 2, cy = H / 2;
-  nodes.forEach(function(n, i) {
-    var angle = (i / nodes.length) * Math.PI * 2;
-    var r = Math.min(W, H) * 0.35;
-    positions[n.id] = {
-      x: cx + Math.cos(angle) * r + (Math.random() - 0.5) * 50,
-      y: cy + Math.sin(angle) * r + (Math.random() - 0.5) * 50,
-    };
-  });
-
-  var edgeMap = {};
-  edges.forEach(function(e) {
-    if (!edgeMap[e.source]) edgeMap[e.source] = [];
-    if (!edgeMap[e.target]) edgeMap[e.target] = [];
-    edgeMap[e.source].push(e.target);
-    edgeMap[e.target].push(e.source);
-  });
-
-  for (var iter = 0; iter < 80; iter++) {
-    for (var i = 0; i < nodes.length; i++) {
-      for (var j = i + 1; j < nodes.length; j++) {
-        var a = positions[nodes[i].id], b = positions[nodes[j].id];
-        var dx = b.x - a.x, dy = b.y - a.y;
-        var dist = Math.max(1, Math.sqrt(dx*dx + dy*dy));
-        var force = 800 / (dist * dist);
-        dx = (dx / dist) * force;
-        dy = (dy / dist) * force;
-        a.x -= dx; a.y -= dy;
-        b.x += dx; b.y += dy;
-      }
-    }
-    edges.forEach(function(e) {
-      var a = positions[e.source], b = positions[e.target];
-      if (!a || !b) return;
-      var dx = b.x - a.x, dy = b.y - a.y;
-      var dist = Math.sqrt(dx*dx + dy*dy);
-      var force = (dist - 100) * 0.01 * (e.similarity || 0.5);
-      dx = (dx / Math.max(1,dist)) * force;
-      dy = (dy / Math.max(1,dist)) * force;
-      a.x += dx; a.y += dy;
-      b.x -= dx; b.y -= dy;
-    });
-    nodes.forEach(function(n) {
-      var p = positions[n.id];
-      p.x += (cx - p.x) * 0.01;
-      p.y += (cy - p.y) * 0.01;
-    });
-  }
-
-  ctx.fillStyle = cssVar('--canvas-bg');
-  ctx.fillRect(0, 0, W, H);
-
-  edges.forEach(function(e) {
-    var a = positions[e.source], b = positions[e.target];
-    if (!a || !b) return;
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.strokeStyle = hexA(cssVar('--net-line'), e.similarity * 0.35);
-    ctx.lineWidth = Math.max(0.5, e.similarity * 2);
-    ctx.stroke();
-  });
-
-  var colors = {
-    dynamic:   cssVar('--net-dynamic'),
-    permanent: cssVar('--net-permanent'),
-    feel:      cssVar('--net-feel'),
-    archived:  cssVar('--net-archived'),
-  };
-  nodes.forEach(function(n) {
-    var p = positions[n.id];
-    var r = Math.max(4, Math.min(14, n.score * 0.8));
-    var color = colors[n.type] || colors.dynamic;
-
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, r + 4, 0, Math.PI * 2);
-    ctx.fillStyle = color + '15';
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = n.resolved ? color + '70' : color;
-    ctx.fill();
-
-    if (n.pinned) {
-      ctx.strokeStyle = cssVar('--net-permanent');
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-
-    var name = n.name.length > 10 ? n.name.slice(0, 10) + '…' : n.name;
-    ctx.fillStyle = cssVar('--text');
-    ctx.font = '11px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(name, p.x, p.y + r + 14);
-  });
-}
-
 // 画布里用的颜色一律现读 CSS 变量,别写死 —— 写死了深色模式下画出来还是浅色那套。
-// ⚠️ 返回的必须是 #rrggbb:下面 hexA() 和 `color + '15'` 这类拼接都指着它。
+// ⚠️ 返回的必须是 #rrggbb:`color + '15'` 这类拼接都指着它。
 function cssVar(name) {
   var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return v || '#87867f';
-}
-// 把 #rrggbb + 0~1 的透明度拼成 rgba(),给连线用
-function hexA(hex, a) {
-  var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
-  if (!m) return hex;
-  return 'rgba(' + parseInt(m[1],16) + ',' + parseInt(m[2],16) + ',' + parseInt(m[3],16) + ',' + a + ')';
 }
 
 function esc(s) {

@@ -2827,7 +2827,14 @@ NETWORK_EDGES_PER_NODE = _network_edge_cap if _network_edge_cap > 0 else None
 
 @mcp.custom_route("/api/network", methods=["GET"])
 async def api_network(request):
-    """Get embedding similarity network for visualization."""
+    """Get embedding similarity network for visualization.
+
+    ⚠️ 2026-09-03 起没有任何前端在调这个接口：它唯一的使用者「记忆网络」标签页
+    已按所有者决定从 dashboard.html 删掉（她说用不到）。接口和下面的
+    load_embeddings / similar_pairs 是刻意留着的 —— 没人调就不跑、零开销，
+    而以后要做新的记忆可视化时要的正是同一份数据。理由与删了哪些东西见
+    INTERNALS.md 第 1.10 节开头那段。
+    """
     from starlette.responses import JSONResponse
     err = _require_auth(request)
     if err: return err

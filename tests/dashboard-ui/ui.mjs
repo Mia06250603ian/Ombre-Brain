@@ -159,16 +159,9 @@ for (const scheme of ['light', 'dark']) {
   await page.locator('#detail-panel .close-btn').click();
   await page.waitForTimeout(300);
 
-  // 记忆网络:画布颜色是现读变量的,深色下不该还是浅色
-  await page.locator('.tab[data-tab="network"]').click();
-  await page.waitForTimeout(600);
-  const canvasPx = await page.evaluate(() => {
-    const c = document.getElementById('network-canvas');
-    const d = c.getContext('2d').getImageData(2, 2, 1, 1).data;
-    return [d[0], d[1], d[2]];
-  });
-  ok('画布底色跟着深浅色走', scheme === 'light' ? canvasPx[0] > 200 : canvasPx[0] < 60, canvasPx.join(','));
-  await page.screenshot({ path: SHOTS + '/network-' + scheme + '.png' });
+  // ⚠️ 这里原有一条「画布底色跟着深浅色走」,测的是「记忆网络」页那块 canvas。
+  // 那一页 2026-09-03 按所有者决定删掉了(她不用它),这条跟着删——
+  // 后台现在一块 canvas 都没有,没东西可测。别照旧结论把它加回来。
 
   // 回收站
   await page.locator('.tab[data-tab="trash"]').click();
