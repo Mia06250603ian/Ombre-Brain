@@ -324,7 +324,17 @@ for (const scheme of ['light', 'dark']) {
     };
   });
   ok('圆角尺度表五档都在', radii.scale.every(v => /^\d+px$/.test(v)), radii.scale.join('/'));
-  ok('卡片用的是卡片那一档(--r-4)', radii.card === radii.scale[3], radii.card);
+  // ⚠️ 2026-09-03 卡片由 --r-4(20px)挪到 --r-5(26px):所有者圈着整张卡说太胖、圆角看着「安卓方」,
+  // 收紧内边距的同时把圆角提一档(卡片越大、同样的圆角越显方)。**没有新造数值,仍在五档之内。**
+  ok('卡片用的是大面板那一档(--r-5)', radii.card === radii.scale[4], radii.card);
+  // 卡片收紧过一档,别再涨回去(2026-09-03 所有者选的 C 档)
+  ok('卡片内边距是收紧过的', await page.locator('.bucket-row').first().evaluate(el => {
+    const cs = getComputedStyle(el);
+    return parseFloat(cs.paddingTop) <= 12 && parseFloat(cs.paddingLeft) <= 15;
+  }), await page.locator('.bucket-row').first().evaluate(el => getComputedStyle(el).padding));
+  ok('卡片之间挨得紧', await page.locator('.bucket-list').evaluate(
+    el => parseFloat(getComputedStyle(el).gap) <= 9),
+    await page.locator('.bucket-list').evaluate(el => getComputedStyle(el).gap));
   // 钉「分档」这件事本身:五档必须一档比一档大。比盯着某一个元件稳。
   ok('五档是递增的', await page.evaluate(() => {
     const v = n => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n));
