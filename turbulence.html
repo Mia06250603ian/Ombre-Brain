@@ -111,13 +111,16 @@ const CONFIG = {
     --drift-bg:     var(--color-gray-050);  /* 场的底色 */
     --drift-signal: 122,52,55;              /* 高亮的字 + 凑近时那些连线(rgb 三个数,别带 rgb()) */
     /* 往下坠的那些光迹**单独一条**(2026-09-03 所有者要求拆开的,原本和 signal 共用一个值)。
-       想换成别的颜色只改这两行,连线和高亮不受影响。 */
-    --drift-trace:  122,52,55;
+       颜色和浓度都跟连线、高亮无关,改这儿只动坠线。
+       ⚠️ **中性灰是所有者 2026-09-03 在校准台上自己拖出来的**,不是从 signal 派生的,
+       别按「和 signal 统一」改回玫瑰红。 */
+    --drift-trace:       110,108,102;
+    --drift-trace-boost: 0.85;
     --drift-node:   94,93,89;               /* 平时那些字符(= 官端 gray-600) */
     /* ⚠️ 字符的浓度。原版那套透明度(.28~.45)是给深底设计的,深色下正好;
        同样的值压在浅底上会淡一截,所以浅色这边乘一个系数。**这个数是所有者看图定的**,
        别按「和深色统一」的理由改回 1(2026-09-03,给她看了 1.0 和 1.5 两版)。 */
-    --drift-ink-boost: 1.5;
+    --drift-ink-boost: 1.4;
 
     /* ── 页面上的那些框框 ── */
     --drift-ink:    var(--color-gray-950);
@@ -133,9 +136,10 @@ const CONFIG = {
       color-scheme: dark;
       --drift-bg:     #01050a;
       --drift-signal: 205,105,111;
-      --drift-trace:  205,105,111;
+      --drift-trace:       130,138,148;
+      --drift-trace-boost: 1.55;
       --drift-node:   116,128,141;
-      --drift-ink-boost: 1;              /* 深色就是原版那套,不用加浓 */
+      --drift-ink-boost: 1.85;           /* 原版那套压在这个底上她说太暗,校准台上拖到 1.85 */
       --drift-ink:    #eef2f7;
       --drift-dim:    #aeb6c0;
       --drift-faint:  #8b939d;
@@ -335,6 +339,7 @@ function readPalette(){
     signal: pick('--drift-signal', '205,105,111'),
     node:   pick('--drift-node',   '116,128,141'),
     trace:  pick('--drift-trace',  pick('--drift-signal', '205,105,111')),
+    traceBoost: parseFloat(pick('--drift-trace-boost', '1')) || 1,
     boost:  parseFloat(pick('--drift-ink-boost', '1')) || 1,
   };
 }
@@ -576,14 +581,17 @@ function boot(items, relations){
       const y = wy * scale + H / 2 + panY;
       const l = len * scale;
       if (x < -3 || x > W + 3 || y > H + l + 3 || y + l < -3) return;
+      // ⚠️ 这四行的算法和校准台(所有者拖数那个页面)里那份**逐字一致**,
+      // 改了这儿就等于让她当时看到的和真页面对不上。要改先改两边。
+      const a = Math.min(1, t.alpha * P.traceBoost);
       const g = ctx.createLinearGradient(x, y, x, y + l);
-      g.addColorStop(0,  'rgba(' + P.trace + ',' + t.alpha + ')');
-      g.addColorStop(.55,'rgba(' + P.trace + ',' + (t.alpha * .5) + ')');
+      g.addColorStop(0,  'rgba(' + P.trace + ',' + a + ')');
+      g.addColorStop(.55,'rgba(' + P.trace + ',' + (a * .5) + ')');
       g.addColorStop(1,  'rgba(' + P.trace + ',0)');
       ctx.strokeStyle = g;
-      ctx.lineWidth = t.alpha > .23 ? 1.1 : .78;
+      ctx.lineWidth = a > .23 ? 1.1 : .78;
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + l); ctx.stroke();
-      ctx.fillStyle = 'rgba(' + P.trace + ',' + Math.min(.46, t.alpha * 1.4) + ')';
+      ctx.fillStyle = 'rgba(' + P.trace + ',' + Math.min(.46, a * 1.4) + ')';
       ctx.fillRect(x - .5, y - 1, 1, 2);
     });
 

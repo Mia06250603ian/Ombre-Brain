@@ -136,11 +136,16 @@ const readScheme = async (scheme) => {
   const out = await p.evaluate(() => {
     const cv = document.getElementById('canvas');
     const px = cv.getContext('2d').getImageData(2, 2, 1, 1).data;
+    const root = getComputedStyle(document.documentElement);
+    const v = n => root.getPropertyValue(n).trim();
     return {
       canvas:[px[0], px[1], px[2]],
       bodyBg:getComputedStyle(document.body).backgroundColor,
       headInk:getComputedStyle(document.querySelector('#head h1')).color,
-      signal:getComputedStyle(document.documentElement).getPropertyValue('--drift-signal').trim(),
+      signal:v('--drift-signal'),
+      trace:v('--drift-trace'),
+      traceBoost:v('--drift-trace-boost'),
+      inkBoost:v('--drift-ink-boost'),
     };
   });
   await p.evaluate(() => window.__drift.lockAt(0));
@@ -159,6 +164,17 @@ ok(dark.bodyBg !== light.bodyBg, '页面底色两套不一样');
 ok(dark.headInk !== light.headInk, '标题的字色两套不一样');
 ok(dark.errs.length === 0 && light.errs.length === 0, '两套配色下都零报错',
    [...dark.errs, ...light.errs].join(' | '));
+
+// ⚠️ 下面这四个数是所有者 2026-09-03 在校准台上**自己拖出来的**,不是随手写的默认值。
+// 钉在这儿是为了拦「顺手改回原版 / 和 signal 统一」那类改动 —— 真要改,先拿新数给她看。
+ok(dark.inkBoost === '1.85',   `深色字的浓度是她定的 1.85(实得 ${dark.inkBoost})`, dark.inkBoost);
+ok(light.inkBoost === '1.4',   `浅色字的浓度是她定的 1.4(实得 ${light.inkBoost})`, light.inkBoost);
+ok(dark.trace === '130,138,148' && light.trace === '110,108,102',
+   `坠线是她挑的中性灰(深 ${dark.trace} / 浅 ${light.trace})`, dark.trace + ' / ' + light.trace);
+ok(dark.trace !== dark.signal, '坠线和连线是两个颜色,没被合回去');
+ok(dark.traceBoost === '1.55' && light.traceBoost === '0.85',
+   `坠线浓度是她定的(深 ${dark.traceBoost} / 浅 ${light.traceBoost})`,
+   dark.traceBoost + ' / ' + light.traceBoost);
 
 console.log('K. 系统当场切换 → 画布立刻跟着换(不用刷新)');
 const pg3 = await ctx.newPage();
