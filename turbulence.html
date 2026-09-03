@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#01050a">
+<meta name="theme-color" content="#faf9f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#01050a" media="(prefers-color-scheme: dark)">
 <title>Drift · 记忆乱流</title>
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" href="/apple-touch-icon.png">
@@ -83,18 +84,72 @@ const CONFIG = {
   neighborCount:  4,               // 凑近时照亮最近几颗
   glyphs:         'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%*()[]{}',
 
-  // ── 颜色(深色底,和 /galaxy 一个路子)────────────────
-  bg:      '#01050a',
-  signal:  '205,105,111',          // 高亮/连线/光迹的颜色(rgb 三个数)
-  node:    '116,128,141',          // 平时那些字符的颜色
+  // ⚠️ 颜色不在这儿 —— 全在下面 <style> 的 :root 里,分浅色/深色两套,跟着系统走。
+  // 画布里的颜色一律靠 palette() 现读那些变量,**别写死在 JS 里**
+  // (这是后台那边就定下的规矩,见 INTERNALS 1.8「画布里的颜色一律 cssVar() 现读」)。
 };
 </script>
 
 <style>
+  /* ═══════════════════════════════════════════════════════════
+     颜色:浅色写在 :root,深色只覆盖变化的那几条,**跟着系统走**。
+     做法和 dashboard.html 一样(见 INTERNALS 1.8):官端灰阶原文 + 一张角色表;
+     画布那几个颜色也在这儿,JS 靠 palette() 现读 —— **别把颜色写死在 JS 里**,
+     写死了切到浅色画出来还是深色那套。
+     ⚠️ signal 的两个值是 fuyue 原版自己那对(深色 205,105,111 / 浅色 122,52,55),
+     不是后台那个中性灰强调色 —— 这一页有自己的调子,别去"统一"。
+     ═══════════════════════════════════════════════════════════ */
+  :root {
+    color-scheme: light;
+    /* ── 官端灰阶原文(只取这一页用得到的几档)── */
+    --color-gray-000:#fff;     --color-gray-050:#faf9f5;  --color-gray-100:#f5f4ed;
+    --color-gray-200:#e8e6dc;  --color-gray-300:#d1cfc5;  --color-gray-500:#87867f;
+    --color-gray-600:#5e5d59;  --color-gray-750:#30302e;  --color-gray-900:#1a1918;
+    --color-gray-950:#141413;
+
+    /* ── 画布(JS 现读这三条)── */
+    --drift-bg:     var(--color-gray-050);  /* 场的底色 */
+    --drift-signal: 122,52,55;              /* 高亮的字 + 凑近时那些连线(rgb 三个数,别带 rgb()) */
+    /* 往下坠的那些光迹**单独一条**(2026-09-03 所有者要求拆开的,原本和 signal 共用一个值)。
+       想换成别的颜色只改这两行,连线和高亮不受影响。 */
+    --drift-trace:  122,52,55;
+    --drift-node:   94,93,89;               /* 平时那些字符(= 官端 gray-600) */
+    /* ⚠️ 字符的浓度。原版那套透明度(.28~.45)是给深底设计的,深色下正好;
+       同样的值压在浅底上会淡一截,所以浅色这边乘一个系数。**这个数是所有者看图定的**,
+       别按「和深色统一」的理由改回 1(2026-09-03,给她看了 1.0 和 1.5 两版)。 */
+    --drift-ink-boost: 1.5;
+
+    /* ── 页面上的那些框框 ── */
+    --drift-ink:    var(--color-gray-950);
+    --drift-dim:    var(--color-gray-600);
+    --drift-faint:  var(--color-gray-500);
+    --drift-line:   var(--color-gray-300);
+    --drift-panel:  rgba(255,255,255,.9);
+    --drift-card:   rgba(250,249,245,.94);
+    --drift-input:  rgba(20,20,19,.03);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --drift-bg:     #01050a;
+      --drift-signal: 205,105,111;
+      --drift-trace:  205,105,111;
+      --drift-node:   116,128,141;
+      --drift-ink-boost: 1;              /* 深色就是原版那套,不用加浓 */
+      --drift-ink:    #eef2f7;
+      --drift-dim:    #aeb6c0;
+      --drift-faint:  #8b939d;
+      --drift-line:   #252b32;
+      --drift-panel:  rgba(4,7,11,.9);
+      --drift-card:   rgba(4,7,11,.94);
+      --drift-input:  rgba(255,255,255,.03);
+    }
+  }
+
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  html, body { height:100%; overflow:hidden; background:#01050a; }
+  html, body { height:100%; overflow:hidden; background:var(--drift-bg); }
   body {
-    color:#eef2f7;
+    color:var(--drift-ink);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,"PingFang SC","Microsoft YaHei",sans-serif;
     -webkit-font-smoothing:antialiased;
   }
@@ -109,9 +164,9 @@ const CONFIG = {
   #head h1 {
     font-family:ui-serif,Georgia,"Times New Roman",serif;
     font-size:19px; font-weight:400; letter-spacing:.34em; text-indent:.34em;
-    color:rgba(238,242,247,.82);
+    color:var(--drift-ink);
   }
-  #head p { margin-top:5px; font-size:10px; letter-spacing:.22em; text-indent:.22em; color:rgba(174,182,192,.5); }
+  #head p { margin-top:5px; font-size:10px; letter-spacing:.22em; text-indent:.22em; color:var(--drift-faint); }
 
   /* 左下角读数 / 右下角三颗按钮 */
   .hud {
@@ -120,20 +175,20 @@ const CONFIG = {
   }
   #meter {
     left:14px; display:flex; align-items:center; gap:8px; height:34px; padding:0 11px;
-    border:1px solid #252b32; border-radius:7px; background:rgba(4,7,11,.9);
-    color:#aeb6c0; pointer-events:none;
+    border:1px solid var(--drift-line); border-radius:7px; background:var(--drift-panel);
+    color:var(--drift-dim); pointer-events:none;
   }
-  #meter b { color:#eef2f7; font-weight:500; }
-  #meter i { padding-left:8px; border-left:1px solid #252b32; font-style:normal; letter-spacing:0; }
+  #meter b { color:var(--drift-ink); font-weight:500; }
+  #meter i { padding-left:8px; border-left:1px solid var(--drift-line); font-style:normal; letter-spacing:0; }
   #controls { right:14px; display:flex; gap:5px; }
   #controls button {
     width:38px; height:38px; display:grid; place-items:center;
-    border:1px solid #252b32; border-radius:7px; background:rgba(4,7,11,.9);
-    color:#aeb6c0; font-size:15px; font-family:inherit; cursor:pointer;
+    border:1px solid var(--drift-line); border-radius:7px; background:var(--drift-panel);
+    color:var(--drift-dim); font-size:15px; font-family:inherit; cursor:pointer;
     transition:transform .14s cubic-bezier(.23,1,.32,1), border-color .14s ease, color .14s ease;
   }
   #controls button:hover, #controls button:focus-visible {
-    border-color:rgba(205,105,111,.5); color:#eef2f7; outline:none;
+    border-color:rgba(var(--drift-signal),.5); color:var(--drift-ink); outline:none;
   }
   #controls button:active { transform:scale(.97); }
 
@@ -142,8 +197,8 @@ const CONFIG = {
     position:fixed; left:0; right:0; bottom:0; z-index:4;
     max-height:58vh; padding:16px 16px calc(env(safe-area-inset-bottom,0px) + 16px);
     display:none; grid-template-rows:auto 1fr; gap:11px;
-    border-top:1px solid #20252b; border-radius:16px 16px 0 0;
-    background:rgba(4,7,11,.94); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
+    border-top:1px solid var(--drift-line); border-radius:16px 16px 0 0;
+    background:var(--drift-card); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
     animation:rise .18s cubic-bezier(.23,1,.32,1) both;
   }
   #card.on { display:grid; }
@@ -151,7 +206,7 @@ const CONFIG = {
   #card header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
   #card header > div { min-width:0; }
   #cKind {
-    display:block; color:rgb(205,105,111);
+    display:block; color:rgb(var(--drift-signal));
     font-family:"SFMono-Regular",Menlo,Consolas,monospace; font-size:8px; letter-spacing:.14em;
   }
   #cName {
@@ -160,46 +215,46 @@ const CONFIG = {
   }
   #cClose {
     width:34px; height:34px; flex:0 0 auto; display:grid; place-items:center;
-    border:1px solid #252b32; border-radius:9px; background:transparent;
-    color:#aeb6c0; font-size:15px; cursor:pointer;
+    border:1px solid var(--drift-line); border-radius:9px; background:transparent;
+    color:var(--drift-dim); font-size:15px; cursor:pointer;
   }
   #cScroll { overflow-y:auto; -webkit-overflow-scrolling:touch; }
-  #cBody { color:#c3cad3; font-size:12px; line-height:1.75; white-space:pre-wrap; word-break:break-word; }
+  #cBody { color:var(--drift-dim); font-size:12px; line-height:1.75; white-space:pre-wrap; word-break:break-word; }
   #cTags { margin-top:11px; display:flex; flex-wrap:wrap; gap:5px; }
-  #cTags span { padding:4px 8px; border:1px solid #252b32; border-radius:999px; color:#8b939d; font-size:9px; }
+  #cTags span { padding:4px 8px; border:1px solid var(--drift-line); border-radius:999px; color:var(--drift-faint); font-size:9px; }
   #cNear { margin-top:13px; }
-  #cNear > b { display:block; margin-bottom:7px; color:rgb(205,105,111); font-size:9px; font-weight:500; letter-spacing:.08em; }
+  #cNear > b { display:block; margin-bottom:7px; color:rgb(var(--drift-signal)); font-size:9px; font-weight:500; letter-spacing:.08em; }
   #cNear > div { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
   #cNear button {
     min-width:0; padding:9px; display:grid; gap:3px; text-align:left;
-    border:1px solid #252b32; border-radius:10px; background:rgba(255,255,255,.02);
-    color:#eef2f7; font-family:inherit; cursor:pointer;
+    border:1px solid var(--drift-line); border-radius:10px; background:var(--drift-input);
+    color:var(--drift-ink); font-family:inherit; cursor:pointer;
   }
-  #cNear button:hover, #cNear button:focus-visible { border-color:rgba(205,105,111,.55); outline:none; }
+  #cNear button:hover, #cNear button:focus-visible { border-color:rgba(var(--drift-signal),.55); outline:none; }
   #cNear strong { overflow:hidden; font-size:10px; font-weight:500; text-overflow:ellipsis; white-space:nowrap; }
-  #cNear small { color:#8b939d; font-size:8px; }
+  #cNear small { color:var(--drift-faint); font-size:8px; }
   @media (max-width:520px) { #cNear > div { grid-template-columns:1fr; } }
 
   /* 加载中 / 口令门 */
   #loading, #gate {
     position:fixed; inset:0; z-index:6; display:grid; place-items:center; padding:24px;
-    background:#01050a; color:#8b939d; font-size:12px; letter-spacing:.12em;
+    background:var(--drift-bg); color:var(--drift-faint); font-size:12px; letter-spacing:.12em;
   }
   #gate { display:none; }
   #gate.on { display:grid; }
   #gate form { width:min(280px,100%); display:grid; gap:11px; text-align:center; }
   #gTitle {
     font-family:ui-serif,Georgia,serif; font-size:19px; letter-spacing:.34em;
-    text-indent:.34em; color:rgba(238,242,247,.82);
+    text-indent:.34em; color:var(--drift-ink);
   }
   #gate input {
-    width:100%; height:42px; padding:0 13px; border:1px solid #252b32; border-radius:10px;
-    background:rgba(255,255,255,.03); color:#eef2f7; font-family:inherit; font-size:14px; text-align:center;
+    width:100%; height:42px; padding:0 13px; border:1px solid var(--drift-line); border-radius:10px;
+    background:var(--drift-input); color:var(--drift-ink); font-family:inherit; font-size:14px; text-align:center;
   }
-  #gate input:focus { border-color:rgba(205,105,111,.55); outline:none; }
+  #gate input:focus { border-color:rgba(var(--drift-signal),.55); outline:none; }
   #gate button {
-    height:42px; border:1px solid rgba(205,105,111,.42); border-radius:10px;
-    background:rgba(205,105,111,.1); color:rgb(205,105,111);
+    height:42px; border:1px solid rgba(var(--drift-signal),.42); border-radius:10px;
+    background:rgba(var(--drift-signal),.1); color:rgb(var(--drift-signal));
     font-family:inherit; font-size:13px; cursor:pointer;
   }
   #gate button:disabled { opacity:.5; cursor:default; }
@@ -267,6 +322,23 @@ function seededUnit(seed){
 }
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+
+/* 画布用的颜色一律现读 CSS 变量,别写死在 JS 里 —— 写死了切到浅色画出来还是深色那套。
+   (和 dashboard.html 的 cssVar() 同一条规矩,见 INTERNALS 1.8)
+   每帧 getComputedStyle 太贵,所以缓存;系统深浅色一变、窗口一变就重读。 */
+let PALETTE = null;
+function readPalette(){
+  const cs = getComputedStyle(document.documentElement);
+  const pick = (name, fallback) => (cs.getPropertyValue(name).trim() || fallback);
+  return {
+    bg:     pick('--drift-bg',     '#01050a'),
+    signal: pick('--drift-signal', '205,105,111'),
+    node:   pick('--drift-node',   '116,128,141'),
+    trace:  pick('--drift-trace',  pick('--drift-signal', '205,105,111')),
+    boost:  parseFloat(pick('--drift-ink-boost', '1')) || 1,
+  };
+}
+function palette(){ return PALETTE || (PALETTE = readPalette()); }
 
 /* OB 的桶 → 原版那套「层」。原版是 core/semantic/episodic/working/archive,
    OB 没有这套东西,所以按 type + pinned + resolved 映射(刻意不一样之三)。 */
@@ -462,8 +534,9 @@ function boot(items, relations){
   }
 
   function draw(now){
+    const P = palette();
     ctx.globalAlpha = 1;
-    ctx.fillStyle = CONFIG.bg;
+    ctx.fillStyle = P.bg;
     ctx.fillRect(0, 0, W, H);
 
     const points = nodes.map(n => pointOf(n, now));
@@ -504,13 +577,13 @@ function boot(items, relations){
       const l = len * scale;
       if (x < -3 || x > W + 3 || y > H + l + 3 || y + l < -3) return;
       const g = ctx.createLinearGradient(x, y, x, y + l);
-      g.addColorStop(0,  'rgba(' + CONFIG.signal + ',' + t.alpha + ')');
-      g.addColorStop(.55,'rgba(' + CONFIG.signal + ',' + (t.alpha * .5) + ')');
-      g.addColorStop(1,  'rgba(' + CONFIG.signal + ',0)');
+      g.addColorStop(0,  'rgba(' + P.trace + ',' + t.alpha + ')');
+      g.addColorStop(.55,'rgba(' + P.trace + ',' + (t.alpha * .5) + ')');
+      g.addColorStop(1,  'rgba(' + P.trace + ',0)');
       ctx.strokeStyle = g;
       ctx.lineWidth = t.alpha > .23 ? 1.1 : .78;
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + l); ctx.stroke();
-      ctx.fillStyle = 'rgba(' + CONFIG.signal + ',' + Math.min(.46, t.alpha * 1.4) + ')';
+      ctx.fillStyle = 'rgba(' + P.trace + ',' + Math.min(.46, t.alpha * 1.4) + ')';
       ctx.fillRect(x - .5, y - 1, 1, 2);
     });
 
@@ -520,7 +593,7 @@ function boot(items, relations){
         const e = edges[ei];
         if (!isLocal(e.from, e.to, lim2)) return;
         secondary.add(e.from); secondary.add(e.to);
-        ctx.strokeStyle = 'rgba(' + CONFIG.signal + ',' + (.07 * lockProgress) + ')';
+        ctx.strokeStyle = 'rgba(' + P.signal + ',' + (.07 * lockProgress) + ')';
         ctx.lineWidth = .45;
         ctx.beginPath(); ctx.moveTo(points[e.from].x, points[e.from].y);
         ctx.lineTo(points[e.to].x, points[e.to].y); ctx.stroke();
@@ -529,7 +602,7 @@ function boot(items, relations){
         const e = edges[ei];
         if (!isLocal(e.from, e.to, lim1)) return;
         active.add(e.from); active.add(e.to);
-        ctx.strokeStyle = 'rgba(' + CONFIG.signal + ',' + (.28 * lockProgress) + ')';
+        ctx.strokeStyle = 'rgba(' + P.signal + ',' + (.28 * lockProgress) + ')';
         ctx.lineWidth = .55;
         ctx.beginPath(); ctx.moveTo(points[e.from].x, points[e.from].y);
         ctx.lineTo(points[e.to].x, points[e.to].y); ctx.stroke();
@@ -537,7 +610,7 @@ function boot(items, relations){
       near.forEach(function(e){
         active.add(e.index);
         if (e.distance < 1) return;
-        ctx.strokeStyle = 'rgba(' + CONFIG.signal + ',' +
+        ctx.strokeStyle = 'rgba(' + P.signal + ',' +
           (.5 * (1 - e.distance / CONFIG.interactRadius) * lockProgress) + ')';
         ctx.lineWidth = .5;
         ctx.beginPath(); ctx.moveTo(points[e.index].x, points[e.index].y);
@@ -563,10 +636,10 @@ function boot(items, relations){
       const size = ((isCore ? 12 : 9.75) + n.depth * 1.55) * clamp(scale, .46, 2.1);
       ctx.font = (isCore ? 500 : 400) + ' ' + size + 'px "SFMono-Regular", Menlo, Consolas, monospace';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = isSecondary ? 'rgba(' + CONFIG.signal + ',.4)'
-        : isActive ? 'rgba(' + CONFIG.signal + ',.98)'
-        : 'rgba(' + CONFIG.node + ',' +
-          (!n.item ? .12 : layer === 'archive' ? .19 : .28 + n.depth * .17) + ')';
+      ctx.fillStyle = isSecondary ? 'rgba(' + P.signal + ',.4)'
+        : isActive ? 'rgba(' + P.signal + ',.98)'
+        : 'rgba(' + P.node + ',' + Math.min(1,
+            (!n.item ? .12 : layer === 'archive' ? .19 : .28 + n.depth * .17) * P.boost) + ')';
       ctx.fillText(n.glyph, p.x, p.y);
     }
 
@@ -581,7 +654,7 @@ function boot(items, relations){
       const d   = f.kind === 'lock' ? 16 - t * 7 : 9 + t * 8;
       const arm = f.kind === 'lock' ? 4.5 + t * 1.5 : 6 - t * 1.5;
       const a   = f.kind === 'lock' ? 1 - t * .18 : 1 - t;
-      ctx.strokeStyle = 'rgba(' + CONFIG.signal + ',' + a + ')';
+      ctx.strokeStyle = 'rgba(' + P.signal + ',' + a + ')';
       ctx.lineWidth = f.kind === 'lock' ? 1 : .75;
       ctx.beginPath();
       ctx.moveTo(p.x-d, p.y-d+arm); ctx.lineTo(p.x-d, p.y-d); ctx.lineTo(p.x-d+arm, p.y-d);
@@ -733,6 +806,13 @@ function boot(items, relations){
   // 页面看不见就停手,别在后台白转(省电)
   document.addEventListener('visibilitychange', function(){ running = !document.hidden; });
   window.addEventListener('resize', resize);
+
+  // 系统深浅色一变,画布跟着换 —— 页面上的框框靠 CSS 自己就变了,
+  // 但画布是 JS 画的,不重读变量的话它会一直停在旧那套颜色上。
+  const scheme = window.matchMedia('(prefers-color-scheme: dark)');
+  const onScheme = function(){ PALETTE = readPalette(); draw(performance.now()); };
+  if (scheme.addEventListener) scheme.addEventListener('change', onScheme);
+  else if (scheme.addListener) scheme.addListener(onScheme);   // 老 Safari
 
   // 关卡片 = 松开锁定
   document.getElementById('cClose').addEventListener('click', function(){

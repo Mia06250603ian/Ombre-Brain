@@ -7,7 +7,8 @@ const NONET= process.env.NONET_URL|| `http://127.0.0.1:${(+(process.env.PORT || 
 const PASS = process.env.PASS || 'test123';
 
 const b = await chromium.launch({ executablePath:process.env.CHROME, args:['--no-sandbox'] });
-const ctx = await b.newContext({ viewport:{ width:1000, height:800 }, deviceScaleFactor:1 });
+// 主场跑深色;浅色单独在 J 段验(这一页跟着系统深浅色走)
+const ctx = await b.newContext({ viewport:{ width:1000, height:800 }, deviceScaleFactor:1, colorScheme:'dark' });
 const pg = await ctx.newPage();
 const errs = [];
 pg.on('pageerror', e => errs.push(e.message));
@@ -121,6 +122,55 @@ await pg2.evaluate(() => window.__drift.lockAt(0));
 await pg2.waitForSelector('#card.on', { timeout:8000 });
 ok(await pg2.evaluate(() => document.getElementById('cNear').style.display === 'none'), '没有邻居时,「离它最近的记忆」那块自己藏起来');
 ok(errs2.length === 0, '降级路径上零报错', errs2.join(' | '));
+
+console.log('J. 跟着系统深浅色走');
+// ⚠️ 画布是 JS 画的,不像页面上的框框能靠 CSS 自己变 —— 所以这一段专门钉「画布也跟着变」。
+const readScheme = async (scheme) => {
+  const c = await b.newContext({ viewport:{ width:1000, height:800 }, deviceScaleFactor:1, colorScheme:scheme });
+  const p = await c.newPage();
+  const e = [];
+  p.on('pageerror', x => e.push(x.message));
+  await p.goto(`${NONET}/turbulence`);            // 这个不用登录,省一步
+  await p.waitForFunction('window.__drift', null, { timeout:30000 });
+  await p.waitForTimeout(600);
+  const out = await p.evaluate(() => {
+    const cv = document.getElementById('canvas');
+    const px = cv.getContext('2d').getImageData(2, 2, 1, 1).data;
+    return {
+      canvas:[px[0], px[1], px[2]],
+      bodyBg:getComputedStyle(document.body).backgroundColor,
+      headInk:getComputedStyle(document.querySelector('#head h1')).color,
+      signal:getComputedStyle(document.documentElement).getPropertyValue('--drift-signal').trim(),
+    };
+  });
+  await p.evaluate(() => window.__drift.lockAt(0));
+  await p.waitForSelector('#card.on', { timeout:8000 });
+  await p.screenshot({ path:(process.env.SHOTS || '/tmp/turbulence-e2e') + '/乱流-' + scheme + '.png' });
+  out.errs = e;
+  await c.close();
+  return out;
+};
+const dark = await readScheme('dark');
+const light = await readScheme('light');
+ok(dark.canvas[0] < 20 && dark.canvas[2] < 30, `深色下画布底是深的 rgb(${dark.canvas.join(',')})`, dark.canvas.join(','));
+ok(light.canvas[0] > 200 && light.canvas[1] > 200, `浅色下画布底是浅的 rgb(${light.canvas.join(',')})`, light.canvas.join(','));
+ok(dark.signal !== light.signal, `连线那个颜色两套不一样(深 ${dark.signal} / 浅 ${light.signal})`);
+ok(dark.bodyBg !== light.bodyBg, '页面底色两套不一样');
+ok(dark.headInk !== light.headInk, '标题的字色两套不一样');
+ok(dark.errs.length === 0 && light.errs.length === 0, '两套配色下都零报错',
+   [...dark.errs, ...light.errs].join(' | '));
+
+console.log('K. 系统当场切换 → 画布立刻跟着换(不用刷新)');
+const pg3 = await ctx.newPage();
+await pg3.goto(`${NONET}/turbulence`);
+await pg3.waitForFunction('window.__drift', null, { timeout:30000 });
+await pg3.waitForTimeout(400);
+const before = await pg3.evaluate(() => [...document.getElementById('canvas').getContext('2d').getImageData(2,2,1,1).data].slice(0,3));
+await pg3.emulateMedia({ colorScheme:'light' });
+await pg3.waitForTimeout(500);
+const after = await pg3.evaluate(() => [...document.getElementById('canvas').getContext('2d').getImageData(2,2,1,1).data].slice(0,3));
+ok(before[0] < 20 && after[0] > 200,
+   `切到浅色,画布当场跟着换了(${before.join(',')} → ${after.join(',')})`, before + ' → ' + after);
 
 console.log('I. 控制台');
 ok(errs.length === 0, '整场零 JS 报错', errs.join(' | '));
