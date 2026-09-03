@@ -267,17 +267,24 @@ ok(await pg.evaluate(() => window.__drift.locked()) === null, '✕ 之后锁定�
 // 图例跟着「有没有点中一颗」走,所以关掉卡片它也要收回去
 ok(await pg.$eval('#legend', n => !n.classList.contains('on')), '✕ 之后图例也收回去了');
 
-console.log('F. 缩放按钮');
+console.log('F. 缩放(按钮已删,靠滚轮/捏合)');
+// ⚠️ ~~原来这段点的是右下角 ＋ / － / ↺ 三颗按钮~~ —— **2026-09-03 所有者点名删了那三颗**
+// (「先把右下角这仨玩意删了」)。⚠️ 删的只是按钮,**缩放本身还在**,所以这段改成直接推滚轮量。
+// 同理 ~~更早那版读屏幕上 #mZoom 那块「1.00×」~~ 也早已改成量倍数本身。
+ok(await pg.$('#controls') === null, '右下角那三颗按钮不在了(别加回来)');
+ok(await pg.$$eval('button', bs => bs.every(b => !['in','out','reset'].includes(b.dataset.action || ''))),
+  '整页再没有 in/out/reset 那三颗');
 const s0 = await pg.evaluate(() => window.__drift.scale());
-await pg.click('#controls button[data-action="in"]');
+await pg.mouse.move(500, 400);
+await pg.mouse.wheel(0, -240);                       // 往上推 = 放大
+await pg.waitForTimeout(120);
 const s1 = await pg.evaluate(() => window.__drift.scale());
-ok(s1 > s0, `＋ 放大了(${s0.toFixed(2)} → ${s1.toFixed(2)})`);
-await pg.click('#controls button[data-action="reset"]');
+ok(s1 > s0, `滚轮往上 = 放大(${s0.toFixed(2)} → ${s1.toFixed(2)})`);
+await pg.mouse.wheel(0, 240);                        // 推回去 = 缩小
+await pg.waitForTimeout(120);
 const s2 = await pg.evaluate(() => window.__drift.scale());
-ok(Math.abs(s2 - 1) < 0.001, '↺ 复位回 1.00×');
-// ⚠️ ~~原来这条读的是屏幕上 #mZoom 那块「1.00×」~~ —— 那块已按所有者要求删掉,
-// 改成直接量倍数本身(本来就该量这个)。
-ok(typeof (await pg.evaluate(() => window.__drift.scale())) === 'number', '倍数读得出来');
+ok(s2 < s1, `滚轮往下 = 缩小(${s1.toFixed(2)} → ${s2.toFixed(2)})`);
+ok(typeof s2 === 'number', '倍数读得出来');
 
 console.log('G. 只读 + 零外部请求(这一页的底线)');
 const external = requests.filter(r => !r.url.startsWith(OB) && !r.url.startsWith('data:') && !r.url.startsWith('about:'));

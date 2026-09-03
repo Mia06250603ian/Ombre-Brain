@@ -257,26 +257,13 @@ const CONFIG = {
   }
   #hint.gone { opacity:0; }
 
-  /* 右下角三颗按钮。
-     ⚠️ 左下角原来还有一块「30 FPS | 1.00×」的读数(`#meter`),
-     **2026-09-03 所有者点名删掉了**(「下方的 30fps 1.00x 那一行能不能删掉」)。
-     它是给开发看的,对她没用。**别照旧文加回来**;演练里量「动画在转 / 缩放生效」
-     改成读 `window.__drift` 的 `frames()` 和 `scale()`,不再依赖屏幕上有这块读数。 */
-  .hud {
-    position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 14px); z-index:3;
-    font-family:"SFMono-Regular",Menlo,Consolas,monospace; font-size:10px; letter-spacing:.08em;
-  }
-  #controls { right:14px; display:flex; gap:5px; }
-  #controls button {
-    width:38px; height:38px; display:grid; place-items:center;
-    border:1px solid var(--drift-line); border-radius:7px; background:var(--drift-panel);
-    color:var(--drift-dim); font-size:15px; font-family:inherit; cursor:pointer;
-    transition:transform .14s cubic-bezier(.23,1,.32,1), border-color .14s ease, color .14s ease;
-  }
-  #controls button:hover, #controls button:focus-visible {
-    border-color:rgba(var(--drift-signal),.5); color:var(--drift-ink); outline:none;
-  }
-  #controls button:active { transform:scale(.97); }
+  /* ⚠️ 屏幕角落这两块**都已经被所有者点名删掉了,别照旧文加回来**:
+     ① 左下角「30 FPS | 1.00×」的读数(`#meter`),2026-09-03 删
+        (「下方的 30fps 1.00x 那一行能不能删掉」)—— 给开发看的,对她没用;
+     ② 右下角那三颗按钮(＋ / － / ↺,`#controls` 和它们共用的 `.hud`),2026-09-03 删
+        (「先把右下角这仨玩意删了」)。缩放本身没删:滚轮和双指捏合照旧。
+     演练里量「动画在转 / 缩放生效」一律读 `window.__drift` 的 `frames()` 和 `scale()`,
+     不依赖屏幕上有任何一块读数或按钮;并且各钉了一条「它没回来」。 */
 
   /* 点中一颗之后从底下浮上来的那张卡。
      ⚠️ 这是**玻璃**(2026-09-03 所有者:「这个页面也改成玻璃质感」),六件事凑齐:
@@ -430,7 +417,6 @@ const CONFIG = {
 
   @media (prefers-reduced-motion: reduce) {
     #card { animation:none; }
-    #controls button { transition-property:border-color,color; }
   }
 </style>
 </head>
@@ -458,12 +444,6 @@ const CONFIG = {
 </div>
 
 <p id="hint">点一个字,看它牵着谁</p>
-
-<div id="controls" class="hud">
-  <button type="button" data-action="in"    aria-label="放大">＋</button>
-  <button type="button" data-action="out"   aria-label="缩小">－</button>
-  <button type="button" data-action="reset" aria-label="复位">↺</button>
-</div>
 
 <div id="card">
   <header>
@@ -1065,13 +1045,8 @@ function boot(items, relations){
     zoomAround(scale + (e.deltaY < 0 ? .12 : -.12), e.clientX - b.left, e.clientY - b.top);
   }, { passive:false });
 
-  document.getElementById('controls').addEventListener('click', function(e){
-    const btn = e.target.closest('button[data-action]');
-    if (!btn) return;
-    if (btn.dataset.action === 'reset') { scale = 1; panX = 0; panY = 0; return; }
-    zoomAround(clampScale(scale + (btn.dataset.action === 'in' ? .22 : -.22)), W / 2, H / 2);
-    if (btn.dataset.action === 'out' && scale <= minScale + .001) { panX = 0; panY = 0; }
-  });
+  // ⚠️ 右下角那三颗按钮(＋ / － / ↺)2026-09-03 按所有者要求删了,**别加回来**。
+  // 缩放本身还在:滚轮(上面那条 wheel)和双指捏合(pointer 那几条)照旧。
 
   // 页面看不见就停手,别在后台白转(省电)
   document.addEventListener('visibilitychange', function(){ running = !document.hidden; });
