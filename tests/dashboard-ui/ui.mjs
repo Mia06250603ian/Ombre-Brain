@@ -319,14 +319,15 @@ for (const scheme of ['light', 'dark']) {
       // 2026-09-03 就栽过一次:原来量的是 #sort-select,那天它变成了胶囊里的 select。
       sortPill: g('.sort-pill'),
       pill: g('.filter-btn'),
-      scale: ['--r-1','--r-2','--r-3','--r-4','--r-5']
+      scale: ['--r-1','--r-2','--r-3','--r-4','--r-5','--r-6']
         .map(n => getComputedStyle(document.documentElement).getPropertyValue(n).trim()),
     };
   });
-  ok('圆角尺度表五档都在', radii.scale.every(v => /^\d+px$/.test(v)), radii.scale.join('/'));
-  // ⚠️ 2026-09-03 卡片由 --r-4(20px)挪到 --r-5(26px):所有者圈着整张卡说太胖、圆角看着「安卓方」,
-  // 收紧内边距的同时把圆角提一档(卡片越大、同样的圆角越显方)。**没有新造数值,仍在五档之内。**
-  ok('卡片用的是大面板那一档(--r-5)', radii.card === radii.scale[4], radii.card);
+  // ⚠️ 2026-09-03 由五档加到**六档**:新的 `--r-6`(42px)专给记忆卡片,理由见 dashboard.html 里那段注释。
+  ok('圆角尺度表六档都在', radii.scale.every(v => /^\d+px$/.test(v)), radii.scale.join('/'));
+  // ⚠️ 记忆卡片 2026-09-03 一路走到 **--r-6(42px)+ 超椭圆**:20 普通圆弧 → 26 超椭圆(她:「这个圆角
+  // 好安卓」)→ 26 普通圆弧(还是安卓)→ 42 超椭圆。**超椭圆在同一数值下看着更方,所以半径必须给够。**
+  ok('记忆卡片用的是新的第六档(--r-6)', radii.card === radii.scale[5], radii.card);
   // 卡片收紧过一档,别再涨回去(2026-09-03 所有者选的 C 档)
   ok('卡片内边距是收紧过的', await page.locator('.bucket-row').first().evaluate(el => {
     const cs = getComputedStyle(el);
@@ -336,9 +337,9 @@ for (const scheme of ['light', 'dark']) {
     el => parseFloat(getComputedStyle(el).gap) <= 9),
     await page.locator('.bucket-list').evaluate(el => getComputedStyle(el).gap));
   // 钉「分档」这件事本身:五档必须一档比一档大。比盯着某一个元件稳。
-  ok('五档是递增的', await page.evaluate(() => {
+  ok('六档是递增的', await page.evaluate(() => {
     const v = n => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n));
-    const a = ['--r-1','--r-2','--r-3','--r-4','--r-5'].map(v);
+    const a = ['--r-1','--r-2','--r-3','--r-4','--r-5','--r-6'].map(v);
     return a.every((x, i) => i === 0 || x > a[i - 1]);
   }), radii.scale.join(' < '));
   ok('排序做成了胶囊,不是原生下拉', parseFloat(radii.sortPill) > 100, radii.sortPill);
@@ -581,15 +582,14 @@ for (const scheme of ['light', 'dark']) {
   ok('兜底路上边缘高光跟着同一条曲线', fb.ring.startsWith('url("data:image/svg+xml'), fb.ring);
   // ⚠️ mask 会不会把玻璃弄没:这两条就是看着它的
   ok('兜底路上玻璃还在(模糊 + 半透明面)', fb.blur && fb.bg, JSON.stringify(fb));
-  // ⚠️ 记忆卡片**刻意不参与**:所有者选的是普通圆弧。这两条防的是「哪天顺手又把它加回超椭圆名单」。
-  const memo = await page.locator('.bucket-row').first().evaluate(el => {
-    const cs = getComputedStyle(el);
-    return { shape: cs.cornerShape || '', radius: cs.borderTopLeftRadius,
-             mask: (cs.webkitMaskBoxImageSource || 'none') };
+  // ⚠️ 记忆卡片走的是**第六档 42px 的超椭圆**(她最后选的那版)。这两条防「哪天又被调回小半径」。
+  const memo = await page.evaluate(() => {
+    const el = document.querySelector('.bucket-row'), cs = getComputedStyle(el);
+    return { mask: (cs.webkitMaskBoxImageSource || 'none'),
+             sq: getComputedStyle(document.documentElement).getPropertyValue('--r-6').trim() };
   });
-  ok('记忆卡片是普通圆弧,不是超椭圆', !/squircle|superellipse/.test(memo.shape), memo.shape || '(空)');
-  ok('记忆卡片的圆角没被 mask 归零', parseFloat(memo.radius) >= 20 && memo.mask === 'none',
-    memo.radius + ' / ' + memo.mask.slice(0, 24));
+  ok('兜底路上记忆卡片也被切成了超椭圆', memo.mask.startsWith('url("data:image/svg+xml'), memo.mask.slice(0, 30));
+  ok('记忆卡片那一档够大(≥40px)', parseFloat(memo.sq) >= 40, memo.sq);
   await page.screenshot({ path: SHOTS + '/squircle-fallback-' + scheme + '.png' });
 
   await ctx.close();
