@@ -51,7 +51,8 @@
     --cool-050: #f7f7f9;  --cool-100: #eff1f3;  --cool-150: #e9ebee;
     --cool-200: #dee1e6;  --cool-250: #d3d7dc;  --cool-300: #c5cad1;
     --cool-400: #a3a9b2;  --cool-500: #78818e;  --cool-600: #535a64;
-    --cool-650: #434952;  --cool-750: #2a2e34;  --cool-950: #111315;
+    --cool-650: #434952;  --cool-700: #353a41;  --cool-750: #2a2e34;
+    --cool-800: #212429;  --cool-900: #16191b;  --cool-950: #111315;
     /* 冷色版的近黑,给阴影/描边/底光当底(原来是暖的 rgba(20,20,19,…)) */
 
     /* ── 官端强调色原文 ── */
@@ -150,36 +151,42 @@
   @media (prefers-color-scheme: dark) {
     :root {
       color-scheme: dark;
-      --bg: var(--color-gray-950);
-      --surface: var(--color-gray-900);
-      --surface-solid: var(--color-gray-900);
-      --surface-sunken: var(--color-gray-800);
-      --border: var(--color-gray-750);
-      --border-strong: var(--color-gray-700);
-      --text: var(--color-gray-050);
-      --text-dim: var(--color-gray-400);
-      --text-light: var(--color-gray-500);
-      --accent: #343434;                     /* 所有者 2026-08-31 定的深色强调色 */
-      --accent-hover: #444444;
-      --accent-fg: var(--color-gray-050);    /* #343434 上压浅字 → 11.82:1 */
-      --accent-text: var(--color-gray-400);  /* → 8.29:1(官端 gray-400) */
+      /* ⚠️ 2026-09-03 深色照浅色那套流程改了一遍(所有者:「深色的也按这个流程改」):
+         **底色纯灰、零饱和**(她那句「底色我不想要饱和度」两套都适用),
+         **字/描边/强调色改指冷灰**,**底光回到看得见**(见下面 --wash-*),玻璃保留。
+         官端那套暖灰一行没删,想退回把这一段的 --cool-* 换回 --color-gray-* 即可。 */
+      --bg: #131313;                         /* 纯灰,三通道相等 */
+      --surface: var(--cool-900);
+      --surface-solid: var(--cool-900);
+      --surface-sunken: var(--cool-800);
+      --border: var(--cool-750);
+      --border-strong: var(--cool-700);
+      --text: var(--cool-050);
+      --text-dim: var(--cool-400);
+      --text-light: var(--cool-500);
+      --accent: #2f3339;                     /* 2026-09-03 由 #343434 改成同明度的冷灰(她 08-31 定的那档明度没动) */
+      --accent-hover: #3d434b;
+      --accent-fg: var(--cool-050);          /* 压在 #2f3339 上 → 明度没变,对比度照旧 */
+      --accent-text: var(--cool-400);        /* 明度同官端 gray-400,对比度照旧 */
       --accent-glow: rgba(255, 255, 255, 0.12);
       /* ⚠️ 深色下 `#343434` 压在卡片底 `#1a1918` 上只有 1.48:1 —— 整条会看不见。
          所以深色这条是「从她的强调色往浅里走」,浅色那条是「往深里走」,两边都读得出来。 */
       --vbar-from: var(--accent);
-      --vbar-to: var(--color-gray-400);
-      --chip-bg: var(--color-gray-800);
-      --chip-fg: var(--color-gray-050);
-      --input-bg: var(--color-gray-800);
+      --vbar-to: var(--cool-400);
+      --chip-bg: var(--cool-800);
+      --chip-fg: var(--cool-050);
+      --input-bg: var(--cool-800);
       --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.30);
       --shadow-card-hover: 0 4px 14px rgba(0, 0, 0, 0.45);
       --shadow-panel: 0 8px 40px rgba(0, 0, 0, 0.55);
-      --glass-chrome: rgba(20, 20, 19, 0.68);
+      --glass-chrome: rgba(19, 19, 19, 0.68);
       --glass-card: rgba(255, 255, 255, 0.07);   /* 白纱,不是灰块 */
       --glass-soft: rgba(255, 255, 255, 0.05);
       --glass-edge: rgba(255, 255, 255, 0.10);   /* 均匀描边 */
-      --wash-a: rgba(255, 255, 255, 0.010);
-      --wash-b: rgba(255, 255, 255, 0.008);
+      /* ⚠️ 2026-09-03 由 1% 提到 4.5%/3.5%,和浅色同一个道理:**1% 上玻璃没东西可透**。
+         白色本身就是零饱和,所以这两团不用改颜色,只改强度。 */
+      --wash-a: rgba(255, 255, 255, 0.045);
+      --wash-b: rgba(255, 255, 255, 0.035);
     }
   }
 

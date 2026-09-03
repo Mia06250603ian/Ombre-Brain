@@ -83,14 +83,14 @@ for (const scheme of ['light', 'dark']) {
   // 明度和官端逐档相同、只搬了色相,所以对比度那几笔账照旧。**深色一个数没动。**
   // ⚠️ 浅色 2026-09-03 又压深了一档(#f7f7f9 → #f1f1f1):iOS 那种质感靠「灰底 + 纯白卡片」
   // 的落差分层,底色和卡片太接近就分不出层。深色没动。
-  const wantBg = scheme === 'light' ? 'rgb(241, 241, 241)' : 'rgb(20, 20, 19)';
-  const wantFg = scheme === 'light' ? 'rgb(17, 19, 21)' : 'rgb(250, 249, 245)';   // cool-950 / gray-050
-  const wantAccent = scheme === 'light' ? '#8d97a5' : '#343434';   // 浅色冷灰(09-03)/ 深色仍是她 08-31 定的
-  ok('底色 = ' + (scheme === 'light' ? '纯灰 #f1f1f1' : '官端 gray-950'), bg === wantBg, bg);
-  // 所有者原话「底色我不想要饱和度」:三通道必须相等。⚠️ 只管底色 —— 字/描边/强调色仍是偏冷的。
-  if (scheme === 'light') {
-    ok('底色饱和度为 0(三通道相等)', /^rgb\((\d+), \1, \1\)$/.test(bg), bg);
-  }
+  // ⚠️ 深色 2026-09-03 也按同一套流程改了:底色纯灰、字/边/强调色偏冷、底光回到看得见。
+  const wantBg = scheme === 'light' ? 'rgb(241, 241, 241)' : 'rgb(19, 19, 19)';
+  const wantFg = scheme === 'light' ? 'rgb(17, 19, 21)' : 'rgb(247, 247, 249)';   // cool-950 / cool-050
+  const wantAccent = scheme === 'light' ? '#8d97a5' : '#2f3339';   // 两套 09-03 都改成了冷灰(明度沿用她 08-31 定的那档)
+  ok('底色 = ' + (scheme === 'light' ? '纯灰 #f1f1f1' : '纯灰 #131313'), bg === wantBg, bg);
+  // 所有者原话「底色我不想要饱和度」—— 2026-09-03 起**两套都钉**(她说「深色的也按这个流程改」)。
+  // ⚠️ 只管底色:字/描边/强调色两套都是偏冷的,别拿这条去"统一"它们。
+  ok('底色饱和度为 0(三通道相等)', /^rgb\((\d+), \1, \1\)$/.test(bg), bg);
   ok('字色 = 反色', fg === wantFg, fg);
   ok('强调色 = 所有者定的灰', accent === wantAccent, accent);
   // 强调色当填色 / 当文字是两个角色,合并回一个就会有地方看不见
@@ -137,7 +137,10 @@ for (const scheme of ['light', 'dark']) {
     ok('浅色底光够得上「有东西可透」(0.02~0.09)', a > 0.02 && a <= 0.09, a);
     ok('底光是中性灰,没有饱和度', washes.every(w => w.r === w.g && w.g === w.b));
   } else {
-    ok('深色底光仍是极淡的 1%', Math.max(...washes.map(w => w.a)) <= 0.02);
+    // ⚠️ 深色 2026-09-03 也由 1% 提到了看得见(同一个道理:1% 上玻璃没东西可透)。
+    // 白色本身零饱和,所以中性那条自动成立,这儿只查强度。
+    const a = Math.max(...washes.map(w => w.a));
+    ok('深色底光够得上「有东西可透」(0.02~0.09)', a > 0.02 && a <= 0.09, a);
   }
 
   // ⚠️ ~~当天中途加过「浅色卡片是纯白实色」「浅色卡片不描边」~~ —— **已撤销**:
@@ -170,13 +173,18 @@ for (const scheme of ['light', 'dark']) {
     !/\p{Extended_Pictographic}/u.test(await page.locator('#filters').innerText()));
   ok('卡片上那颗图标还在',
     /\p{Extended_Pictographic}/u.test(await page.locator('.bucket-row .icon').first().innerText()));
-  const wantChip = scheme === 'light' ? 'rgb(141, 151, 165)' : 'rgb(52, 52, 52)';   // 浅色 09-03 改冷灰
+  const wantChip = scheme === 'light' ? 'rgb(141, 151, 165)' : 'rgb(47, 51, 57)';   // 两套 09-03 都改冷灰
   const gotChip = await page.locator('.filter-btn.active').evaluate(el => getComputedStyle(el).backgroundColor);
   ok('选中的药丸是实心强调色', gotChip === wantChip, gotChip);
   // 所有者点名:药丸上的字深浅色都用白的。⚠️ 别把这条改成"对比度要够" ——
   // 白字压 #999999 只有 2.94:1,是她知情后定的,测试要看着她这个决定别被人改回去。
-  ok('药丸上的字是白的', await page.locator('.filter-btn.active').evaluate(
-    el => ['rgb(255, 255, 255)', 'rgb(250, 249, 245)'].includes(getComputedStyle(el).color)));
+  // ⚠️ 2026-09-03 由「白名单两个具体值」改成「近乎纯白(三通道都 ≥245)」:
+  // 深色的近白色当天由 #faf9f5 换成了 #f7f7f9,写死的名单没覆盖到。
+  // **规矩本身没松**:仍然要求是白的,只是不再挑是哪一种白。
+  ok('药丸上的字是白的', await page.locator('.filter-btn.active').evaluate(el => {
+    const m = getComputedStyle(el).color.match(/\d+/g);
+    return m && m.slice(0, 3).every(v => +v >= 245);
+  }));
   await page.locator('.filter-btn[data-filter="all"]').click();
 
   // 详情抽屉
