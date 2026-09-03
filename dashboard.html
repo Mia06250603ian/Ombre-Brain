@@ -42,6 +42,18 @@
     --color-gray-700: #3d3d3a;  --color-gray-750: #30302e;
     --color-gray-800: #262624;  --color-gray-850: #1f1e1d;
     --color-gray-900: #1a1918;  --color-gray-950: #141413;
+    /* ── 冷灰(2026-09-03 新增)──────────────────────────────
+       所有者原话:「**我是想改成冷色调一点 包括那个灰色按钮之类的**」。
+       ⚠️ **官端那套暖灰一行没删**,深色模式仍然整套用它;**只有浅色的角色表改指这套**。
+       想退回暖的:把下面浅色角色表里的 `--cool-*` 全部换回 `--color-gray-*` 即可,别删这一段。
+       做法:**明度一个不动**,逐档照搬官端的 L,只把色相搬到 215°、按深浅给一点饱和度
+       —— 明度不动 = 文档里算过的那些对比度账全部照旧成立(白字压强调色仍是 2.9 上下)。 */
+    --cool-050: #f7f7f9;  --cool-100: #eff1f3;  --cool-150: #e9ebee;
+    --cool-200: #dee1e6;  --cool-250: #d3d7dc;  --cool-300: #c5cad1;
+    --cool-400: #a3a9b2;  --cool-500: #78818e;  --cool-600: #535a64;
+    --cool-650: #434952;  --cool-750: #2a2e34;  --cool-950: #111315;
+    /* 冷色版的近黑,给阴影/描边/底光当底(原来是暖的 rgba(20,20,19,…)) */
+
     /* ── 官端强调色原文 ── */
     --color-clay: #d97757;      --color-clay-hover: #c6613f;
     --color-clay-dark: #c46849; --color-oat: #e3dacc;
@@ -50,41 +62,41 @@
     --color-error: #bf4d43;
 
     /* ── 角色表(浅色):照官端 :root 逐条对应 ── */
-    --bg: var(--color-gray-050);            /* background-primary */
+    --bg: var(--cool-050);                  /* background-primary(2026-09-03 由暖改冷) */
     --surface: var(--color-gray-000);       /* background-overlay:卡片 */
     --surface-solid: var(--color-gray-000);
-    --surface-sunken: var(--color-gray-100);/* background-secondary:输入框底 */
-    --border: var(--color-gray-200);        /* border-tertiary */
-    --border-strong: var(--color-gray-300); /* border-secondary */
-    --text: var(--color-gray-950);          /* foreground-primary */
-    --text-dim: var(--color-gray-750);      /* foreground-secondary */
-    --text-light: var(--color-gray-600);    /* foreground-tertiary */
+    --surface-sunken: var(--cool-100);      /* background-secondary:输入框底 */
+    --border: var(--cool-200);              /* border-tertiary */
+    --border-strong: var(--cool-300);       /* border-secondary */
+    --text: var(--cool-950);                /* foreground-primary */
+    --text-dim: var(--cool-750);            /* foreground-secondary */
+    --text-light: var(--cool-600);          /* foreground-tertiary */
     /* ⚠️ 强调色 2026-08-31 由所有者定成中性灰(不再是官端的 clay);其余灰阶仍是官端原文。
        它拆成三个角色,别合并回一个 —— 合了会有两处直接看不见:
        ① `#999999` 上压白字只有 2.85:1(选中的药丸糊);
        ② `#999999` 当文字压在浅底上 2.7:1、`#343434` 当文字压在深底上 1.48:1
           (选中的标签和那条 2px 下划线会消失)。数值 2026-08-31 现场算的。 */
-    --accent: #999999;                      /* 填色:药丸/按钮/圆点/情绪条 */
-    --accent-hover: #8a8a8a;
+    --accent: #8d97a5;                      /* 填色:药丸/按钮/圆点/情绪条。⚠️ 2026-09-03 由 #999999 改成冷灰,是所有者点名要的「那个灰色按钮」 */
+    --accent-hover: #7c8898;
     /* ⚠️ 压在填色上的字:**浅色模式也用白**。所有者 2026-08-31 两次点名要白的,
        她知道白字压 `#999999` 只有 2.94:1(低于 4.5:1)。~~此前改成过近黑(6.47:1)~~,
        **是她当场否掉的,别再"修"回去。** */
     --accent-fg: var(--color-gray-000);
-    --accent-text: var(--color-gray-600);   /* 当文字/细线用 → 6.26:1(官端 gray-600) */
-    --accent-glow: rgba(153, 153, 153, 0.22);
-    --chip-bg: var(--color-gray-200);       /* button-tertiary-bg */
-    --chip-fg: var(--color-gray-650);       /* button-secondary-fg */
+    --accent-text: var(--cool-600);         /* 当文字/细线用 → 明度和官端 gray-600 一样,对比度照旧 */
+    --accent-glow: rgba(141, 151, 165, 0.22);
+    --chip-bg: var(--cool-200);             /* button-tertiary-bg */
+    --chip-fg: var(--cool-650);             /* button-secondary-fg */
     --input-bg: var(--color-gray-000);      /* input-bg */
     --positive: var(--color-olive);
     --negative: var(--color-error);
     --warning: var(--color-clay);
     /* 情绪条:所有者 2026-08-31 定的,从红→绿渐变改成强调色的深浅渐变。
        ⚠️ 代价她知情:红=负面/绿=正面那层意思没了,只剩圆点位置表示情绪值。 */
-    --vbar-from: var(--color-gray-200);
+    --vbar-from: var(--cool-200);
     --vbar-to: var(--accent);
-    --shadow-card: 0 1px 2px rgba(20, 20, 19, 0.05);
-    --shadow-card-hover: 0 4px 14px rgba(20, 20, 19, 0.09);
-    --shadow-panel: 0 8px 40px rgba(20, 20, 19, 0.14);
+    --shadow-card: 0 1px 2px rgba(17, 19, 21, 0.05);
+    --shadow-card-hover: 0 4px 14px rgba(17, 19, 21, 0.09);
+    --shadow-panel: 0 8px 40px rgba(17, 19, 21, 0.14);
     /* 毛玻璃。**2026-08-31 所有者定稿的这一版,三处都别乱动**(中间试错两轮才到这儿):
        ① 面是「白纱」不是「灰块」—— 深色下 7% 白,不是 52% 灰。
           ~~灰块那版~~ 合成出来 `#1d1d1c`,而实色卡片本来就是 `#1a1918`,**差 3/255,肉眼等于没差**。
@@ -94,13 +106,13 @@
        ③ 页面要有一层**底光**给玻璃当透视素材,否则平底色上模糊了个寂寞。
           **强度 1%、纯灰(饱和度 0)** —— 所有者拿滑杆自己定的;她试过带色的,不要。
        ⚠️ 别把 `--wash-*` 调大或加颜色,也别把高光线加回来。 */
-    --glass-chrome: rgba(250, 249, 245, 0.72);   /* 顶栏、标签栏 */
+    --glass-chrome: rgba(247, 247, 249, 0.72);   /* 顶栏、标签栏(跟着 --bg 走) */
     --glass-card: rgba(255, 255, 255, 0.50);     /* 卡片、面板 */
     --glass-soft: rgba(255, 255, 255, 0.42);     /* 药丸、小按钮 */
     --glass-blur: saturate(180%) blur(24px);
-    --glass-edge: rgba(20, 20, 19, 0.07);        /* 均匀描边,不是高光线 */
-    --wash-a: rgba(20, 20, 19, 0.010);
-    --wash-b: rgba(20, 20, 19, 0.008);
+    --glass-edge: rgba(17, 19, 21, 0.07);        /* 均匀描边,不是高光线 */
+    --wash-a: rgba(17, 19, 21, 0.010);
+    --wash-b: rgba(17, 19, 21, 0.008);
     /* Breath 评分条用(JS 靠 cssVar() 现读,别写死在 JS 里)。
        ⚠️ 原来这里还有 --net-permanent / --net-archived / --net-line / --canvas-bg 四个,
        是「记忆网络」页的画布在用;那一页 2026-09-03 已删,四个变量跟着删掉。 */

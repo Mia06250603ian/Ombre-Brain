@@ -78,11 +78,14 @@ for (const scheme of ['light', 'dark']) {
   const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   const fg = await page.evaluate(() => getComputedStyle(document.body).color);
   const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
-  const wantBg = scheme === 'light' ? 'rgb(250, 249, 245)' : 'rgb(20, 20, 19)';   // gray-050 / gray-950
-  const wantFg = scheme === 'light' ? 'rgb(20, 20, 19)' : 'rgb(250, 249, 245)';
-  const wantAccent = scheme === 'light' ? '#999999' : '#343434';   // 所有者 2026-08-31 定的中性灰
-  ok('底色 = 官端 ' + (scheme === 'light' ? 'gray-050' : 'gray-950'), bg === wantBg, bg);
-  ok('字色 = 官端反色', fg === wantFg, fg);
+  // ⚠️ 2026-09-03:浅色整套由暖改冷(所有者:「我是想改成冷色调一点,包括那个灰色按钮之类的」)。
+  // ~~原来浅色钉的是 rgb(250,249,245) / rgb(20,20,19) / #999999(官端暖灰)~~ —— 已换成冷灰版,
+  // 明度和官端逐档相同、只搬了色相,所以对比度那几笔账照旧。**深色一个数没动。**
+  const wantBg = scheme === 'light' ? 'rgb(247, 247, 249)' : 'rgb(20, 20, 19)';   // cool-050 / gray-950
+  const wantFg = scheme === 'light' ? 'rgb(17, 19, 21)' : 'rgb(250, 249, 245)';   // cool-950 / gray-050
+  const wantAccent = scheme === 'light' ? '#8d97a5' : '#343434';   // 浅色冷灰(09-03)/ 深色仍是她 08-31 定的
+  ok('底色 = ' + (scheme === 'light' ? '冷灰 cool-050' : '官端 gray-950'), bg === wantBg, bg);
+  ok('字色 = 反色', fg === wantFg, fg);
   ok('强调色 = 所有者定的灰', accent === wantAccent, accent);
   // 强调色当填色 / 当文字是两个角色,合并回一个就会有地方看不见
   const at = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent-text').trim());
@@ -141,7 +144,7 @@ for (const scheme of ['light', 'dark']) {
     !/\p{Extended_Pictographic}/u.test(await page.locator('#filters').innerText()));
   ok('卡片上那颗图标还在',
     /\p{Extended_Pictographic}/u.test(await page.locator('.bucket-row .icon').first().innerText()));
-  const wantChip = scheme === 'light' ? 'rgb(153, 153, 153)' : 'rgb(52, 52, 52)';
+  const wantChip = scheme === 'light' ? 'rgb(141, 151, 165)' : 'rgb(52, 52, 52)';   // 浅色 09-03 改冷灰
   const gotChip = await page.locator('.filter-btn.active').evaluate(el => getComputedStyle(el).backgroundColor);
   ok('选中的药丸是实心强调色', gotChip === wantChip, gotChip);
   // 所有者点名:药丸上的字深浅色都用白的。⚠️ 别把这条改成"对比度要够" ——
