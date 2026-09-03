@@ -37,9 +37,9 @@ const d = await pg.evaluate(() => ({ ob:window.__drift.ob, count:window.__drift.
   glyphs:window.__drift.glyphs, edges:window.__drift.edges }));
 ok(await pg.evaluate(() => !document.getElementById('gate').classList.contains('on')), '口令门收起来了');
 ok(d.ob === true, '走的是 OB 的真数据');
-ok(d.count === 6, `六个桶全部进场(实得 ${d.count};feel 和已了结的都在)`, d.count);
+ok(d.count === 7, `七个桶全部进场(实得 ${d.count};feel、已了结、超长标题那条都在)`, d.count);
 ok(d.glyphs === 144, `字符不够 144 时拿装饰字符填满(实得 ${d.glyphs})`, d.glyphs);
-ok(d.edges === 4, `/api/network 那四条边都接上了(实得 ${d.edges})`, d.edges);
+ok(d.edges === 6, `/api/network 那六条边都接上了(实得 ${d.edges})`, d.edges);
 ok(await pg.evaluate(() => window.__drift.node(0).interactive === true), '前面那些是真记忆,可点');
 ok(await pg.evaluate(() => window.__drift.node(143).interactive === false), '填充的装饰字符不可点');
 ok(await pg.evaluate(() => document.getElementById('hTitle').textContent === 'Drift'), '大标题是 Drift');
@@ -96,16 +96,70 @@ ok((await pg.textContent('#cKind')).includes('CORE'), 'pinned + importance 10 �
 await pg.waitForFunction(`document.getElementById('cBody').textContent.includes('★全文到此★')`, null, { timeout:8000 });
 ok(true, '正文是点中之后才去取的全文,不是 200 字预览');
 ok((await pg.textContent('#cTags')).includes('恋爱'), 'domain 变成标签显示出来了');
+// ⚠️ 别钉「几条」「第一条是谁」—— 假 OB 的边一改这些就红,而那不是 bug
+// (2026-09-03 给夹具加了条超长标题的桶,顺序就变了)。钉真正该成立的性质:
 const near = await pg.$$eval('#cNear button', bs => bs.map(x => x.textContent));
-ok(near.length === 1 && near[0].includes('真·搭记忆库'), `「离它最近的记忆」列出了相邻的桶(实得 ${near.length} 条)`, near.join('|'));
-ok(near[0].includes('82%'), '相似度显示成百分比');
+ok(near.length > 0, `「离它最近的记忆」列出了相邻的桶(实得 ${near.length} 条)`, near.join('|'));
+ok(near.every(t => /像 \d+%/.test(t)), '每条都带「像 N%」的相似度', near.join('|'));
+ok(await pg.evaluate(() => {
+  const ns = [...document.querySelectorAll('#cNear button small')]
+    .map(e => parseInt(e.textContent.replace(/\D/g, ''), 10));
+  return ns.every((v, i) => i === 0 || v <= ns[i - 1]);
+}), '相似度是从高到低排的');
+
+console.log('D2. 超长标题不许把卡片撑破(2026-09-03 所有者在手机上撞到的)');
+// 她的真实桶名长这样:`session_2026-07-01_一整句话`。假 OB 里 b07 就是专门撞这个的。
+// 病根是 CSS 默认「格子不许比内容窄」,而标题是 nowrap 的 —— 详情卡会被撑出屏幕、✕ 被挤没。
+{
+  // ⚠️ **必须在手机宽度下测** —— 电脑宽度下长标题根本不会溢出,测了个寂寞
+  // (2026-09-03 第一版就是在 1000px 下写的,那条断言永远绿不了/也永远抓不到问题)。
+  await pg.setViewportSize({ width: 390, height: 844 });
+  await pg.waitForTimeout(300);
+  await pg.evaluate(() => window.__drift.clear());
+  const idx = await pg.evaluate(() =>
+    window.__drift ? [...Array(window.__drift.glyphs).keys()]
+      .find(k => (window.__drift.node(k).id || '') === 'b07') : -1);
+  ok(idx >= 0, '假 OB 里有那条超长标题的桶', idx);
+  await pg.evaluate(k => window.__drift.lockAt(k), idx);
+  await pg.waitForSelector('#card.on', { timeout: 8000 });
+  await pg.waitForTimeout(300);
+  ok(!(await pg.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)),
+    '超长标题下页面没有被撑出横向滚动');
+  ok(await pg.evaluate(() => {
+    const c = document.getElementById('card').getBoundingClientRect();
+    return c.right <= window.innerWidth + 1 && c.left >= -1;
+  }), '详情卡没有超出屏幕');
+  ok(await pg.evaluate(() => {
+    const b = document.getElementById('cClose').getBoundingClientRect();
+    return b.right <= window.innerWidth + 1 && b.width > 0;
+  }), '右上角那颗 ✕ 还在屏幕里');
+  ok(await pg.evaluate(() => {
+    const t = document.getElementById('cName');
+    return t.scrollWidth > t.clientWidth;   // 真的被省略号截断了
+  }), '长标题是被省略号截断的,不是溢出去的');
+  ok(await pg.evaluate(() => [...document.querySelectorAll('#cNear button')]
+    .every(b => b.getBoundingClientRect().right <= window.innerWidth + 1)),
+    '「离它最近的记忆」也没有溢出屏幕');
+  await pg.evaluate(() => window.__drift.clear());
+  await pg.setViewportSize({ width: 1000, height: 800 });   // 量完还回去,别影响后面几段
+  await pg.waitForTimeout(300);
+  await pg.evaluate(() => window.__drift.lockAt(0));
+  await pg.waitForSelector('#card.on', { timeout: 8000 });
+}
 
 console.log('E. 卡片里点邻居 → 跳过去;点 ✕ → 松开');
+// ⚠️ 同上:别写死「点完应该变成哪个名字」。读第一条邻居叫什么,再验卡片确实换成了它。
+const firstNeighbour = await pg.$eval('#cNear button strong', e => e.textContent);
+const firstId = await pg.$eval('#cNear button', e => e.dataset.id);
 await pg.click('#cNear button');
-await pg.waitForFunction(`document.getElementById('cName').textContent==='真·搭记忆库'`, null, { timeout:8000 });
-ok(await pg.evaluate(() => window.__drift.locked()) === 'b02', '锁定跟着换到了邻居那颗');
-const near2 = await pg.$$eval('#cNear button', bs => bs.length);
-ok(near2 === 3, `b02 有三个邻居,都列出来了(实得 ${near2})`, near2);
+await pg.waitForFunction(
+  name => document.getElementById('cName').textContent === name,
+  firstNeighbour, { timeout:8000 });
+ok(await pg.evaluate(() => window.__drift.locked()) === firstId,
+  `锁定跟着换到了邻居那颗(${firstNeighbour})`);
+// 相似是双向的:跳过去之后,来的那一颗应该出现在新的邻居表里
+ok(await pg.$$eval('#cNear button', (bs, back) => bs.some(b => b.dataset.id === back), 'b01'),
+  '跳过去之后,来时那颗也在新的邻居表里(相似是双向的)');
 await pg.click('#cClose');
 ok(await pg.evaluate(() => !document.getElementById('card').classList.contains('on')), '✕ 之后卡片收掉了');
 ok(await pg.evaluate(() => window.__drift.locked()) === null, '✕ 之后锁定也松开了');
@@ -138,7 +192,7 @@ pg2.on('pageerror', e => errs2.push(e.message));
 await pg2.goto(`${NONET}/turbulence`);
 await pg2.waitForFunction('window.__drift', null, { timeout:30000 });
 const d2 = await pg2.evaluate(() => ({ count:window.__drift.count, edges:window.__drift.edges }));
-ok(d2.count === 6, '/api/network 回 500 时,六个桶照样铺出来了');
+ok(d2.count === 7, '/api/network 回 500 时,桶照样铺出来了');
 ok(d2.edges === 0, '拿不到边就当没有边,不炸');
 await pg2.evaluate(() => window.__drift.lockAt(0));
 await pg2.waitForSelector('#card.on', { timeout:8000 });

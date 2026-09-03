@@ -223,9 +223,14 @@ const CONFIG = {
     background:var(--drift-card); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
     animation:rise .18s cubic-bezier(.23,1,.32,1) both;
   }
-  #card.on { display:grid; }
+  /* ⚠️ 这三个 min-width/minmax(0,…) 是**堵溢出**的,别删(2026-09-03 所有者报的:
+     标题是 `session_2026-07-01_…` 那种超长名字时,整张卡被撑出屏幕、右上角的 ✕ 被挤没了)。
+     病根是 CSS 的默认行为:**网格/弹性盒里的格子最小宽度是「内容宽度」**,
+     而标题是 `white-space:nowrap` 的 —— 于是"最小宽度"就是整条标题的长度,撑破容器。
+     `minmax(0,1fr)` / `min-width:0` 就是把这个下限解开,让省略号真的生效。 */
+  #card.on { display:grid; grid-template-columns:minmax(0,1fr); }
   @keyframes rise { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
-  #card header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  #card header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; min-width:0; }
   #card header > div { min-width:0; }
   #cKind {
     display:block; color:rgb(var(--drift-signal));
@@ -240,7 +245,7 @@ const CONFIG = {
     border:1px solid var(--drift-line); border-radius:9px; background:transparent;
     color:var(--drift-dim); font-size:15px; cursor:pointer;
   }
-  #cScroll { overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  #cScroll { overflow-y:auto; -webkit-overflow-scrolling:touch; min-width:0; }
   #cBody { color:var(--drift-dim); font-size:12px; line-height:1.75; white-space:pre-wrap; word-break:break-word; }
   #cTags { margin-top:11px; display:flex; flex-wrap:wrap; gap:5px; }
   #cTags span { padding:4px 8px; border:1px solid var(--drift-line); border-radius:999px; color:var(--drift-faint); font-size:9px; }
@@ -255,7 +260,9 @@ const CONFIG = {
   #cNear button:hover, #cNear button:focus-visible { border-color:rgba(var(--drift-signal),.55); outline:none; }
   #cNear strong { overflow:hidden; font-size:10px; font-weight:500; text-overflow:ellipsis; white-space:nowrap; }
   #cNear small { color:var(--drift-faint); font-size:8px; }
-  @media (max-width:520px) { #cNear > div { grid-template-columns:1fr; } }
+  /* ⚠️ 这儿必须写 minmax(0,1fr),**不能只写 1fr** —— `1fr` 等于 `minmax(auto,1fr)`,
+     那个 auto 下限就是内容宽度,长标题照样撑破。2026-09-03 就是栽在这一处。 */
+  @media (max-width:520px) { #cNear > div { grid-template-columns:minmax(0,1fr); } }
 
   /* 加载中 / 口令门 */
   #loading, #gate {
