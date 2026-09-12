@@ -125,7 +125,8 @@ TOKEN_EXPIRES_ENV = "CLAUDE_TOKEN_EXPIRES"
 TOKEN_WARN_DAYS = (30, 7, 3, 1)
 # 换一把令牌该怎么做 —— **告警里必须带上这句**。收到提醒的人可能是半年后的她,
 # 也可能是一个全新的会话:提醒里不写步骤 = 等于没提醒。
-TOKEN_RENEW_HOW = ("换法:在能开浏览器的机器上跑一次 `claude setup-token`(约五分钟),"
+TOKEN_RENEW_HOW = ("换法:开一个会话让它驱动 `claude setup-token`(所有者只需在手机上点一下授权链接、"
+                   "把码发回去;⚠️ 她没有电脑,别让她自己跑命令 —— 见 OPERATIONS.md 第 7 节那段),"
                    "把新令牌填进 Zeabur 的 `CLAUDE_CODE_OAUTH_TOKEN` 再 restart;"
                    "⚠️ 最后一步别漏:**把新的到期日填回本仓库的 " + TOKEN_EXPIRES_ENV + " 变量**,"
                    "不改的话它会在旧日期报一次、然后永远闭嘴。详见 OPERATIONS.md 第 7 节《长期令牌》")
