@@ -9,6 +9,7 @@ import { ctxReading, ctxDecide, ctxCompacted, ctxSoftNote, ctxHardNote, ctxFinal
 import { pickApiError, apiErrorKind, resultOutcome } from "./apierror.mjs";
 import { buildPromptArgs, helpMentionsReplace, BASE_PROMPT_DEFAULT, ANCHOR_TAIL_REPLACE, SOUL_ANCHOR_DEFAULT } from "./sysprompt.mjs";
 import { formatArgs, formatResult, pickToolResults, toolName, charLimit, TOOLVIS_DEFAULTS } from "./toolvis.mjs";
+import { buildAuthEnv, authMode } from "./auth-env.mjs";
 
 const PORT = process.env.PORT || 8080;
 const SHIM_KEY = process.env.SHIM_KEY || "";            // Kelivo 要填的 API Key,自己编
@@ -193,8 +194,11 @@ function spawnClaude(kelivoSystem, model) {
     if (fs.existsSync(CLAUDE_SETTINGS)) args.push("--settings", CLAUDE_SETTINGS);
     else log("[claude] ⚠️ settings 文件不在,跳过 --settings(PreCompact 钩子本次不生效):", CLAUDE_SETTINGS);
   }
-  const env = { ...process.env };
-  delete env.ANTHROPIC_API_KEY;  // 必须删:API key 存在会无条件压过订阅登录
+  // 子进程拿哪把钥匙去连上游,全由 auth-env.mjs 决定(纯逻辑,单测 test-auth-env.mjs 覆盖)。
+  // 两条路:设了 CLAUDE_CODE_OAUTH_TOKEN = 直连(顺手摘掉代理那两个变量,**不摘就等于没换**,
+  // 理由见 auth-env.mjs 头注);没设 = 逐字回到原来走 CLIProxyAPI 的行为。
+  // `ANTHROPIC_API_KEY` 两条路都删(它存在会无条件压过订阅授权 = 这一轮变按量计费)。
+  const env = buildAuthEnv(process.env);
   const p = spawn(CLAUDE_BIN, args, { cwd: process.cwd(), env, stdio: ["pipe", "pipe", "pipe"] });
   p.stdout.on("data", onStdout);
   p.stderr.on("data", (d) => log("[claude]", d.toString().slice(0, 300)));
@@ -207,7 +211,8 @@ function spawnClaude(kelivoSystem, model) {
   });
   procReadyAt = Date.now() + MCP_WARMUP_MS;
   log("[claude] spawned", spawnedModel, "sysLen", spawnedSystem.length,
-      "sysPrompt", `${SYS_PROMPT_MODE}->${sp.mode}/${sp.source || "-"}(${sp.reason})`);
+      "sysPrompt", `${SYS_PROMPT_MODE}->${sp.mode}/${sp.source || "-"}(${sp.reason})`,
+      "auth", authMode(process.env));   // direct = 直连 / proxy = 走 CLIProxyAPI,只有这两个字,不带值
   return p;
 }
 function ensureProc(sys, model) { if (!proc) proc = spawnClaude(sys, model); }
@@ -404,7 +409,13 @@ function extractImages(messages) {
 
 const app = express();
 app.use(express.json({ limit: "12mb" }));
-app.get("/health", (_q, r) => r.json({ ok: true, model: spawnedModel, models: MODELS, busy, queued: queue.length }));
+// `auth`(2026-09-12 新增):这一轮的上游走法,只报 `direct`/`proxy` 两个字,**不泄露任何值**。
+// 两个用处:①以后确认走哪条路**不用进容器**;②它同时是上线判据 —— **只有新代码才有这个字段**
+// (改动前的 /health 没有任何字段能区分新旧,部署后只能靠进容器 grep)。
+// ⚠️ 看门狗也在读它:`.github/scripts/healthcheck.py` 见到 `direct` 会自动跳过「代理续命」那条检查,
+// 否则代理不在链路上、凭证永不刷新 → 那条会开始刷假警报(假警报比没警报更糟)。
+app.get("/health", (_q, r) => r.json({ ok: true, model: spawnedModel, models: MODELS, busy, queued: queue.length,
+                                       auth: authMode(process.env) }));
 app.get("/debug", (_q, r) => r.json({
   lastUsage,
   // 2026-08-11 起:最近一次上游报错(null = 从没报过)。「他怎么不说话」先看这里,

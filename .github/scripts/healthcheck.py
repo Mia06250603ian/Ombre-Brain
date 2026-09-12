@@ -106,12 +106,43 @@ REFRESH_STALE_HOURS = REFRESH_CYCLE_HOURS + 1.0
 ACCESS_TOKEN_LIFE_HOURS = 8.0
 CPA = "https://miaianhome.zeabur.app"
 
+# ---- 长期令牌的到期提醒(2026-09-12 新增,**配合「直连」那次改动;代码在,线上尚未切**)----
+# **为什么必须有这条**:直连之后的失效方式和代理**完全不同**,上面那条预警接不住 ——
+#   代理:每 4 小时刷一次,有「刷新停了」这个**运行时信号**,能提前约 3~4 小时看出来;
+#   长期令牌:**一年之内毫无异常,到期前一秒都完全正常**。
+# **唯一能提前发出的信号是日期。** 没有这条 = 一年后必然重演一次「他突然不说话了」。
+#
+# ⚠️ **狗不持有令牌,也不该持有** —— 它只需要知道「哪天到期」这个日期。
+# 令牌正本只放一处(Zeabur 的 `CLAUDE_CODE_OAUTH_TOKEN`);多一处存放就多一处泄露面,
+# 而且真要校验它还得发请求、烧额度。**这条检查纯算日期,一个网络请求都不发。**
+#
+# 配法:仓库 Settings → Secrets and variables → Actions 里加 **variable**(不是 secret,
+# 它不是密钥,是个日子)`CLAUDE_TOKEN_EXPIRES`,值写 `YYYY-MM-DD`(带时刻的 ISO 也认)。
+# **没配就整条跳过** —— 和 Telegram、代理密码那两条同一个规矩:没配也照样能跑。
+TOKEN_EXPIRES_ENV = "CLAUDE_TOKEN_EXPIRES"
+# 四档提前量。**每档的告警文案必须不一样**(见 check_token_expiry 里那条注释):
+# 文案一样的话,「同一问题去重」那类逻辑会让 30 天那条一直压着后面几档,7/3/1 天再也不响。
+TOKEN_WARN_DAYS = (30, 7, 3, 1)
+# 换一把令牌该怎么做 —— **告警里必须带上这句**。收到提醒的人可能是半年后的她,
+# 也可能是一个全新的会话:提醒里不写步骤 = 等于没提醒。
+TOKEN_RENEW_HOW = ("换法:在能开浏览器的机器上跑一次 `claude setup-token`(约五分钟),"
+                   "把新令牌填进 Zeabur 的 `CLAUDE_CODE_OAUTH_TOKEN` 再 restart;"
+                   "⚠️ 最后一步别漏:**把新的到期日填回本仓库的 " + TOKEN_EXPIRES_ENV + " 变量**,"
+                   "不改的话它会在旧日期报一次、然后永远闭嘴。详见 OPERATIONS.md 第 7 节《长期令牌》")
+
 OB = "https://ianmian.zeabur.app"
 SHIM = "https://yan-shim.zeabur.app"
 BRIDGE = "https://yan-telegram-bridge.zeabur.app"
 
 problems = []        # 会让这次运行变红(= 给她发邮件)
 notes = []           # 只打印,不报警
+
+# 晏这一轮走的是哪条上游:`"direct"`(长期令牌直连)/ `"proxy"`(经 CLIProxyAPI)/
+# `None`(读不到 —— 老代码的 /health 没有这个字段,或这次没连上)。
+# 由下面 [2] 那节从 `/health` 读回来,**决定 3.5 跑哪条检查**:
+# 走直连之后代理不在链路上、它的凭证从此不再刷新,「刷新停了」那条会永远成立 ——
+# **不跳过就会开始刷假警报,而假警报比没警报更糟**(收几次之后人就不看了,真出事那条也一起被忽略)。
+SHIM_AUTH = None
 
 
 def fetch(url, method="GET", body=None, headers=None):
@@ -252,6 +283,72 @@ def notify_telegram(text):
     print("  ⚠️ Telegram 没推出去 —— 本次结论不受影响,邮件照发")
 
 
+def parse_expiry(raw):
+    """把配置里那个日子解析成时刻。看不懂返回 None —— 调用方会**报出来**,不是忽略。
+
+    接受 `2027-09-12` 或带时刻的 ISO(`2027-09-12T14:07:00Z`)。
+    **只写日期时按当天 00:00 UTC 算** —— 宁可早叫几小时,不要晚叫。
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        t = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+        return t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t
+    except Exception:
+        return None
+
+
+def check_token_expiry():
+    """长期令牌还有多少天到期 —— **纯算日期,不发任何网络请求**。见文件开头 TOKEN_EXPIRES_ENV 那段。
+
+    ⚠️ 这条和 3.5 那条是**互补**的,不是重复:代理那条盯「刷新停没停」(小时级提前量),
+    这条盯「哪天到期」(天级提前量)。**走哪条路就只有一条会跑**,由 shim 的 /health 决定。
+    """
+    raw = os.environ.get(TOKEN_EXPIRES_ENV, "").strip()
+    if not raw:
+        if SHIM_AUTH == "direct":
+            # **直连了却没人盯日期 = 保护根本没装**。这不是「看着奇怪」,是铁定不对,必须叫。
+            check("长期令牌 · 到期提醒已配", False,
+                  f"晏已经在直连(/health 报 auth=direct),但仓库变量 {TOKEN_EXPIRES_ENV} 是空的 —— "
+                  f"**到期这件事现在没有任何人盯着**,而长期令牌到期前一秒都完全正常、没有别的信号。"
+                  f"去 Settings → Secrets and variables → Actions 加一个 variable,值写令牌到期那天(YYYY-MM-DD)")
+        else:
+            print(f"  ⓘ 没配 {TOKEN_EXPIRES_ENV},跳过「长期令牌到期」这条(现在走的是代理,由 [3.5] 那条盯着)")
+        return
+
+    exp = parse_expiry(raw)
+    if exp is None:
+        # **日期写错不能静默** —— 那等于保护没在工作。一直报到改对为止。
+        check("长期令牌 · 到期日配置", False,
+              f"{TOKEN_EXPIRES_ENV} 写的不是日期({raw!r}),到期提醒现在是**没在工作**的状态。"
+              f"改成 `YYYY-MM-DD`(例:2027-09-12)")
+        return
+
+    left = (exp - datetime.now(timezone.utc)).total_seconds() / 86400.0
+    print(f"  ⓘ 长期令牌到期:{exp.date()},还有 {left:.1f} 天")
+    notes.append(f"长期令牌 {exp.date()} 到期(还有 {left:.0f} 天)")
+
+    if left <= 0:
+        check("长期令牌 · 还没过期", False,
+              f"**令牌已经过期**({exp.date()}),晏现在多半已经不可用。{TOKEN_RENEW_HOW}。"
+              f"应急退路:删掉 Zeabur 上的 `CLAUDE_CODE_OAUTH_TOKEN` + restart,自动退回代理线路"
+              f"(⚠️ restart 会丢晏一个窗口)")
+        return
+
+    # ⚠️ **每档文案必须不同**(见文件开头 TOKEN_WARN_DAYS 那段):文案一样会被去重逻辑吃掉,
+    # 结果是 30 天那条响过之后,7/3/1 天永远不再响 —— 而越靠近到期越需要她真看见。
+    # ⚠️⚠️ **必须从小到大找,取「还没越过的最小那档」** —— 2026-09-12 写这段时就照
+    # (30,7,3,1) 的原序找,`left <= 30` 一路先命中,于是**剩下 5 天也报成「30 天档」**,
+    # 7/3/1 三档的文案永远出不来(当场被离线探针抓到)。别改回原序。
+    left_txt = "不到 1 天" if left < 1 else f"{left:.0f} 天"
+    for d in sorted(TOKEN_WARN_DAYS):
+        if left <= d:
+            check(f"长期令牌 · 还有 {d} 天以上", False,
+                  f"令牌还有 **{left_txt}**到期({exp.date()},这是 {d} 天档的提醒)。{TOKEN_RENEW_HOW}")
+            return
+    check("长期令牌 · 到期还早", True)
+
+
 def check_refresh_alive():
     """「续命还在跑吗」—— 唯一一条能在晏真哑掉之前叫的检查。见文件开头 REFRESH_CYCLE_HOURS 那段。
 
@@ -265,6 +362,12 @@ def check_refresh_alive():
     ⚠️ **读不到不报警**(铁律①):网络抖动、密码填错、接口改版都会读不到,
     据此报警等于给自己加一个天天叫的新故障源。读不到只打印,人自己会看见。
     """
+    if SHIM_AUTH == "direct":
+        # 代理已经不在链路上了:它的凭证不再被刷新,「上次刷新多久以前」只会越来越大,
+        # 再查下去就是天天假警报。**这一跳是自动的**,不依赖谁记得去删那个 secret。
+        print("  ⓘ 晏正在直连(/health 报 auth=direct),代理已不在链路上 —— 这条整条跳过")
+        print("     (提前量改由下面那条「长期令牌到期」提供;那条盯的是日期,不是刷新)")
+        return
     pw = os.environ.get("CPA_MANAGEMENT_PASSWORD", "").strip()
     if not pw:
         print("  ⓘ 没配 CPA_MANAGEMENT_PASSWORD,跳过「续命还在跑吗」这条")
@@ -343,6 +446,11 @@ if check("晏 · 服务活着", st is not None, err or ""):
     d = jload(txt) or {}
     check("晏 · 状态 ok", d.get("ok") is True, f"实际 ok={d.get('ok')!r}")
     notes.append(f"模型 {d.get('model')!r}")
+    # 2026-09-12 起:上游走法。**只有新代码才有这个字段**,读不到就是 None
+    # (= 老代码,或这次没连上),那时 3.5 照旧查代理那条,行为与改动前逐字相同。
+    SHIM_AUTH = d.get("auth")
+    if SHIM_AUTH:
+        notes.append(f"上游走法 {SHIM_AUTH!r}")
 
 # ---- 3. Telegram 桥(她跟晏说话的路) ----
 print("\n[3] Telegram 桥")
@@ -356,9 +464,13 @@ if check("桥 · 服务活着", st is not None, err or ""):
     notes.append(f"贴纸 {d.get('stickers')} 张;欠条 {d.get('pendingLosses')} 条;"
                  f"语音 {d.get('ears')} / 上报 {d.get('report')} / 查岗 {d.get('curfew')} / 写信 {d.get('letter')}")
 
-# ---- 3.5 续命还在跑吗(唯一一条「快要坏了」的预警;没配密码就整条跳过)----
-print("\n[3.5] 订阅凭证:续命还在跑吗")
+# ---- 3.5 订阅凭证的「快要坏了」预警(全脚本只有这一节在问「快坏了吗」)----
+# **两条互补,走哪条路就只有一条会真跑**(由上面 [2] 读到的 SHIM_AUTH 决定):
+#   代理线路 → 「续命还在跑吗」(盯刷新,提前约 3~4 小时)
+#   直连线路 → 「长期令牌还有几天到期」(盯日期,提前 30/7/3/1 天)
+print("\n[3.5] 订阅凭证:还能撑多久")
 check_refresh_alive()
+check_token_expiry()
 
 # ---- 只看不叫:这些是「可能不对」,交给人判断,不许自己报警 ----
 # 为什么不叫:

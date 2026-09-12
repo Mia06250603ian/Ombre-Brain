@@ -90,4 +90,10 @@ jobs:
           # 破掉了它原来「除 TG 外全部无鉴权只读」的性质,是知情后接受的代价
           # (见 OPERATIONS.md 第 7 节《看门狗》)。
           CPA_MANAGEMENT_PASSWORD: ${{ secrets.CPA_MANAGEMENT_PASSWORD }}
+          # 「长期令牌还有几天到期」那条要它(2026-09-12 新增,配合「直连」那次改动)。
+          # ⚠️ **这不是密钥,是个日子**,所以走 `vars`(Variables 标签)而不是 `secrets` ——
+          # 狗不持有令牌、也不该持有:它只需要知道哪天到期。多一处存放就多一处泄露面。
+          # **没配也能跑**:走代理时整条跳过;⚠️ 但**切成直连之后没配,这条会叫** ——
+          # 那时它就是真问题(长期令牌到期前一秒都完全正常,日期是唯一能提前发出的信号)。
+          CLAUDE_TOKEN_EXPIRES: ${{ vars.CLAUDE_TOKEN_EXPIRES }}
         run: python3 .github/scripts/healthcheck.py

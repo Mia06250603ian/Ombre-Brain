@@ -34,7 +34,7 @@ fi
 
 WORK="${TMPDIR:-/tmp}/kelivo-shim-e2e-apierror"
 rm -rf "$WORK" && mkdir -p "$WORK" && cd "$WORK"
-cp "$SHIM_DIR"/server.js "$SHIM_DIR"/ctxguard.mjs "$SHIM_DIR"/senses.mjs "$SHIM_DIR"/keepalive.mjs "$SHIM_DIR"/apierror.mjs "$SHIM_DIR"/sysprompt.mjs "$SHIM_DIR"/toolvis.mjs .
+cp "$SHIM_DIR"/server.js "$SHIM_DIR"/ctxguard.mjs "$SHIM_DIR"/senses.mjs "$SHIM_DIR"/keepalive.mjs "$SHIM_DIR"/apierror.mjs "$SHIM_DIR"/sysprompt.mjs "$SHIM_DIR"/toolvis.mjs "$SHIM_DIR"/auth-env.mjs .
 cp "$SHIM_DIR"/shim-settings.json "$SHIM_DIR"/precompact-note.txt "$SHIM_DIR"/base.md .
 sed -i "s#/src/precompact-note.txt#$WORK/precompact-note.txt#" shim-settings.json
 ln -s "$DEPS/node_modules" node_modules
@@ -43,6 +43,11 @@ printf '%s' "{\"hasCompletedOnboarding\":true,\"projects\":{\"$WORK\":{\"hasTrus
 
 E2E_DIR="$WORK" E2E_API_PORT=8503 node "$SHIM_DIR/e2e-apierror-api.mjs" 2>fake.log &
 FPID=$!
+# ⚠️ `env -i` 必须留着,别改成继承外面的环境:外面若有 CLAUDE_CODE_OAUTH_TOKEN,
+# auth-env.mjs 会把下面那两个假后端变量摘掉(那是它的正事),于是 e2e 改打真 api.anthropic.com
+# —— 既烧真额度又测不到该测的东西。(2026-09-12)
+# ⚠️⚠️ 注释只能写在这一行**之前**:写进下面的续行里会截断整条命令,
+#      现象是 shim 用默认端口起来、满屏 curl connect refused(2026-09-12 当场翻过一次)。
 env -i HOME="$WORK" PATH="$PATH" \
   PORT=8502 CLAUDE_BIN="$BIN" \
   ANTHROPIC_BASE_URL=http://127.0.0.1:8503 ANTHROPIC_AUTH_TOKEN=fake \

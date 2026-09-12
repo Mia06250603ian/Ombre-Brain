@@ -23,11 +23,16 @@ def authfiles(hours_ago, status="active", **extra):
     return {"files": [f]}
 
 
-def run(debug_payload, prev_run_hours=None, auth_files=None, cpa_pw=None):
+def run(debug_payload, prev_run_hours=None, auth_files=None, cpa_pw=None,
+        shim_auth=None, token_expires=None):
     """把所有 HTTP 请求换成假的;只有 /debug 用传进来的内容,其余一律健康。
 
     `prev_run_hours`:假装上一趟巡逻是几小时前(给告警窗口那段用)。
     传 None = 不在 Actions 里跑,脚本该退回默认的 2 小时。
+
+    `shim_auth`(2026-09-12):假装 shim 的 /health 报的上游走法。
+    传 None = **那个字段根本不存在**,也就是线上老代码的样子 —— 这一路必须行为照旧。
+    `token_expires`:假装仓库变量 `CLAUDE_TOKEN_EXPIRES` 配的是什么。传 None = 没配。
     """
     class FakeResp:
         def __init__(self, body): self.status, self._b = 200, body.encode()
@@ -39,6 +44,11 @@ def run(debug_payload, prev_run_hours=None, auth_files=None, cpa_pw=None):
         os.environ["CPA_MANAGEMENT_PASSWORD"] = cpa_pw
     else:
         os.environ.pop("CPA_MANAGEMENT_PASSWORD", None)
+
+    if token_expires is None:
+        os.environ.pop("CLAUDE_TOKEN_EXPIRES", None)
+    else:
+        os.environ["CLAUDE_TOKEN_EXPIRES"] = token_expires
 
     if prev_run_hours is None:
         for k in ("GITHUB_TOKEN", "GITHUB_REPOSITORY", "GITHUB_RUN_ID"):
@@ -68,7 +78,12 @@ def run(debug_payload, prev_run_hours=None, auth_files=None, cpa_pw=None):
             return FakeResp(json.dumps({"ok": True, "polling": True}))
         if "ianmian" in url:
             return FakeResp(json.dumps({"status": "ok", "buckets": 376}))
-        return FakeResp(json.dumps({"ok": True, "model": "m"}))
+        # 剩下的就是 shim 的 /health。⚠️ `auth` 字段**只有新代码才有**,
+        # 所以 shim_auth=None 时这里刻意不放这个键,复现线上老代码的样子。
+        health = {"ok": True, "model": "m"}
+        if shim_auth is not None:
+            health["auth"] = shim_auth
+        return FakeResp(json.dumps(health))
 
     urllib.request.urlopen = fake_urlopen
     buf, old = io.StringIO(), sys.stdout
@@ -141,7 +156,76 @@ REFRESH_CASES = [
      "pw", 0, "刷新时间读不出来"),
 ]
 
+# 长期令牌的到期提醒(2026-09-12 新增,配合「直连」那次改动)。
+# **它和上面那组是互补的,不是重复**:上面盯「刷新停没停」(小时级),这组盯「哪天到期」(天级)。
+# 长期令牌**一年之内毫无异常、到期前一秒都完全正常**,唯一能提前发出的信号就是日期。
+def day(n):
+    return (datetime.now(timezone.utc) + timedelta(days=n)).strftime("%Y-%m-%d")
+
+
+TOKEN_CASES = [
+    # (名字, shim 报的走法, 变量里写的日子, 期望退出码, 输出里必须有这句)
+    ("走代理 + 没配到期日 → 静悄悄跳过(现在的线上就是这样)",
+     "proxy", None, 0, "跳过「长期令牌到期」"),
+    ("/health 没有 auth 字段(老代码)+ 没配 → 也跳过,行为照旧",
+     None, None, 0, "跳过「长期令牌到期」"),
+    ("**已经直连却没配到期日 → 必须叫**(保护根本没装上)",
+     "direct", None, 1, "没有任何人盯着"),
+    ("到期日写成一句话 → 必须叫(日期写错不能静默)",
+     "direct", "下个月吧", 1, "没在工作"),
+    ("到期日写成 09/12/2027 这种格式 → 也必须叫",
+     "direct", "09/12/2027", 1, "没在工作"),
+    ("还有 200 天 → 一声不出",
+     "direct", day(200), 0, "长期令牌 · 到期还早"),
+    ("还有 20 天 → 叫,且说明是 30 天档",
+     "direct", day(20), 1, "这是 30 天档的提醒"),
+    ("还有 5 天 → 叫,且必须是 **7 天档**(不是 30 天档)",
+     "direct", day(5), 1, "这是 7 天档的提醒"),
+    ("还有 2 天 → 叫,且必须是 **3 天档**",
+     "direct", day(2), 1, "这是 3 天档的提醒"),
+    ("已经过期 → 叫,并给出退回代理的应急路",
+     "direct", day(-3), 1, "应急退路"),
+    ("告警里必须写清怎么换(收到的人可能是半年后的她或一个全新会话)",
+     "direct", day(5), 1, "setup-token"),
+    ("告警里必须提醒「换完把新到期日填回来」(最容易漏的一步)",
+     "direct", day(5), 1, "把新的到期日填回"),
+    ("走代理时也照样盯日期 —— 两条互不打架",
+     "proxy", day(5), 1, "这是 7 天档的提醒"),
+]
+
+# ⚠️ **这一条是这次改动的重点之一**:直连之后代理不在链路上,它的凭证从此不再刷新,
+# 「刷新停了」那条会**永远成立** → 不跳过就变成每小时一条假警报。
+# 假警报比没警报更糟:收几次之后人就不看了,真出事那条也一起被忽略。
+SKIP_REFRESH_CASES = [
+    ("直连 + 配了密码 + 凭证 99 小时没刷 → 这条必须整条跳过,一声不出",
+     "direct", authfiles(99), "pw", 0, "这条整条跳过"),
+    ("还走代理时 + 同样 99 小时没刷 → 照旧必须叫(别把这条一起跳没了)",
+     "proxy", authfiles(99), "pw", 1, "没刷新"),
+    ("/health 读不到 auth(老代码)+ 99 小时没刷 → 也照旧必须叫",
+     None, authfiles(99), "pw", 1, "没刷新"),
+]
+
 fail = 0
+for name, sauth, texp, want_code, want_text in TOKEN_CASES:
+    code, out = run({"lastApiError": None}, shim_auth=sauth, token_expires=texp)
+    ok = (code == want_code) and (want_text in out)
+    print(("  ✅ " if ok else "  ❌ ") + name + (f"   [退出码 {code},期望 {want_code}]" if not ok else ""))
+    if not ok:
+        fail += 1
+        print("     ---- 实际输出 ----")
+        print("     " + "\n     ".join(out.strip().splitlines()[-14:]))
+
+for name, sauth, af, pw, want_code, want_text in SKIP_REFRESH_CASES:
+    # 到期日配一个很远的日子,免得「令牌到期」那条插进来干扰这组的退出码
+    code, out = run({"lastApiError": None}, shim_auth=sauth, auth_files=af, cpa_pw=pw,
+                    token_expires=day(300))
+    ok = (code == want_code) and (want_text in out)
+    print(("  ✅ " if ok else "  ❌ ") + name + (f"   [退出码 {code},期望 {want_code}]" if not ok else ""))
+    if not ok:
+        fail += 1
+        print("     ---- 实际输出 ----")
+        print("     " + "\n     ".join(out.strip().splitlines()[-14:]))
+
 for name, af, pw, want_code, want_text in REFRESH_CASES:
     code, out = run({"lastApiError": None}, auth_files=af, cpa_pw=pw)
     ok = (code == want_code) and (want_text in out)

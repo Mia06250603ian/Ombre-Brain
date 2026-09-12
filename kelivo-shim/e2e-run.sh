@@ -37,7 +37,7 @@ WORK="${TMPDIR:-/tmp}/kelivo-shim-e2e-work"
 rm -rf "$WORK" && mkdir -p "$WORK" && cd "$WORK"
 # ⚠️ server.js 每 import 一个新模块,这行就得跟着加——漏了的话 e2e 里的 shim 直接
 # ERR_MODULE_NOT_FOUND 起不来,现象是所有 curl 报「connect refused」(2026-08-11 实翻过一次)。
-cp "$SHIM_DIR"/server.js "$SHIM_DIR"/ctxguard.mjs "$SHIM_DIR"/senses.mjs "$SHIM_DIR"/keepalive.mjs "$SHIM_DIR"/apierror.mjs "$SHIM_DIR"/sysprompt.mjs "$SHIM_DIR"/toolvis.mjs .
+cp "$SHIM_DIR"/server.js "$SHIM_DIR"/ctxguard.mjs "$SHIM_DIR"/senses.mjs "$SHIM_DIR"/keepalive.mjs "$SHIM_DIR"/apierror.mjs "$SHIM_DIR"/sysprompt.mjs "$SHIM_DIR"/toolvis.mjs "$SHIM_DIR"/auth-env.mjs .
 # PreCompact 钩子的两件(2026-08-09):settings 里的 command 写的是容器绝对路径 /src/…,
 # e2e 在 /tmp 跑,所以拷进来后把路径改写成本次工作目录的。
 cp "$SHIM_DIR"/shim-settings.json "$SHIM_DIR"/precompact-note.txt "$SHIM_DIR"/base.md .
@@ -49,6 +49,11 @@ printf '%s' "{\"hasCompletedOnboarding\":true,\"projects\":{\"$WORK\":{\"hasTrus
 
 E2E_DIR="$WORK" E2E_API_PORT=8501 node "$SHIM_DIR/e2e-fake-api.mjs" 2>fake.log &
 FPID=$!
+# ⚠️ `env -i` 必须留着,别改成继承外面的环境:外面若有 CLAUDE_CODE_OAUTH_TOKEN,
+# auth-env.mjs 会把下面那两个假后端变量摘掉(那是它的正事),于是 e2e 改打真 api.anthropic.com
+# —— 既烧真额度又测不到该测的东西。(2026-09-12)
+# ⚠️⚠️ 注释只能写在这一行**之前**:写进下面的续行里会截断整条命令,
+#      现象是 shim 用默认端口起来、满屏 curl connect refused(2026-09-12 当场翻过一次)。
 env -i HOME="$WORK" PATH="$PATH" \
   PORT=8500 CLAUDE_BIN="$BIN" \
   ANTHROPIC_BASE_URL=http://127.0.0.1:8501 ANTHROPIC_AUTH_TOKEN=fake \
