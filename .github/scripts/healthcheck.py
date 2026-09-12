@@ -129,7 +129,8 @@ TOKEN_RENEW_HOW = ("换法:开一个会话让它驱动 `claude setup-token`(所�
                    "把码发回去;⚠️ 她没有电脑,别让她自己跑命令 —— 见 OPERATIONS.md 第 7 节那段),"
                    "把新令牌填进 Zeabur 的 `CLAUDE_CODE_OAUTH_TOKEN` 再 restart;"
                    "⚠️ 最后一步别漏:**把新的到期日填回本仓库的 " + TOKEN_EXPIRES_ENV + " 变量**,"
-                   "不改的话它会在旧日期报一次、然后永远闭嘴。详见 OPERATIONS.md 第 7 节《长期令牌》")
+                   "不改的话它会在旧日期报一次、然后永远闭嘴。"
+                   "**整套九步照 OPERATIONS.md 第 7 节《一年后换令牌:操作单》走**")
 
 OB = "https://ianmian.zeabur.app"
 SHIM = "https://yan-shim.zeabur.app"

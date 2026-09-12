@@ -16,8 +16,10 @@
 #   pip install pyte
 #   export TOKEN_WORKDIR=$(mktemp -d)          # 不设就自动开一个临时目录,启动时会打印出来
 #   python3 scripts/get-token.py &
-#   grep -o 'https://claude\.com/cai/oauth/authorize?[^ ]*' "$TOKEN_WORKDIR/screen.txt" | head -1
-#   # ↑ 这条链接发给所有者,她在手机上点同意,把回来的那串码发回来
+#   # 等 url.txt 出现(约 20 秒),**它出现才说明链接是完整的**:
+#   cat "$TOKEN_WORKDIR/url.txt"      # ← 这条发给所有者,她在手机上点同意,把回来的码发回来
+#   # ⚠️ **别自己去 screen.txt 里 grep 链接**(教程 4.2 是那么写的):
+#   #    链接真实长度 346 字符,grep 只取到折行处 = 一个看起来正常、其实点不开的断链接。
 #   # ⚠️ 投真码之前先做教程 4.3 的两项自检(屏幕还原忠实 + 假码试通路)
 #   { echo "TYPE:<她发回来的那串码>"; echo "ENTER"; } >> "$TOKEN_WORKDIR/keys.txt"
 #   [ -f "$TOKEN_WORKDIR/token.txt" ] && echo "长度 $(wc -c < "$TOKEN_WORKDIR/token.txt")"
@@ -35,7 +37,13 @@ print("[get-token] 工作目录:", D)      # 只打印目录,**永远不打印�
 KEYS   = D + "/keys.txt"      # 指令输入:每行 "TYPE:xxx" 或 "ENTER"
 TOKEN  = D + "/token.txt"     # 成功后令牌写在这里(权限 600)
 SCREEN = D + "/screen.txt"    # 实时还原出来的屏幕,用来抠授权链接
-COLS, ROWS = 220, 60          # 开宽,避免 URL 被折行
+URL    = D + "/url.txt"       # 抠到**完整**授权链接才会出现;没有它就别把链接发给所有者
+# ⚠️ **改动 2/2:教程原文写的是 220,那个数不够,别改回去。**
+# 2026-09-12 实跑量到:授权链接**真实长度 346 字符**,220 列会把它折成两行 ——
+# 教程那条 `grep -o 'https://...'` 只取到第一行,**抠出来是个 220 字符的断链接**,
+# 发给所有者点开就是坏的;而把两行硬拼回去,又会把后面界面上的字(`Paste`)粘在尾巴上。
+# 600 列一行装得下,下面那道 URL 闸门再兜一次底。
+COLS, ROWS = 600, 60
 
 pid, fd = pty.fork()
 if pid == 0:                                   # 子进程
@@ -60,6 +68,13 @@ while time.time() < deadline:
         stream.feed(data)
         text = "\n".join(screen.display)
         open(SCREEN, "w").write(text)
+        # ⚠️ **URL 闸门(仓库这边加的)**:只有在**同一行上**抠到一条以 `state=…` 结尾的完整链接,
+        # 才写进 url.txt。**没有 url.txt 就别把链接发给所有者** —— 断链接她点开是坏的,
+        # 而这种坏法看起来和正常的一模一样(2026-09-12 实跑撞到,见上面 COLS 那段)。
+        u = re.search(r'https://claude\.com/cai/oauth/authorize\?\S*?state=[A-Za-z0-9_\-]+(?=\s|$)', text)
+        if u and not os.path.exists(URL):
+            open(URL, "w").write(u.group(0))
+            print(f"[get-token] 授权链接已抠出({len(u.group(0))} 字符),在 {URL} —— 发这条给所有者")
         m = re.search(r'sk-ant-oat[A-Za-z0-9_\-]+', text.replace("\n", ""))
         if m:
             old = os.umask(0o077)
