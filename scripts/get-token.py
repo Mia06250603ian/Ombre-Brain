@@ -55,7 +55,7 @@ fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
 screen = pyte.Screen(COLS, ROWS)
 stream = pyte.ByteStream(screen)
 
-n, deadline = 0, time.time() + 2400
+n, deadline, last_url = 0, time.time() + 2400, None
 while time.time() < deadline:
     r, _, _ = select.select([fd], [], [], 0.4)
     if r:
@@ -71,10 +71,16 @@ while time.time() < deadline:
         # ⚠️ **URL 闸门(仓库这边加的)**:只有在**同一行上**抠到一条以 `state=…` 结尾的完整链接,
         # 才写进 url.txt。**没有 url.txt 就别把链接发给所有者** —— 断链接她点开是坏的,
         # 而这种坏法看起来和正常的一模一样(2026-09-12 实跑撞到,见上面 COLS 那段)。
-        u = re.search(r'https://claude\.com/cai/oauth/authorize\?\S*?state=[A-Za-z0-9_\-]+(?=\s|$)', text)
-        if u and not os.path.exists(URL):
-            open(URL, "w").write(u.group(0))
-            print(f"[get-token] 授权链接已抠出({len(u.group(0))} 字符),在 {URL} —— 发这条给所有者")
+        # ⚠️ **必须每次都覆盖写,不能「只写第一次」。** 2026-09-12 真上线时当场撞到:
+        # 假码自检失败后按 Enter 重试,**TUI 会换一个新的 state**,而旧链接就此作废 ——
+        # 「只写第一次」会让 url.txt 停在旧的那条,**发给所有者点开必然失败,白烧她一次点击**。
+        u = re.findall(r'https://claude\.com/cai/oauth/authorize\?\S*?state=[A-Za-z0-9_\-]+(?=\s|$)', text)
+        if u:
+            cur = u[-1]
+            if cur != last_url:
+                last_url = cur
+                open(URL, "w").write(cur)
+                print(f"[get-token] 授权链接({len(cur)} 字符)已写入 {URL} —— **以最新一条为准**,发它给所有者")
         m = re.search(r'sk-ant-oat[A-Za-z0-9_\-]+', text.replace("\n", ""))
         if m:
             old = os.umask(0o077)
