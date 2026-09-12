@@ -327,7 +327,7 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
     不认识它(同文 4.5 节),要先单独立项升 CLI。
     **切模型后守卫会跟着复位**(新进程 = 空窗口),且那次「读数从高位掉到低位」**不会**被
     误记成一次静默压缩(e2e 有断言看着,2026-08-24 实测)。
-12. **上游选路:代理 or 直连**(2026-09-12,**代码已写完、尚未部署**;挂在《搭顺风车的待办》第一条)。
+12. **上游选路:代理 or 直连**(2026-09-12 第四十次上线,**线上现在走直连**)。
     spawn 子进程时的环境由 `auth-env.mjs` 算(纯逻辑,单测 `test-auth-env.mjs` 33 项):
     设了 `CLAUDE_CODE_OAUTH_TOKEN` = **直连**并**顺手摘掉** `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL`;
     不设 = 逐字回到原来走 CLIProxyAPI 的行为。`ANTHROPIC_API_KEY` 两条路都删(原有行为不变)。
@@ -705,8 +705,8 @@ deployment id 与耗时、**所有者的拍板与报备**、**⚠️ 警告类�
 
 | 变量 | 说明 |
 |---|---|
-| ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN | 指向 CLIProxyAPI 的域名和它的 API_KEY。⚠️ **2026-09-12 起这两个会在设了下面那把长期令牌时被自动摘掉**(`auth-env.mjs`),线上仍在用它们 |
-| CLAUDE_CODE_OAUTH_TOKEN | **2026-09-12 加的代码,线上尚未设这个变量**(不设 = 行为与改动前逐字相同)。`claude setup-token` 生成的**一年期**长期令牌;设上 = **直连 Anthropic**,并自动摘掉上面那两个代理变量。⚠️⚠️ **光设它没有用** —— CLI 凭据优先级里 `ANTHROPIC_AUTH_TOKEN`(2)排在它(5)前面,**不摘就会继续走代理而且不报错**,所以摘除绑死在 `auth-env.mjs` 里、不靠人记得删。**判据**:`/health` 的 `auth` 字段(`direct`/`proxy`)。**急救开关 = 删掉这个变量 + restart**,自动退回代理线路,不用回滚部署(⚠️ restart 要丢一个窗口)。⚠️ **空串当没设**(手滑留空值就摘代理再拿空令牌去连 = 晏直接哑掉)。⚠️ **换令牌之后记得同步改仓库变量 `CLAUDE_TOKEN_EXPIRES`**,否则到期提醒会永远闭嘴。考据、量法与上线检查单见 `auth-env.mjs` 头注 + 上面《搭顺风车的待办》那条 + `../OPERATIONS.md` 第 7 节《长期令牌直连》 |
+| ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN | 指向 CLIProxyAPI 的域名和它的 API_KEY。⚠️ **2026-09-12 起已不生效**:线上设了下面那把长期令牌,`auth-env.mjs` 会在 spawn 时把这两个摘掉。**变量本身留着别删** —— 删掉长期令牌 + restart 就靠它们退回代理 |
+| CLAUDE_CODE_OAUTH_TOKEN | **2026-09-12 第四十次起线上已设,晏走的就是这条路**(⚠️ **到期 2027-09-12**;不设 = 退回代理,行为与改动前逐字相同)。`claude setup-token` 生成的**一年期**长期令牌;设上 = **直连 Anthropic**,并自动摘掉上面那两个代理变量。⚠️⚠️ **光设它没有用** —— CLI 凭据优先级里 `ANTHROPIC_AUTH_TOKEN`(2)排在它(5)前面,**不摘就会继续走代理而且不报错**,所以摘除绑死在 `auth-env.mjs` 里、不靠人记得删。**判据**:`/health` 的 `auth` 字段(`direct`/`proxy`)。**急救开关 = 删掉这个变量 + restart**,自动退回代理线路,不用回滚部署(⚠️ restart 要丢一个窗口)。⚠️ **空串当没设**(手滑留空值就摘代理再拿空令牌去连 = 晏直接哑掉)。⚠️ **换令牌之后记得同步改仓库变量 `CLAUDE_TOKEN_EXPIRES`**,否则到期提醒会永远闭嘴。考据、量法与上线检查单见 `auth-env.mjs` 头注 + 上面《搭顺风车的待办》那条 + `../OPERATIONS.md` 第 7 节《长期令牌直连》 |
 | SHIM_KEY | Kelivo 端填的 key |
 | BRAIN_MODELS | **2026-08-24 起(方案 B)**。逗号分隔的模型名单,`/v1/models` 把它吐给 Kelivo 当菜单,她在手机上点一下就换模型。**不设 = 名单里只有 `BRAIN_MODEL` 一个 = 功能休眠,行为与本次改动前逐字相同**。**急救开关:清掉这个变量 + `service restart` 立刻回到原行为,不用回滚部署。** ⚠️ 换模型**必然重开进程 = 丢晏一个窗口**(模型在出生时用 `--model` 钉死),不是 bug。⚠️ **只许放窗口大小相同的模型**(4.5/4.6/4.8 压缩点都是 167000);**Opus 5 别放**,CLI 2.1.215 不认识它。**线上现值(2026-08-24)**:`claude-opus-4-6 claude-opus-4-5-20251101 claude-opus-4-8`(**空格分隔**——`variable create` 的 `-k` 拿逗号当分隔符,别用逗号,见 DEPLOY-LOG 第三十七次那条新坑)。**回退照 DEPLOY-LOG 第三十七次的《回退三档》**。详见改动清单第 11 条与 `../docs/多模型接出方案.md` |
 | BRAIN_MODEL / THINK_EFFORT | claude-opus-4-6 / medium(2026-07-15 由 low 调至 medium,治「零思考回嘴/跳思考」;嫌费额度可调回 low + restart) |
