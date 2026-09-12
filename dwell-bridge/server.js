@@ -146,7 +146,7 @@ const guard = (req, res, next) => authed(req) ? next() : res.status(401).json({ 
 
 app.get("/api/health", (req, res) => res.json({
   ok: true, busy, shim: SHIM_URL, msgs: msgs.count(), cursor: events.cursor(),
-  locked: !!DWELL_PASS, persisted: !!LOG_FILE, lastErr,
+  locked: !!DWELL_PASS, persisted: !!LOG_FILE, agent: !!AGENT_URL, lastErr,
 }));
 
 app.get("/api/messages", guard, (req, res) => {
@@ -218,6 +218,51 @@ app.post("/api/model", guard, (req, res) => res.json({
   ok: false,
   why: "这一版不能从网页换模型或档位——真要换得重启晏，窗口会丢",
 }));
+
+/* ─────────── 「另一个 AI 的房间」→ 维护 agent ───────────
+   前端那间屋(`web/index.html` 的 gongSheet)调的是 `api/gong` 两条。
+   本层**只做转发**:加一把 agent-bridge 的钥匙,把请求原样递过去。
+   ⚠️ **故意不在这儿做任何解释/改写** —— 那一层的契约由 `../agent-bridge/` 说了算,
+   两边各存一份语义迟早会歪(规矩 6:跨服务两边留指路)。
+   ⚠️ **AGENT_URL 不设 = 整条路关着**,如实回 ok:false,前端会显示「他那边没应声」。
+   那也是急救开关:想让那间屋立刻闭嘴,删掉这个变量 + restart 即可,不用部署。 */
+const AGENT_URL = (process.env.AGENT_URL || "").replace(/\/+$/, "");
+const AGENT_KEY = process.env.AGENT_KEY || "";
+
+async function toAgent(method, body) {
+  if (!AGENT_URL) return { ok: false, status: 503, data: { msgs: [], reply: "（维护 agent 还没接上来）" } };
+  const r = await fetch(`${AGENT_URL}/api/gong`, {
+    method,
+    headers: { "Content-Type": "application/json", "x-agent-key": AGENT_KEY },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    // 那边一次最多挂 GONG_WAIT_MS(默认 50 秒),这里留足余量
+    signal: AbortSignal.timeout(+(process.env.AGENT_TIMEOUT_MS || 120000)),
+  });
+  return { ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) };
+}
+
+app.get("/api/gong", guard, async (req, res) => {
+  try {
+    const r = await toAgent("GET");
+    res.status(r.ok ? 200 : r.status).json(r.data);
+  } catch (e) {
+    log("[gong]", e.message);
+    res.json({ msgs: [] });                       // 前端拿不到就显示「他那边没应声」
+  }
+});
+
+app.post("/api/gong", guard, async (req, res) => {
+  const text = String(req.body?.text || "").trim();
+  if (!text) return res.status(400).json({ reply: "（没有内容）" });
+  try {
+    const r = await toAgent("POST", { text });
+    res.status(r.ok ? 200 : r.status).json(r.data);
+  } catch (e) {
+    log("[gong]", e.message);
+    lastErr = { at: new Date().toISOString(), kind: `agent: ${e.message}` };
+    res.json({ reply: "（没送到,再试一次）" });
+  }
+});
 
 // 这几个前端会调，但这一版不接后端语义；如实返回空，别假装做了事。
 app.get("/api/chats", guard, (req, res) => res.json({ items: [] }));

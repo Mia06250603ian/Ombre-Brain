@@ -71,6 +71,9 @@ kelivo-shim ──→ Anthropic（直连，2026-09-12 起；代理已不在链�
 | `BRAIN_MODEL` | 否 | 默认 `claude-opus-4-6`，只用于请求体里的 model 字段 |
 | `CTX_LIMIT_TOKENS` | 否 | 默认 167000，只影响网页上那根窗口占用条的分母（和 shim 线上现值一致） |
 | `TURN_TIMEOUT_MS` | 否 | 默认 600000（10 分钟）。他想久一点是常事，别调小 |
+| `AGENT_URL` | 否 | **(2026-09-12 新增)** 维护 agent 那一层的地址。**不设 = 那间屋整个关着**(急救开关) |
+| `AGENT_KEY` | 否 | 和 `agent-bridge` 那边同值。`AGENT_URL` 设了就必须设,否则那边一律 401 |
+| `AGENT_TIMEOUT_MS` | 否 | 默认 120000。要大于 agent 那边的 `GONG_WAIT_MS`(默认 50 秒),不然没等它回话就先断了 |
 | `PORT` | 否 | 默认 8080 |
 
 **改环境变量 = 改值 + restart 即生效，不用重新部署。**
@@ -80,7 +83,7 @@ kelivo-shim ──→ Anthropic（直连，2026-09-12 起；代理已不在链�
 ```bash
 cd dwell-bridge
 npm install
-node test-dwell.mjs        # 单测，现在 83 项
+node test-dwell.mjs        # 单测，**2026-09-12 现场量 78 项**(~~原文写 83~~,数会变,以实际输出为准)
 ./e2e-run.sh               # 端到端演练（起假 shim，不碰线上）
 ./fetch-frontend.sh        # 从 dwell 仓库拉前端并删演示块
 ```
@@ -109,6 +112,7 @@ node test-dwell.mjs        # 单测，现在 83 项
 | `GET /api/model` `/api/context` | 取自 shim 的 `/health` 和 `/debug` |
 | `POST /api/model` | **故意不接**，如实回 `ok:false` + 原因（见已知边界 8） |
 | `GET /api/chats` `POST /api/newchat` | 这一版不接，如实回 `ok:false` |
+| `GET POST /api/gong` | **(2026-09-12 新增)「另一个 AI 的房间」→ 维护 agent。本层只转发**,加一把 `x-agent-key` 递给 `agent-bridge`,**不解释、不改写**(契约归那一层管,两边各存一份语义迟早会歪)。⚠️ **`AGENT_URL` 不设 = 这条路整个关着**,前端显示「他那边没应声」——那也是急救开关,删变量 + restart 即可,不用部署。细节见 `../agent-bridge/MAINTENANCE.md` |
 
 ⚠️ **`GET /api/model` 的字段名必须是 `model`，不是 `name`。**
 前端读的是 `d.model`（dwell `web/index.html:6645`）。
@@ -172,8 +176,10 @@ node test-dwell.mjs        # 单测，现在 83 项
   要做成自动发送(第 3 档),得走本层的 `POST /api/send`,**前提是上面那条
   `SHIM_KEY` 先设上**。动手前先读 `../chess-web/MAINTENANCE.md` 第 1 节。
 - **手感校准的五个数还没合、没部署、没真机确认** —— PR #3,详见本手册《手感校准》一节。
-- **维护 agent 还没接。** 这一版接的是晏（聊天）。主线只有一间屋，
-  agent 要进来得先决定谁常驻——见 `../docs/维护Agent接出方案.md`。
+- ~~**维护 agent 还没接。**~~ **2026-09-12 已接上转发这一半**(`/api/gong` 两条),
+  **但 `agent-bridge` 那个服务尚未部署**,所以现在设了 `AGENT_URL` 也没东西可连。
+  ⚠️ ~~原文「agent 要进来得先决定谁常驻」~~ **那个前提已撤销**——新那层不常驻,
+  开工位才起进程、收工就退。见 `../agent-bridge/MAINTENANCE.md` 第 1.1 节。
 - **桌宠（clawd）接不了——是许可问题，不是技术问题。**
   前端 `PET` 要 `pet/clawd-*.svg` 七个文件，`Mia06250603ian/clawd-on-desk`
   的 `assets/svg/` 里七个**全都有**，拷过去就能跑。**但那个目录的 `assets/LICENSE`
