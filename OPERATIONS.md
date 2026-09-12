@@ -89,7 +89,6 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
 | 自建网页接**维护 agent** | 方案已成型,**尚未实施**。机器她已拍板**升 2C8G**;但升级会重启机器、**晏的窗口会丢**,必须她先对晏说「归档」。⚠️ **别把这件事和上一行混为一谈**:转接层只有 70 MiB、不用等升级;维护 agent 是**又一个常驻 claude 进程**(对照:晏那个容器 404 MiB),那才是要 2C8G 的原因 | `docs/维护Agent接出方案.md` |
 | ~~**网易云音乐接晏**~~ | ✅ **2026-08-30 第三十八次已接上**(和「表情回应语法进 CLAUDE.md」搭同一班顺风车,只丢一个窗口)。三处都改了:`mcp-servers.json` 第四条 / `ALLOWED_TOOLS` 六项 / 晏的 `CLAUDE.md` 新增《音乐》一节。**仍待验**:晏实际看不看得见那 18 个工具、常驻占用真涨多少(估 1600~2000 token,**未实测**,看 `/debug`) | `netease-mcp/MAINTENANCE.md` |
 | ~~**长期令牌直连**(把 CLIProxyAPI 从链路上拆掉)~~ | ✅ **2026-09-12 第四十次已上线,别再当待办**:`/health` 报 `auth=direct`、进容器查子进程环境代理那两个变量与 API key **全不在**、所有者本人跟晏说过话正常出话。**仍待她做的只有一件**:仓库 Settings → Variables 新建 `CLAUDE_TOKEN_EXPIRES` = `2027-09-12`(**不配就没人盯到期,看门狗会一直叫**)。⚠️ **代理服务先留着别删,至少观察一两周**。详见 `kelivo-shim/DEPLOY-LOG.md` 第四十次 | 第 7 节《长期令牌直连》 |
-| ~~(下面是上线前的原文,留着备查)~~ | ~~**代码写完了,线上一行没生效**(2026-09-12)。所有者点头做到「写完放着」这一步;部署 shim = 丢窗口,已挂进 `kelivo-shim/MAINTENANCE.md`《搭顺风车的待办》等顺风车。**已验**:钉死的 CLI 2.1.215 支持长期令牌(不用升 CLI)、接线探针两个方向都对、七套单测 + 三套 e2e + 狗的 37 项自检全绿。**上线前那两件 2026-09-12 已验完**:容器能直连(`HTTP 401`)、代理没给模型改名;另加全量 md5 对账(代码全对上)。**现在只差真正上线那一趟。****要她做的**:上线那天点一下会话发给她的授权链接、把回来的码发回去(⚠️ **她只有手机,别叫她自己跑命令**),再把到期日填进仓库变量 `CLAUDE_TOKEN_EXPIRES` | 第 7 节《长期令牌直连》 |
 | dwell 发送键随打字切换外观 | 所有者已定「**只做样子**,点了如实说明语音没接」,**尚未动手**(在 dwell 仓库) | `TIMELINE.md` 08-16 |
 | ~~**dwell 前端手感校准(五个数)**~~ | ✅ **2026-09-10 当天全程走完并上线,别再当待办**:PR #3 由所有者本人合(`8088ef7`)→ 部署 `6aa2973a…`(PLANTYPE nodejs、构建 135 秒、容器 md5 与本地逐字相同、`/api/health` 正常)。五个数是她在校准尺上自己拉的:正文 16→**15px**、消息间距 18→**16px**、气泡圆角 18→**23px**、输入卡圆角 24→**27px**、发送键赤陶→**近黑**。⚠️ **发送键那条半推翻了 08-16「赤陶统一成一支」**(菊花仍是赤陶)。⚠️ **以后重部署这一层,`fetch-frontend.sh` 别带分支名** —— 手册第二次记录原来钉着 `claude/pill-and-brandline`,那分支至今还在远端且不含这五个数,带了等于白部署(已就地标撤销)。**仍未验的只有「她真机上认不认」**。**思考行/模型胶囊跟着缩那件她当天看完实测数(相对只大 1px)决定不做,别再捡起来** | `dwell-bridge/MAINTENANCE.md`《第六次》 |
 | ~~**订阅 OAuth 到期,约 09-10 前后**~~ | ✅ **2026-09-09 已了结,别再当待办**:当天 13:52 断、**14:07 恢复**,前后 15 分钟。⚠️ **但真病根不是「到期」,是代理版本落后**:v7.2.129 发的是 `claude-cli/2.1.220` 指纹,上游 09-03 已抬到 **2.1.258**,于是**授权流程全绿、新令牌却一进门就 401** —— 升级到 v7.2.155 后一次就成。**下次到期照第 7 节《重新授权前先对版本》走,先对版本再授权。**⚠️ 下一轮到期推测在 **10-07 ~ 10-09**(本轮自 09-09 14:07 起算 + 28~30 天;四个数据点:30 / 29 / 29(朋友那边)/ **28** 天,本次实测 **28 天 4 小时**),**仍是推测,别当日程** | 第 7 节《重新授权前先对版本》 / `TIMELINE.md` 09-09 |
@@ -269,7 +268,7 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
 |---|---|---|---|---|
 | `cli-proxy-api--cpa`(env `6a53a9fcb6ce8edcb0163f97`,项目 id `6a53a9fc22dd6ef375eb7484`) | kelivo-shim | `6a53b806f6d4beebf0c5373d` | yan-shim.zeabur.app | 核心,晏的常驻进程 |
 | 〃 | telegram-bridge | `6a5a4287f947b6cb34511f79` | yan-telegram-bridge.zeabur.app | Telegram 桥 |
-| 〃 | CLIProxyAPI | `6a53a9fd22dd6ef375eb7485` | miaianhome.zeabur.app | 订阅 OAuth 出口 |
+| 〃 | CLIProxyAPI | `6a53a9fd22dd6ef375eb7485` | miaianhome.zeabur.app | ~~订阅 OAuth 出口~~ **2026-09-12 第四十次起已不在链路上**(晏改走直连)。**服务还留着,别删** —— 它是那条三十秒退路(删掉 shim 的 `CLAUDE_CODE_OAUTH_TOKEN` + restart 就退回来)。⚠️ 没有流量之后**它的凭证不再刷新**,所以它自己的 OAuth 迟早会过期;真要退回代理,得先给它重新授权(第 7 节《订阅 OAuth 过期》+《重新授权前先对版本》)。⚠️ 重启它仍然会吃当天最新版(没有版本锁) |
 | ~~〃~~ | ~~fishing-mcp~~ | ~~`6a5a17159ae692d1d8d98d10`~~ | ~~yan-fishing-mcp.zeabur.app~~ | ~~钓鱼游戏 MCP~~ **2026-08-02 已整个删除**(所有者说不玩了;存档按她的决定未备份,源码目录 `fishing-mcp/` 一并从仓库删除。省下约 51~62MB 内存,见 browser-hands 手册的内存表) |
 | 〃 | ears(显示名 ears-thor) | `6a646ea27bcbc56e70a105b5` | yan-ears-listen.zeabur.app | 语音转写+语气分析(源码在 Mia06250603ian/ears 仓库,镜像走 GitHub Actions→ghcr,持久卷 /app/data)。**该服务不支持 `service redeploy`,要拉新镜像用 `service restart`**(见 `TIMELINE.md` 08-02) |
 | 〃 | browser-hands | `6a6e2078fefeb46a883402c9` | yan-browser.zeabur.app | **晏的「浏览器的手」**:真实 Chrome + 持久登录态 + noVNC(源码在 Mia06250603ian/browser-hands 仓库,镜像走 GitHub Actions→ghcr,持久卷 /data)。2026-08-01 部署并接入晏(shim 第二十二次),详见 `browser-hands/MAINTENANCE.md` |
@@ -336,7 +335,7 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
 值全在 Zeabur,别写进代码/公开仓库。完整表(含含义、默认值、调法)见
 `kelivo-shim/MAINTENANCE.md` 的「环境变量」一节,这里只列名字帮你对号:
 
-- 链路:`ANTHROPIC_BASE_URL` `ANTHROPIC_AUTH_TOKEN` **`CLAUDE_CODE_OAUTH_TOKEN`**(2026-09-12 加的代码,**线上尚未设这个变量**:设了 = 直连并自动摘掉前面那两个,不设 = 照旧走代理;详见第 7 节《长期令牌直连》) `SHIM_KEY` `MCP_CONFIG` `MCP_WARMUP_MS` `ALLOWED_TOOLS`
+- 链路:**`CLAUDE_CODE_OAUTH_TOKEN`**(**2026-09-12 起线上已设,走的就是它** = 直连,并自动摘掉下面那两个;删掉它 + restart 就退回代理。到期 2027-09-12,详见第 7 节《长期令牌直连》) `ANTHROPIC_BASE_URL` `ANTHROPIC_AUTH_TOKEN`(**代理那条路的,线上仍留着当退路,但现在不生效**) `SHIM_KEY` `MCP_CONFIG` `MCP_WARMUP_MS` `ALLOWED_TOOLS`
 - 人格:`BRAIN_MODEL` **`BRAIN_MODELS`**(2026-08-24 起:Kelivo 菜单里能选的模型名单;**不设 = 功能休眠**,急救开关就是清掉它 + restart;详见 `kelivo-shim/MAINTENANCE.md` 改动清单第 11 条) `THINK_EFFORT` `USER_NAME` `AI_NAME` `SOUL_ANCHOR` `FORWARD_THINKING` `ENABLE_PROMPT_CACHING_1H`
 - 系统提示词(2026-08-23 起):`SYS_PROMPT_MODE`(`append` 默认 / `replace` 整段替换 CLI 自带那份)
   `SYSTEM_PROMPT_FILE`(默认 `base.md`) `SYSTEM_PROMPT`(覆盖正文) `SOUL_ANCHOR_REPLACE`(replace 模式的三段锚点)。
@@ -560,6 +559,12 @@ npx -y zeabur@latest deployment log --service-id 6a3aa061e41f9f1d19301e42 --env-
 | 浏览器换容器后要重登 | 卷没真挂上,或关闭时没走 `Browser.close`(日志找「cookie 已落盘」);**被系统硬杀不刷盘=白登** | browser-hands 手册踩坑 4、第 10 节 |
 | 浏览器老是自己重启 | 在刷重站点(抖音是已知元凶),或 `MEM_LIMIT_MB` 太低。`/debug` 看 `memRestarts` | browser-hands 手册踩坑 4 |
 | 手机开 noVNC 画面超出屏幕缩不了 / 键盘弹不出来 | 默认 `resize=remote` 对固定尺寸虚拟屏无效,要 `resize=scale`;键盘要先点输入框再点键盘图标 | browser-hands 手册踩坑 3、6 |
+
+> ⚠️ **下面这四节讲的都是「走代理」那条路(《订阅 OAuth 过期》《重新授权前先对版本》
+> 《提前续签行不通》《断一次到底多贵》)。2026-09-12 第四十次起晏已改走直连,代理不在链路上,
+> 所以这四节平时用不上了。**别删** —— 退回代理是现成的退路,退回去就全都适用。
+> **先看 `curl https://yan-shim.zeabur.app/health` 的 `auth`**:`direct` 就往下翻到
+> 《长期令牌直连》和《一年后换令牌:操作单》;`proxy` 才读这四节。
 
 ### 订阅 OAuth 过期(2026-08-11 事故,必读)
 
