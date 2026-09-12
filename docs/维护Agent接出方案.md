@@ -47,10 +47,15 @@ claude -p --input-format stream-json --output-format stream-json
 
 **结论：接出去的维护 agent 也必须走 CLI 路线**，不然等于开始按量付费。
 
-### 1.3 出口 IP 一直是 CLIProxyAPI 的
+### 1.3 出口 IP ~~一直是 CLIProxyAPI 的~~ —— ⚠️ **2026-09-12 起不成立了,动手前先看这条**
 
-不管 agent 放哪台机器，到 Anthropic 的出口 IP 都是 CLIProxyAPI 那一跳。
-所以 **agent 放哪儿不影响出口 IP**。
+~~不管 agent 放哪台机器，到 Anthropic 的出口 IP 都是 CLIProxyAPI 那一跳，所以 agent 放哪儿不影响出口 IP。~~
+
+**晏 2026-09-12 已改走直连**(第四十次部署),代理不在链路上,
+**出口就是跑 claude 进程的那个容器本身**。所以:
+**agent 放哪台机器,出口 IP 就是哪台** —— 这一节原来的结论反过来了,
+下面凡是建立在「出口 IP 反正都一样」之上的取舍都要重算。
+详见 `../OPERATIONS.md` 第 7 节《长期令牌直连》。
 
 但是——**自建维护前端确实有用**，因为它去掉的是**她手机到 Anthropic 的那条直连**。
 她不再用官端 app，手机只连自己的网页，网页再让服务器上的 agent 干活。

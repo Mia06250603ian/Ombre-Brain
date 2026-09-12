@@ -20,8 +20,11 @@
 **要的是让请求从服务器发出去，而不是从她手机发出去**（见 `../docs/维护Agent接出方案.md` §0）。
 自建前端去掉的正是「她手机 → Anthropic」这条直连。
 
-出口 IP 一直是 CLIProxyAPI 那一跳，**agent 放哪儿都不影响出口 IP**——
-这一层解决的是前一半，不是后一半。
+⚠️ **2026-09-12 起这条变了**:~~出口 IP 一直是 CLIProxyAPI 那一跳、agent 放哪儿都不影响~~ ——
+**晏已改走直连,出口就是 shim 那个容器本身**,代理不在链路上了。
+所以「放哪台机器不影响出口 IP」**不再成立**:换台机器跑,出口 IP 就跟着变。
+这一层仍然解决「请求从服务器发、不从她手机发」那一半。
+(改动详见 `../OPERATIONS.md` 第 7 节《长期令牌直连》;**接维护 agent 前先读那节**。)
 
 ## 2. 架构
 
@@ -33,7 +36,7 @@ dwell-bridge（本目录）
    │  ① 发网页（web/index.html，从 dwell 仓库拉，演示块已删）
    │  ② POST /v1/messages，带 x-api-key: SHIM_KEY
    ▼
-kelivo-shim ──→ CLIProxyAPI ──→ Anthropic
+kelivo-shim ──→ Anthropic（直连，2026-09-12 起；代理已不在链路上）
 （常驻 claude -p = 晏本体）
 ```
 
