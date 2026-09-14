@@ -6,7 +6,7 @@
 
 import {
   makeSSEParser, makeStripper, makeEventLog, makeMsgLog,
-  safeEqual, makeToken, buildShimBody, parseLog, verFrom, memFrom,
+  safeEqual, makeToken, buildShimBody, parseLog, tailLines, verFrom, memFrom,
   evEcho, evText, evThink, evToolUse, evToolDone, evFinal, evResult,
 } from "./dwell-lib.mjs";
 import { stripDemo } from "./strip-demo.mjs";
@@ -179,7 +179,7 @@ const eq = (a, b, name) => ok(JSON.stringify(a) === JSON.stringify(b), `${name}\
   eq(m.slice({ limit: 1 }).msgs[0].seq, 4, "接回：接着往下编号，不和旧的撞");
 }
 
-/* ───── ④b 落盘记录：解析与轮转 ───── */
+/* ───── ④b 落盘记录：解析 ───── */
 {
   const text = [
     JSON.stringify({ seq: 1, kind: "me", text: "在吗" }),
@@ -189,23 +189,44 @@ const eq = (a, b, name) => ok(JSON.stringify(a) === JSON.stringify(b), `${name}\
   ].join("\n");
   const r = parseLog(text);
   eq(r.list.map((x) => x.text), ["在吗", "在"], "落盘：坏行丢掉，好的照常读回");
-  eq(r.total, 3, "落盘：total 数的是文件里的行数（含坏行）");
-  ok(r.rotate === false, "落盘：没超上限就不轮转");
-}
-{
-  const lines = [];
-  for (let i = 1; i <= 40; i++) lines.push(JSON.stringify({ kind: "me", text: "第" + i }));
-  const r = parseLog(lines.join("\n"), { cap: 5, keepMax: 15 });
-  eq(r.list.length, 5, "落盘：只读回最后 cap 条");
-  eq(r.list[0].text, "第36", "落盘：读回的是最后那一段");
-  ok(r.rotate === true, "落盘：超过 keepMax 就该轮转");
-  eq(r.tail.length, 5, "落盘：轮转写回的是那 cap 行原文");
-  ok(r.tail[0] === lines[35], "落盘：写回的是原始字节，不是重新序列化的");
+  eq(r.bad, 1, "落盘：坏行数出来了（开机日志会说丢了几行）");
 }
 {
   const r = parseLog("");
   eq(r.list.length, 0, "落盘：空文件不报错");
-  ok(r.rotate === false, "落盘：空文件不轮转");
+  eq(r.bad, 0, "落盘：空文件没有坏行");
+}
+
+/* ───── ④b2 只读末尾那一段（盘上永久存档的前提）───── */
+{
+  const lines = [];
+  for (let i = 1; i <= 40; i++) lines.push(JSON.stringify({ kind: "me", text: "第" + i }));
+  const whole = lines.join("\n") + "\n";
+  // 从文件中间切一刀：第一行是半截的，必须整行丢掉
+  const cut = whole.slice(whole.length - 120);
+  const r = tailLines(cut, { cap: 5, fromStart: false });
+  ok(r.lines.every((l) => { try { JSON.parse(l); return true; } catch { return false; } }),
+     "尾部：被切断的那半行丢掉了，剩下的每行都完整");
+  eq(JSON.parse(r.lines[r.lines.length - 1]).text, "第40", "尾部：最后一条是文件最后一条");
+}
+{
+  const lines = [];
+  for (let i = 1; i <= 40; i++) lines.push(JSON.stringify({ kind: "me", text: "第" + i }));
+  const r = tailLines(lines.join("\n"), { cap: 5, fromStart: true });
+  eq(r.lines.length, 5, "尾部：只取最后 cap 行");
+  eq(JSON.parse(r.lines[0]).text, "第36", "尾部：取的是最后那一段");
+  ok(r.enough === true, "尾部：够 cap 条时说够了");
+}
+{
+  // 不够 cap 条 → enough 为假，调用方要把窗口开大重读
+  const r = tailLines("a\nb\nc", { cap: 10, fromStart: true });
+  ok(r.enough === false, "尾部：不够 cap 条时说不够（让调用方读更大一段）");
+  eq(r.lines.length, 3, "尾部：不够也把有的都给出来");
+}
+{
+  eq(tailLines("", { cap: 5 }).lines.length, 0, "尾部：空的不报错");
+  eq(tailLines("只有半截一行", { cap: 5, fromStart: false }).lines.length, 0,
+     "尾部：整段只有一行残行时，丢完就是空（不会把半行当成记录）");
 }
 
 /* ───── ④c 这一版网页的指纹 ───── */

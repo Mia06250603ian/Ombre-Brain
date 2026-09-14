@@ -254,20 +254,35 @@ export function makeToken(pass, salt) {
 }
 
 /* ─────────── ⑥b 落盘记录的纯逻辑 ─────────── */
-// 账本落盘是「一行一条 JSON」。这里只管**把文本变成记录**和**判断该不该轮转**，
-// 读写文件在 server.js（本文件一行 I/O 都没有）。
+// 账本落盘是「一行一条 JSON」。这里只管**把文本变成记录**，读写文件在 server.js
+//（本文件一行 I/O 都没有）。
 //
-// 为什么要轮转：`persist` 只追加、从不删，而开机是 `readFileSync` **整个文件**
-// 再取最后 cap 条。不管的话文件会一直长，几年后开机读一个几十 MB 的文件只为了要末尾那点。
-// 判据用 `keepMax`（默认 cap 的三倍）：别一过 cap 就重写，那样每次开机都要整文件搬一遍。
-export function parseLog(text, { cap = 4000, keepMax = cap * 3 } = {}) {
-  const lines = String(text || "").split("\n").filter(Boolean);
-  const tail = lines.slice(-cap);
+// ⚠️ **2026-09-14 所有者拍板:盘上永久存档,一条都不删。**
+// ~~原来这里还管「该不该轮转」(超过 cap 三倍就在开机时把文件砍成最近 cap 条)~~ **已撤销。**
+// **留这句是为了拦住一个具体的错误动作:别再把「文件太大」当成删记录的理由** ——
+// 盘上一年才几十 MB,而卷有 36G;真正要克制的是内存,那由 `MSG_CAP` 管(它只决定内存里留多少)。
+export function parseLog(text) {
   const list = [];
-  for (const ln of tail) {
-    try { const m = JSON.parse(ln); if (m) list.push(m); } catch {}   // 写到一半断电的那行：丢掉，别让整份读不回来
+  let bad = 0;
+  for (const ln of String(text || "").split("\n")) {
+    if (!ln) continue;
+    try { const m = JSON.parse(ln); if (m) list.push(m); else bad++; }
+    catch { bad++; }                    // 写到一半断电的那行：丢掉，别让整份读不回来
   }
-  return { list, tail, total: lines.length, rotate: lines.length > keepMax };
+  return { list, bad };
+}
+
+// 只要文件**末尾**那一段。永久存档之后文件会一直长,
+// 而开机只需要最近 cap 条 —— 所以 server.js 只读最后若干字节,把那段丢给这里。
+//
+// `fromStart=false` 表示这段不是从文件开头读的,那么**第一行多半被从中间切断了**
+// (可能还带半个汉字,`toString("utf8")` 会给个替换字符)——**整行丢掉**,它的完整版
+// 本来也不在我们要的这 cap 条里。`enough` 告诉调用方「这段够不够 cap 条」,
+// 不够就让它把窗口开大再读一次。
+export function tailLines(chunk, { cap = 4000, fromStart = false } = {}) {
+  let lines = String(chunk || "").split("\n").filter(Boolean);
+  if (!fromStart && lines.length) lines = lines.slice(1);
+  return { lines: lines.slice(-cap), enough: lines.length >= cap };
 }
 
 /* ─────────── ⑥c 这一版网页的指纹 ─────────── */

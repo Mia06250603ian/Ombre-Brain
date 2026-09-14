@@ -118,6 +118,37 @@ check "不设 DATA_DIR 就还是旧行为（重建即丢）" "$(curl -s localhos
 kill $P3 2>/dev/null || true
 wait $P3 2>/dev/null || true
 
+# 盘上永久存档:文件比内存能装的多得多时,**开机只接回 cap 条,但一行都不许删**
+# ⚠️ 文件要够大(> 第一次开的窗口)才真的走到「只读末尾」那条路 —— 2026-09-14 审查抓到过
+# 一版 fixture 只有 200KB,整份被一次读完,等于没测到新代码。这里每行约 2KB、共 3000 行 ≈ 6MB,
+# 配 cap=1000:第一窗口 512KB 装不下 1000 条,会逼它按行长重估再读一次,两条路都走到。
+DD2=$(mktemp -d)
+node -e 'const fs=require("fs");const a=[];for(let i=1;i<=3000;i++)a.push(JSON.stringify({seq:i,kind:"me",text:"第"+i+"条 "+"聊天内容".repeat(160)}));fs.writeFileSync(process.argv[1]+"/messages.jsonl",a.join("\n")+"\n")' "$DD2"
+BEFORE_LINES=$(wc -l < "$DD2/messages.jsonl"); BEFORE_MD5=$(md5sum "$DD2/messages.jsonl" | cut -d' ' -f1)
+say "  (存档 $(du -h "$DD2/messages.jsonl" | cut -f1) / $BEFORE_LINES 行)"
+SHIM_URL=http://127.0.0.1:8791 SHIM_KEY=testkey DWELL_PASS=hunter2 PORT=8798 DATA_DIR="$DD2" MSG_CAP=1000 node server.js > "$DD2/boot.log" 2>&1 &
+P5=$!
+sleep 2
+check "内存里只接回 cap 条" "$(curl -s localhost:8798/api/health | grep -c '\"msgs\":1000')" "1"
+# ⚠️ 这两条盯的是「窗口正好卡在换行处」那个坑(审查抓到的):条数照样是 1000,
+# 只有「最老那条是第几条」会露馅 —— 3000 行留最后 1000 条,最老的必须正好是第 2001 条。
+curl -s -c /tmp/dwell-jar5 -o /dev/null -X POST localhost:8798/login -d 'pass=hunter2'
+ARCH=$(curl -s -b /tmp/dwell-jar5 'localhost:8798/api/messages?limit=1000')
+has   "最老那条正好是第 2001 条(一条没多丢)" "$ARCH" '第2001条'
+hasnt "第 2000 条不该被接回来" "$ARCH" '第2000条'
+has   "最新那条也在(尾巴没被截掉)" "$ARCH" '第3000条'
+kill $P5 2>/dev/null || true; wait $P5 2>/dev/null || true
+check "⚠️ 存档一行都没少" "$(wc -l < "$DD2/messages.jsonl")" "$BEFORE_LINES"
+check "⚠️ 存档一个字节都没改" "$(md5sum "$DD2/messages.jsonl" | cut -d' ' -f1)" "$BEFORE_MD5"
+has   "开机日志说了只读末尾多少" "$(cat "$DD2/boot.log")" '只读了末尾'
+READ=$(sed -n 's/.*只读了末尾 \([0-9.]*\)MB.*/\1/p' "$DD2/boot.log")
+if [ -n "$READ" ] && [ "$(echo "$READ < 6" | bc 2>/dev/null || echo 1)" = "1" ]; then
+  say "  ✓ 真的只读了末尾一段(${READ}MB < 整份 6MB)"
+else
+  say "  ✗ 把整份都读了(${READ}MB)—— 没走到新代码那条路"; fail=1
+fi
+rm -rf "$DD2"
+
 # 路径填错 / 卷没挂上:必须**如实报 false**,不能一边报 true 一边每条都写失败
 SHIM_URL=http://127.0.0.1:8791 SHIM_KEY=testkey DWELL_PASS=hunter2 PORT=8794 DATA_DIR=/etc/hostname node server.js > "$DD/4.log" 2>&1 &
 P4=$!
