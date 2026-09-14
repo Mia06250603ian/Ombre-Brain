@@ -14,7 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   makeSSEParser, makeStripper, makeEventLog, makeMsgLog,
-  safeEqual, makeToken, buildShimBody,
+  safeEqual, makeToken, buildShimBody, parseLog, tailLines, verFrom, memFrom,
   evEcho, evText, evThink, evToolUse, evToolDone, evFinal, evResult,
 } from "./dwell-lib.mjs";
 
@@ -28,8 +28,29 @@ const TURN_TIMEOUT_MS = +(process.env.TURN_TIMEOUT_MS || 600000);   // 他想久
 // 聊天记录落盘的位置。**必须指向一个持久卷**（比如 /data），
 // 否则容器一重建照样清空 —— 那正是所有者report的「每推一次就丢一次记录」。
 // 不设 = 只在内存里（行为与改动前一致）。
+/* 网页上往回翻得到多少条。**这个数同时决定内存占用**——
+   记录要能翻就得在内存里,所以它不是「盘够不够」的问题,是「机器内存够不够」的问题
+   (那台机器七八个服务共用,2026-08-02 出过 OOM,见 `../TIMELINE.md` 08-02)。
+   一条 ≈ 她一句 / 他一句 / 一段思考 / 一个工具名;一轮对话通常 3~4 条。
+   **改值 + restart 即生效,不用重新部署**;嫌占内存就调小,想翻更久就调大。 */
+/* ⚠️ 必须挡住「填了个不是数的值」(审查实跑出来的):`MSG_CAP=20k` 会算成 NaN,
+   于是 `items.length > NaN` 永远为假 —— **账本再也不截断,内存一路长到把机器吃光**,
+   正是这套东西要防的事;而且 `/api/health` 会显示 `cap:null`。填错就退回默认值并喊一声。 */
+const MSG_CAP = (() => {
+  const raw = process.env.MSG_CAP;
+  const n = Number(raw);
+  if (raw === undefined || raw === "") return 4000;
+  if (!Number.isFinite(n) || n < 100) {
+    console.log(`⚠️ MSG_CAP 填的是「${raw}」，不是一个 ≥100 的数字，已退回默认 4000`);
+    return 4000;
+  }
+  return Math.floor(n);
+})();
 const DATA_DIR = process.env.DATA_DIR || "";
-const LOG_FILE = DATA_DIR ? path.join(DATA_DIR, "messages.jsonl") : "";
+// ⚠️ 开机发现写不进去(路径填错、卷没挂上、只读)就**把它降回空**,
+// 这样 /api/health 的 `persisted` 会如实说 false。
+// 别让它一直报 true —— 那会让人以为记录存着了,其实每条都在悄悄写失败。
+let LOG_FILE = DATA_DIR ? path.join(DATA_DIR, "messages.jsonl") : "";
 
 // 盐每次启动换一把：重启 = 所有已登录的会话失效。对一个维护入口来说这是想要的。
 const SALT = Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -39,8 +60,17 @@ const log = (...a) => console.log(new Date().toISOString(), ...a);
 if (!SHIM_KEY) log("⚠️ SHIM_KEY 没设——晏那头会 401，先去环境变量里补上");
 if (!DWELL_PASS) log("⚠️ DWELL_PASS 没设——**页面没有锁**，绝对不要就这样挂公网");
 
-const events = makeEventLog();
-const msgs = makeMsgLog();
+/* ── 这一版的指纹 ──
+   发给前端的每个 poll 回复都带着它；她那页发现值变了就自己重载
+   （`web/index.html` 的 `tryReload()`：输入框有草稿、或正在往上翻老账时会先挂起，不会打断她）。
+   **算的是发出去的那三个文件**：网页本体 + 本层的两个源文件。
+   拿不到网页文件（还没跑 fetch-frontend.sh）也不要紧，剩下两个照样算得出值。 */
+const VER = verFrom(...["web/index.html", "server.js", "dwell-lib.mjs"].map((f) => {
+  try { return fs.readFileSync(path.join(HERE, f), "utf8"); } catch { return `missing:${f}`; }
+}));
+
+const events = makeEventLog({ ver: VER });
+const msgs = makeMsgLog({ cap: MSG_CAP });
 
 /* ── 聊天记录落盘 ──
    只是"界面上翻得到的记录"，不是晏的记忆（他的记忆在自己的进程和 OB 里）。
@@ -50,16 +80,77 @@ function persist(m) {
   try { fs.appendFileSync(LOG_FILE, JSON.stringify(m) + "\n"); }
   catch (e) { log("[persist]", e.message); }
 }
+/* 只读文件末尾那一段,别把整份存档读进内存。
+   ⚠️ **这是「盘上永久存档」能成立的前提**(2026-09-14):文件从此只长不删,
+   开机若照旧 `readFileSync` 整个文件,几年后就是一次几百 MB 的读 —— 那台机器经不起
+   (整机可用内存只有 1.4G 上下,而且没给任何容器设上限,爆了会杀进程)。
+
+   先按「每行 512 字节」估一个窗口;不够 cap 条就**拿刚量到的平均行长重估**再读一次。
+   ⚠️ **`TAIL_MAX` 必须在开窗口的时候就卡住,不能只在读完之后判断** ——
+   2026-09-14 代码审查抓到的:原来写成读完再看,遇上「行特别大」的存档时,
+   那一次 `Buffer.alloc` 本身就能撑爆内存,**正是这段代码要防的事**。 */
+const TAIL_MAX = 64 * 1048576;
+function readTail(file, cap) {
+  const fd = fs.openSync(file, "r");
+  try {
+    const size = fs.fstatSync(fd).size;
+    let want = Math.min(size, TAIL_MAX, Math.max(262144, cap * 512));
+    for (;;) {
+      const start = Math.max(0, size - want);
+      // 多读一个字节:用它判断切点是不是正好落在换行处。
+      // 不判断的话,窗口刚好卡在行边界时会白白丢掉一条**完整的**记录(审查抓到的)。
+      const from = Math.max(0, start - 1);
+      const buf = Buffer.alloc(size - from);
+      /* ⚠️ **短读要接着读,不能只截断**(审查抓到的第二版问题):
+         我们读的是文件末尾,短读缺的那截**正是最新的几条**;只截断的话
+         `enough` 还可能满足、日志一切正常,而最新几句悄悄没了。所以循环读到底。 */
+      let got = 0;
+      while (got < buf.length) {
+        const n = fs.readSync(fd, buf, got, buf.length - got, from + got);
+        if (n <= 0) break;                       // 真读不动了(文件被截短之类),有多少算多少
+        got += n;
+      }
+      const r = tailLines(buf.subarray(0, got).toString("utf8"), { cap, fromStart: from === 0 });
+      if (r.enough || start === 0 || want >= TAIL_MAX) return { lines: r.lines, size, read: got };
+      /* 重估:2026-09-14 在一份 63MB / 12 万行的存档上实测(cap=20000),
+         盲目翻四倍要读 **39.1MB**,按行长重估只读 **19.5MB**、两次读完、开机 1.0 秒,
+         大 buffer 读完就还给 GC(进程稳态 RSS **6.0 MiB**)。多给两成余量,免得读第三次。 */
+      const per = got / Math.max(1, r.lines.length);
+      want = Math.min(size, TAIL_MAX, Math.max(want * 2, Math.ceil(per * cap * 1.2)));
+    }
+  } finally { fs.closeSync(fd); }
+}
+
 function restoreLog() {
   if (!LOG_FILE) { log("[persist] DATA_DIR 没设——记录只在内存里，重建即丢"); return; }
+
+  /* ① 先探「能不能写」。**只有这一步失败才关掉落盘** ——
+     ⚠️ 审查抓到的:原来读和写共用一个 catch,于是**读的时候出个岔子也会把落盘永久关掉**,
+     还在日志里冤枉说「卷没挂上」。读失败最多是这次接不回历史,新记录照样该存。
+     ⚠️ 目录能写 ≠ 文件能写(也是审查抓到的):文件已存在但没有写权限时,
+     只探目录会一路报 persisted:true,而每一条 append 都在失败。所以两个都探。 */
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.accessSync(DATA_DIR, fs.constants.W_OK);
+    if (fs.existsSync(LOG_FILE)) fs.accessSync(LOG_FILE, fs.constants.W_OK);
+  } catch (e) {
+    LOG_FILE = "";
+    log("⚠️ [persist] 这里写不进去，落盘已关闭（记录会像以前一样重建即丢）:", DATA_DIR, e.message);
+    log("⚠️ [persist] 多半是卷没挂上、路径填错、或文件权限不对。/api/health 的 persisted 会如实报 false");
+    return;
+  }
+
+  /* ② 再把历史接回来。**这一步失败不关落盘**,只是这次从空开始。 */
+  try {
     if (!fs.existsSync(LOG_FILE)) { log("[persist] 还没有记录文件，从空开始"); return; }
-    const lines = fs.readFileSync(LOG_FILE, "utf8").split("\n").filter(Boolean).slice(-4000);
-    const list = [];
-    for (const ln of lines) { try { list.push(JSON.parse(ln)); } catch {} }
-    log("[persist] 接回", msgs.restore(list), "条记录");
-  } catch (e) { log("[persist] 读不回来:", e.message); }
+    const t = readTail(LOG_FILE, MSG_CAP);
+    const r = parseLog(t.lines.join("\n"));
+    log("[persist] 接回", msgs.restore(r.list), "条记录",
+        `（存档 ${(t.size / 1048576).toFixed(1)}MB，只读了末尾 ${(t.read / 1048576).toFixed(1)}MB`,
+        r.bad ? `，丢掉 ${r.bad} 行读不懂的）` : "）");
+  } catch (e) {
+    log("⚠️ [persist] 历史没接回来（新记录照常落盘，不影响聊天）:", e.message);
+  }
 }
 restoreLog();
 let busy = false;
@@ -144,9 +235,25 @@ app.get("/", (req, res) => {
 
 const guard = (req, res, next) => authed(req) ? next() : res.status(401).json({ ok: false });
 
+/* 内存读数。本进程的 RSS 直接问运行时(不读文件);整机余量要读 `/proc/meminfo`,
+   **那一下缓存 2 秒** —— `/api/health` 是不过口令的公开接口,不该每来一个请求就同步读一次文件
+   (审查提的)。2 秒的粒度看「涨没涨」绰绰有余。
+   读不到就给 null,绝不让观察口把接口拖垮。 */
+let memInfoCache = { at: 0, text: "" };
+function readMem() {
+  const now = Date.now();
+  if (now - memInfoCache.at > 2000) {
+    let text = "";
+    try { text = fs.readFileSync("/proc/meminfo", "utf8"); } catch {}
+    memInfoCache = { at: now, text };
+  }
+  return memFrom({ rss: process.memoryUsage.rss(), meminfo: memInfoCache.text });
+}
+
 app.get("/api/health", (req, res) => res.json({
   ok: true, busy, shim: SHIM_URL, msgs: msgs.count(), cursor: events.cursor(),
-  locked: !!DWELL_PASS, persisted: !!LOG_FILE, agent: !!AGENT_URL, lastErr,
+  locked: !!DWELL_PASS, persisted: !!LOG_FILE, cap: MSG_CAP, mem: readMem(),
+  agent: !!AGENT_URL, ver: VER, lastErr,
 }));
 
 app.get("/api/messages", guard, (req, res) => {

@@ -253,6 +253,88 @@ export function makeToken(pass, salt) {
   return (h1.toString(36) + h2.toString(36)).padStart(12, "0");
 }
 
+/* ─────────── ⑥b 落盘记录的纯逻辑 ─────────── */
+// 账本落盘是「一行一条 JSON」。这里只管**把文本变成记录**，读写文件在 server.js
+//（本文件一行 I/O 都没有）。
+//
+// ⚠️ **2026-09-14 所有者拍板:盘上永久存档,一条都不删。**
+// ~~原来这里还管「该不该轮转」(超过 cap 三倍就在开机时把文件砍成最近 cap 条)~~ **已撤销。**
+// **留这句是为了拦住一个具体的错误动作:别再把「文件太大」当成删记录的理由** ——
+// 盘上一年才几十 MB,而卷有 36G;真正要克制的是内存,那由 `MSG_CAP` 管(它只决定内存里留多少)。
+export function parseLog(text) {
+  const list = [];
+  let bad = 0;
+  for (const ln of String(text || "").split("\n")) {
+    if (!ln) continue;
+    try { const m = JSON.parse(ln); if (m) list.push(m); else bad++; }
+    catch { bad++; }                    // 写到一半断电的那行：丢掉，别让整份读不回来
+  }
+  return { list, bad };
+}
+
+// 只要文件**末尾**那一段。永久存档之后文件会一直长,
+// 而开机只需要最近 cap 条 —— 所以 server.js 只读最后若干字节,把那段丢给这里。
+//
+// `fromStart=false` 表示这段不是从文件开头读的,那么**第一行多半被从中间切断了**
+// (可能还带半个汉字,`toString("utf8")` 会给个替换字符)——**整行丢掉**,它的完整版
+// 本来也不在我们要的这 cap 条里。`enough` 告诉调用方「这段够不够 cap 条」,
+// 不够就让它把窗口开大再读一次。
+// ⚠️ **切点正好落在换行上时不能丢第一行**——那一行是完整的。
+// 判断放在这里面(靠这段本身开头是不是 `\n`),别让调用方在外头绕:
+// 2026-09-14 审查指出,绕在外头会让这个导出的函数**自己的契约是错的**,
+// 单测测的也是错契约,下一个人照着用就会丢记录。
+export function tailLines(chunk, { cap = 4000, fromStart = false } = {}) {
+  const s = String(chunk || "");
+  let lines = s.split("\n").filter(Boolean);
+  // 不是从文件开头读的、且这段不是正好从换行处开始 → 第一行是被切断的半行,丢掉
+  if (!fromStart && s[0] !== "\n" && lines.length) lines = lines.slice(1);
+  return { lines: lines.slice(-cap), enough: lines.length >= cap };
+}
+
+/* ─────────── ⑥c 这一版网页的指纹 ─────────── */
+// 前端 `poll()` 会看每次回复里的 `ver`，和开页时那个不一样就自己 `location.reload()`
+// （dwell `web/index.html`：`if (d.ver !== uiVer) { pendingVer = d.ver; tryReload() }`）。
+// ⚠️ 原来 `makeEventLog` 的 `ver` 是**写死的 "1"**，永远不变，所以那套自动刷新
+// **从上线起就没生效过**：部署完她那页还停在旧容器的内容上，直到手动刷新
+// （或切后台 30 秒回来触发 `loadSaid`，那时新容器是空的 → 当场白屏）。
+// 现在改成按文件内容算，换一版就换一个值。
+//
+// ⚠️ **这条成立的前提是「同一时刻只有一个容器在服务」**——本层的账本和事件队列
+// 本来就全在内存里，多开一个实例这一层整个逻辑都不成立，所以这不是新增的约束。
+// 真要多实例，两个容器的 ver 会互相打架，她那页会反复重载。
+export function verFrom(...parts) {
+  let h1 = 0x811c9dc5, h2 = 0x01000193;
+  const s = parts.join(" ");
+  for (let i = 0; i < s.length; i++) {
+    h1 = Math.imul(h1 ^ s.charCodeAt(i), 0x01000193) >>> 0;
+    h2 = Math.imul(h2 + s.charCodeAt(i) * (i + 7), 0x85ebca6b) >>> 0;
+  }
+  return (h1.toString(36) + h2.toString(36)).slice(0, 10);
+}
+
+/* ─────────── ⑥d 内存读数 ─────────── */
+// 所有者的原话:「怕硬盘不够用影响 VPS,我怕杀进程」。**那台机器没给任何容器设内存上限**
+// (`/sys/fs/cgroup/memory.max` = `max`),真爆了内核会挑一个进程杀,
+// 历史上第一顺位是 ears、**第二顺位就是晏**(`../TIMELINE.md` 08-02)。
+// 所以给她一个不用找人、不用钥匙、点开就能看的读数:`/api/health` 里的 `mem`。
+//
+// `self` = **本进程真正占着的内存**(RSS)
+// `avail` = **整台机器**还剩多少可用(/proc/meminfo 的 MemAvailable,机器级)
+// 两个都是 MiB。读不到就给 null —— 观察口坏掉不该影响聊天。
+//
+// ⚠️ **`self` 不能用 cgroup 的 `memory.current`**(2026-09-14 审查抓到,原来就是用它):
+// 那个数**把页缓存也算进去**——读一遍几十 MB 的存档,它就跳到几百 MB,
+// 而那些缓存是**系统随时能回收的、不算占用**。给所有者看那个数只会把人吓着,
+// 与这个观察口「让她安心」的目的正好相反(同 TIMELINE 09-12 那条:别拿会误导的数当指标)。
+export function memFrom({ rss = 0, meminfo = "" } = {}) {
+  const m = /^MemAvailable:\s+(\d+)\s*kB/m.exec(String(meminfo));
+  const n = Number(rss);
+  return {
+    self: Number.isFinite(n) && n > 0 ? Math.round((n / 1048576) * 10) / 10 : null,
+    avail: m ? Math.round(+m[1] / 1024) : null,
+  };
+}
+
 /* ─────────── ⑦ 发给 shim 的请求体 ─────────── */
 // shim 只取**最后一条 user 消息**（server.js:541）——历史活在他的常驻进程里，
 // 我们不用把上下文送回去，也**不该**送（送了等于重复喂）。

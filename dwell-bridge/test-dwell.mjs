@@ -6,7 +6,7 @@
 
 import {
   makeSSEParser, makeStripper, makeEventLog, makeMsgLog,
-  safeEqual, makeToken, buildShimBody,
+  safeEqual, makeToken, buildShimBody, parseLog, tailLines, verFrom, memFrom,
   evEcho, evText, evThink, evToolUse, evToolDone, evFinal, evResult,
 } from "./dwell-lib.mjs";
 import { stripDemo } from "./strip-demo.mjs";
@@ -162,6 +162,108 @@ const eq = (a, b, name) => ok(JSON.stringify(a) === JSON.stringify(b), `${name}\
   eq(m.slice({}).upto, 0, "账本：空账本 upto 为 0");
   ok(m.slice({}).msgs.length === 0, "账本：空账本不报错");
 }
+{
+  // 开机接回：内容和顺序原样，seq 重新编号（游标只在本次运行内有意义）
+  const m = makeMsgLog();
+  const n = m.restore([
+    { kind: "me", text: "昨天说的那件事", at: 1 },
+    { kind: "gu", text: "记得", at: 2 },
+    { kind: "x" },                                  // 缺字段的坏行
+    { kind: "tool", text: "ombre-brain__breath", at: 3, extra: "{}" },
+  ]);
+  ok(n === 3, "接回：坏行丢掉，只接回三条");
+  const r = m.slice({ limit: 400 });
+  eq(r.msgs.map((x) => x.text), ["昨天说的那件事", "记得", "ombre-brain__breath"], "接回：顺序和内容原样");
+  eq(r.msgs.map((x) => x.seq), [1, 2, 3], "接回：seq 从 1 重新编号");
+  m.addMe("今天又来了");
+  eq(m.slice({ limit: 1 }).msgs[0].seq, 4, "接回：接着往下编号，不和旧的撞");
+}
+
+/* ───── ④b 落盘记录：解析 ───── */
+{
+  const text = [
+    JSON.stringify({ seq: 1, kind: "me", text: "在吗" }),
+    JSON.stringify({ seq: 2, kind: "gu", text: "在" }),
+    '{"kind":"me","text":"写到一半断',                 // 断电留下的半行
+    "",
+  ].join("\n");
+  const r = parseLog(text);
+  eq(r.list.map((x) => x.text), ["在吗", "在"], "落盘：坏行丢掉，好的照常读回");
+  eq(r.bad, 1, "落盘：坏行数出来了（开机日志会说丢了几行）");
+}
+{
+  const r = parseLog("");
+  eq(r.list.length, 0, "落盘：空文件不报错");
+  eq(r.bad, 0, "落盘：空文件没有坏行");
+}
+
+/* ───── ④b2 只读末尾那一段（盘上永久存档的前提）───── */
+{
+  const lines = [];
+  for (let i = 1; i <= 40; i++) lines.push(JSON.stringify({ kind: "me", text: "第" + i }));
+  const whole = lines.join("\n") + "\n";
+  // 从文件中间切一刀：第一行是半截的，必须整行丢掉
+  const cut = whole.slice(whole.length - 120);
+  const r = tailLines(cut, { cap: 5, fromStart: false });
+  ok(r.lines.every((l) => { try { JSON.parse(l); return true; } catch { return false; } }),
+     "尾部：被切断的那半行丢掉了，剩下的每行都完整");
+  eq(JSON.parse(r.lines[r.lines.length - 1]).text, "第40", "尾部：最后一条是文件最后一条");
+}
+{
+  const lines = [];
+  for (let i = 1; i <= 40; i++) lines.push(JSON.stringify({ kind: "me", text: "第" + i }));
+  const r = tailLines(lines.join("\n"), { cap: 5, fromStart: true });
+  eq(r.lines.length, 5, "尾部：只取最后 cap 行");
+  eq(JSON.parse(r.lines[0]).text, "第36", "尾部：取的是最后那一段");
+  ok(r.enough === true, "尾部：够 cap 条时说够了");
+}
+{
+  // 不够 cap 条 → enough 为假，调用方要把窗口开大重读
+  const r = tailLines("a\nb\nc", { cap: 10, fromStart: true });
+  ok(r.enough === false, "尾部：不够 cap 条时说不够（让调用方读更大一段）");
+  eq(r.lines.length, 3, "尾部：不够也把有的都给出来");
+}
+{
+  // ⚠️ 这一条盯的是「切点正好落在换行上」:那第一行是**完整的**，不许丢(审查抓到的)
+  const r = tailLines("\n{\"text\":\"完整的一条\"}\n{\"text\":\"最后一条\"}\n", { cap: 5, fromStart: false });
+  eq(r.lines.length, 2, "尾部：这段正好从换行开始时，一条都不丢");
+  eq(JSON.parse(r.lines[0]).text, "完整的一条", "尾部：第一条是完整的那条，没被当成半行丢掉");
+}
+{
+  eq(tailLines("", { cap: 5 }).lines.length, 0, "尾部：空的不报错");
+  eq(tailLines("只有半截一行", { cap: 5, fromStart: false }).lines.length, 0,
+     "尾部：整段只有一行残行时，丢完就是空（不会把半行当成记录）");
+}
+
+/* ───── ④c 这一版网页的指纹 ───── */
+{
+  ok(verFrom("a", "b") === verFrom("a", "b"), "指纹：同样的内容算出同样的值");
+  ok(verFrom("a", "b") !== verFrom("a", "c"), "指纹：任一文件变了值就变");
+  ok(verFrom("a", "b") !== verFrom("ab", ""), "指纹：分段不会被揉成一串（a|b ≠ ab|）");
+  ok(verFrom("x").length <= 10, "指纹：短到能塞进每个 poll 回复里");
+  // 前端靠它决定要不要 location.reload()，所以队列必须把它原样带出来
+  const q = makeEventLog({ ver: "deadbeef" });
+  eq(q.since(0).ver, "deadbeef", "指纹：poll 回复里带着这一版的值");
+  eq(makeEventLog().since(0).ver, "1", "指纹：不给就还是老的写死值（兼容）");
+}
+
+/* ───── ④d 内存读数 ───── */
+{
+  const m = memFrom({ rss: 31138816, meminfo: "MemTotal:  3813404 kB\nMemAvailable:  1494616 kB\nCached: 1 kB\n" });
+  eq(m.self, 29.7, "内存:本进程 RSS 换算成 MiB");
+  eq(m.avail, 1460, "内存:整机可用换算成 MiB");
+}
+{
+  // 读不到就给 null —— 观察口坏掉不该把接口拖垮
+  const m = memFrom({});
+  eq(m.self, null, "内存:没有 RSS 时给 null");
+  eq(m.avail, null, "内存:读不到 meminfo 时给 null");
+  eq(memFrom({ rss: NaN }).self, null, "内存:读数不是数时给 null 不给 NaN");
+}
+{
+  eq(memFrom({ rss: 1048576, meminfo: "MemFree: 9 kB\nMemAvailable: 2048 kB" }).avail, 2,
+     "内存:MemAvailable 不在首行也找得到");
+}
 
 /* ───── ⑤ 鉴权 ───── */
 {
@@ -256,6 +358,10 @@ if (fs.existsSync(new URL("./web/index.html", import.meta.url))) {
   ok(html.includes("api/poll?since="), "真前端：长轮询还在");
   ok(html.includes("api/messages?limit="), "真前端：历史回放还在");
   ok(html.includes("api/send"), "真前端：发送还在");
+  // 跨服务的契约（规矩 6）：ver 这个字段是前端那边先写好的，本层负责让它真的会变。
+  // 前端哪天不看它了，这条会挂——那时本层算指纹就白算了。
+  ok(html.includes("d.ver"), "真前端：自动重载读的那个 ver 字段还在");
+  ok(html.includes("location.reload()"), "真前端：换版之后会自己重载");
   ok(!html.includes("'api/said':"), "真前端：写死的演示数据没了");
 } else {
   console.log("  （跳过真前端检查：还没跑 fetch-frontend.sh）");
