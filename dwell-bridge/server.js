@@ -14,7 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   makeSSEParser, makeStripper, makeEventLog, makeMsgLog,
-  safeEqual, makeToken, buildShimBody,
+  safeEqual, makeToken, buildShimBody, parseLog, verFrom,
   evEcho, evText, evThink, evToolUse, evToolDone, evFinal, evResult,
 } from "./dwell-lib.mjs";
 
@@ -39,7 +39,16 @@ const log = (...a) => console.log(new Date().toISOString(), ...a);
 if (!SHIM_KEY) log("⚠️ SHIM_KEY 没设——晏那头会 401，先去环境变量里补上");
 if (!DWELL_PASS) log("⚠️ DWELL_PASS 没设——**页面没有锁**，绝对不要就这样挂公网");
 
-const events = makeEventLog();
+/* ── 这一版的指纹 ──
+   发给前端的每个 poll 回复都带着它；她那页发现值变了就自己重载
+   （`web/index.html` 的 `tryReload()`：输入框有草稿、或正在往上翻老账时会先挂起，不会打断她）。
+   **算的是发出去的那三个文件**：网页本体 + 本层的两个源文件。
+   拿不到网页文件（还没跑 fetch-frontend.sh）也不要紧，剩下两个照样算得出值。 */
+const VER = verFrom(...["web/index.html", "server.js", "dwell-lib.mjs"].map((f) => {
+  try { return fs.readFileSync(path.join(HERE, f), "utf8"); } catch { return `missing:${f}`; }
+}));
+
+const events = makeEventLog({ ver: VER });
 const msgs = makeMsgLog();
 
 /* ── 聊天记录落盘 ──
@@ -55,10 +64,19 @@ function restoreLog() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     if (!fs.existsSync(LOG_FILE)) { log("[persist] 还没有记录文件，从空开始"); return; }
-    const lines = fs.readFileSync(LOG_FILE, "utf8").split("\n").filter(Boolean).slice(-4000);
-    const list = [];
-    for (const ln of lines) { try { list.push(JSON.parse(ln)); } catch {} }
-    log("[persist] 接回", msgs.restore(list), "条记录");
+    const r = parseLog(fs.readFileSync(LOG_FILE, "utf8"));
+    log("[persist] 接回", msgs.restore(r.list), "条记录（文件里共", r.total, "行）");
+    /* 轮转：只在开机时做一次。先写临时文件再改名，中途断电也不会留下半截的账本
+       （最坏情况是临时文件残着，下次开机原样覆盖）。失败只记日志——
+       账本已经接回内存了，聊天不该因为整理文件而受影响。 */
+    if (r.rotate) {
+      try {
+        const tmp = LOG_FILE + ".tmp";
+        fs.writeFileSync(tmp, r.tail.join("\n") + "\n");
+        fs.renameSync(tmp, LOG_FILE);
+        log("[persist] 记录文件已轮转:", r.total, "→", r.tail.length, "行");
+      } catch (e) { log("[persist] 轮转失败（不影响聊天）:", e.message); }
+    }
   } catch (e) { log("[persist] 读不回来:", e.message); }
 }
 restoreLog();
@@ -146,7 +164,7 @@ const guard = (req, res, next) => authed(req) ? next() : res.status(401).json({ 
 
 app.get("/api/health", (req, res) => res.json({
   ok: true, busy, shim: SHIM_URL, msgs: msgs.count(), cursor: events.cursor(),
-  locked: !!DWELL_PASS, persisted: !!LOG_FILE, agent: !!AGENT_URL, lastErr,
+  locked: !!DWELL_PASS, persisted: !!LOG_FILE, agent: !!AGENT_URL, ver: VER, lastErr,
 }));
 
 app.get("/api/messages", guard, (req, res) => {

@@ -74,6 +74,47 @@ say "⑥ 转发给上游的辅助信息"
 has "型号取自上游" "$(curl -s -b /tmp/dwell-jar localhost:8790/api/model)" 'claude-opus-4-6'
 has "窗口占用取自守卫" "$(curl -s -b /tmp/dwell-jar localhost:8790/api/context)" '42000'
 
+say "⑦ 这一版的指纹(前端靠它在部署后自己重载)"
+HV=$(curl -s -b /tmp/dwell-jar localhost:8790/api/health | sed 's/.*"ver":"\([^"]*\)".*/\1/')
+PV=$(curl -s -b /tmp/dwell-jar 'localhost:8790/api/poll?since=999999' | sed 's/.*"ver":"\([^"]*\)".*/\1/')
+check "poll 里带着指纹" "$PV" "$HV"
+if [ "$PV" = "1" ] || [ -z "$PV" ]; then say "  ✗ 指纹还是写死的 1 — 自动重载不会生效"; fail=1; else say "  ✓ 指纹不再是写死的 1"; fi
+
+say "⑧ 落盘:重启一次,记录还在(这是「每推一次就丢一次」的解法,**要挂持久卷才成立**)"
+DD=$(mktemp -d)
+SHIM_URL=http://127.0.0.1:8791 SHIM_KEY=testkey DWELL_PASS=hunter2 PORT=8792 DATA_DIR="$DD" node server.js > "$DD/1.log" 2>&1 &
+P1=$!
+sleep 1
+check "落盘开着" "$(curl -s localhost:8792/api/health | grep -c '"persisted":true')" "1"
+curl -s -c /tmp/dwell-jar2 -o /dev/null -X POST localhost:8792/login -d 'pass=hunter2'
+curl -s -b /tmp/dwell-jar2 -X POST localhost:8792/api/send \
+  -H 'Content-Type: application/json' -d '{"text":"重启之后你还看得到这句吗"}' > /dev/null
+sleep 2
+has "重启前记录在" "$(curl -s -b /tmp/dwell-jar2 'localhost:8792/api/messages?limit=400')" '重启之后你还看得到这句吗'
+kill $P1 2>/dev/null || true
+wait $P1 2>/dev/null || true
+
+# 换一个容器（新进程、新的盐、内存全空），只有那块「卷」是同一个
+SHIM_URL=http://127.0.0.1:8791 SHIM_KEY=testkey DWELL_PASS=hunter2 PORT=8792 DATA_DIR="$DD" node server.js > "$DD/2.log" 2>&1 &
+P2=$!
+sleep 1
+curl -s -c /tmp/dwell-jar3 -o /dev/null -X POST localhost:8792/login -d 'pass=hunter2'
+AFTER=$(curl -s -b /tmp/dwell-jar3 'localhost:8792/api/messages?limit=400')
+has "重启后她那句还在" "$AFTER" '重启之后你还看得到这句吗'
+has "重启后他那句也在" "$AFTER" '"kind":"gu"'
+has "开机日志说接回了几条" "$(cat "$DD/2.log")" '接回'
+kill $P2 2>/dev/null || true
+wait $P2 2>/dev/null || true
+
+# 不挂卷（DATA_DIR 不设）就是现在线上的样子：重启即空。这条守着「别以为不挂卷也行」
+SHIM_URL=http://127.0.0.1:8791 SHIM_KEY=testkey DWELL_PASS=hunter2 PORT=8793 node server.js > "$DD/3.log" 2>&1 &
+P3=$!
+sleep 1
+check "不设 DATA_DIR 就还是旧行为（重建即丢）" "$(curl -s localhost:8793/api/health | grep -c '"persisted":false')" "1"
+kill $P3 2>/dev/null || true
+wait $P3 2>/dev/null || true
+rm -rf "$DD"
+
 say ""
 if [ "$fail" = "0" ]; then say "✓ 端到端全绿"; else say "✗ 有挂的"; fi
 exit $fail
