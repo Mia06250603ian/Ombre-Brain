@@ -142,12 +142,37 @@ check "⚠️ 存档一行都没少" "$(wc -l < "$DD2/messages.jsonl")" "$BEFORE
 check "⚠️ 存档一个字节都没改" "$(md5sum "$DD2/messages.jsonl" | cut -d' ' -f1)" "$BEFORE_MD5"
 has   "开机日志说了只读末尾多少" "$(cat "$DD2/boot.log")" '只读了末尾'
 READ=$(sed -n 's/.*只读了末尾 \([0-9.]*\)MB.*/\1/p' "$DD2/boot.log")
-if [ -n "$READ" ] && [ "$(echo "$READ < 6" | bc 2>/dev/null || echo 1)" = "1" ]; then
+# ⚠️ 别用 bc:容器里不一定装了,`|| echo 1` 会让这条**自动算通过**,又变成没测到(审查抓到的)。
+# awk 是 POSIX 必备,而且比不出来就算失败。
+if [ -n "$READ" ] && [ "$(awk -v r="$READ" 'BEGIN{print (r<6) ? 1 : 0}')" = "1" ]; then
   say "  ✓ 真的只读了末尾一段(${READ}MB < 整份 6MB)"
 else
   say "  ✗ 把整份都读了(${READ}MB)—— 没走到新代码那条路"; fail=1
 fi
 rm -rf "$DD2"
+
+# MSG_CAP 填了个不是数的值:必须退回默认 4000,**绝不能变成 NaN**(那会让账本永不截断 → 吃光内存)
+DD3=$(mktemp -d)
+SHIM_URL=http://127.0.0.1:8791 SHIM_KEY=testkey DWELL_PASS=hunter2 PORT=8799 DATA_DIR="$DD3" MSG_CAP=20k node server.js > "$DD3/boot.log" 2>&1 &
+P6=$!
+sleep 1
+check "MSG_CAP 填错时退回默认 4000" "$(curl -s localhost:8799/api/health | grep -c '"cap":4000')" "1"
+hasnt "绝不能出现 cap:null" "$(curl -s localhost:8799/api/health)" '"cap":null'
+has   "启动日志喊了一句" "$(cat "$DD3/boot.log")" '退回默认'
+kill $P6 2>/dev/null || true; wait $P6 2>/dev/null || true
+
+# 文件存在但不可写(目录可写):也必须如实报 false —— 只探目录是不够的
+touch "$DD3/messages.jsonl"; chmod 444 "$DD3/messages.jsonl"
+SHIM_URL=http://127.0.0.1:8791 SHIM_KEY=testkey DWELL_PASS=hunter2 PORT=8799 DATA_DIR="$DD3" node server.js > "$DD3/ro.log" 2>&1 &
+P7=$!
+sleep 1
+if [ "$(id -u)" = "0" ]; then
+  say "  （跳过「文件只读」那条：root 无视权限位，测不出来）"
+else
+  check "文件不可写时 persisted 也报 false" "$(curl -s localhost:8799/api/health | grep -c '\"persisted\":false')" "1"
+fi
+kill $P7 2>/dev/null || true; wait $P7 2>/dev/null || true
+chmod 644 "$DD3/messages.jsonl"; rm -rf "$DD3"
 
 # 路径填错 / 卷没挂上:必须**如实报 false**,不能一边报 true 一边每条都写失败
 SHIM_URL=http://127.0.0.1:8791 SHIM_KEY=testkey DWELL_PASS=hunter2 PORT=8794 DATA_DIR=/etc/hostname node server.js > "$DD/4.log" 2>&1 &

@@ -279,9 +279,15 @@ export function parseLog(text) {
 // (可能还带半个汉字,`toString("utf8")` 会给个替换字符)——**整行丢掉**,它的完整版
 // 本来也不在我们要的这 cap 条里。`enough` 告诉调用方「这段够不够 cap 条」,
 // 不够就让它把窗口开大再读一次。
+// ⚠️ **切点正好落在换行上时不能丢第一行**——那一行是完整的。
+// 判断放在这里面(靠这段本身开头是不是 `\n`),别让调用方在外头绕:
+// 2026-09-14 审查指出,绕在外头会让这个导出的函数**自己的契约是错的**,
+// 单测测的也是错契约,下一个人照着用就会丢记录。
 export function tailLines(chunk, { cap = 4000, fromStart = false } = {}) {
-  let lines = String(chunk || "").split("\n").filter(Boolean);
-  if (!fromStart && lines.length) lines = lines.slice(1);
+  const s = String(chunk || "");
+  let lines = s.split("\n").filter(Boolean);
+  // 不是从文件开头读的、且这段不是正好从换行处开始 → 第一行是被切断的半行,丢掉
+  if (!fromStart && s[0] !== "\n" && lines.length) lines = lines.slice(1);
   return { lines: lines.slice(-cap), enough: lines.length >= cap };
 }
 
@@ -312,15 +318,19 @@ export function verFrom(...parts) {
 // 历史上第一顺位是 ears、**第二顺位就是晏**(`../TIMELINE.md` 08-02)。
 // 所以给她一个不用找人、不用钥匙、点开就能看的读数:`/api/health` 里的 `mem`。
 //
-// `self` = 这个容器现在占多少(cgroup v2 的 memory.current;v1 是另一个文件名,一并认)
-// `avail` = **整台机器**还剩多少可用(/proc/meminfo 的 MemAvailable,机器级、不是容器级)
+// `self` = **本进程真正占着的内存**(RSS)
+// `avail` = **整台机器**还剩多少可用(/proc/meminfo 的 MemAvailable,机器级)
 // 两个都是 MiB。读不到就给 null —— 观察口坏掉不该影响聊天。
-export function memFrom({ cgroup = "", meminfo = "" } = {}) {
-  const self = Number(String(cgroup).trim());
+//
+// ⚠️ **`self` 不能用 cgroup 的 `memory.current`**(2026-09-14 审查抓到,原来就是用它):
+// 那个数**把页缓存也算进去**——读一遍几十 MB 的存档,它就跳到几百 MB,
+// 而那些缓存是**系统随时能回收的、不算占用**。给所有者看那个数只会把人吓着,
+// 与这个观察口「让她安心」的目的正好相反(同 TIMELINE 09-12 那条:别拿会误导的数当指标)。
+export function memFrom({ rss = 0, meminfo = "" } = {}) {
   const m = /^MemAvailable:\s+(\d+)\s*kB/m.exec(String(meminfo));
-  const mib = (bytes) => Math.round((bytes / 1048576) * 10) / 10;
+  const n = Number(rss);
   return {
-    self: Number.isFinite(self) && self > 0 ? mib(self) : null,
+    self: Number.isFinite(n) && n > 0 ? Math.round((n / 1048576) * 10) / 10 : null,
     avail: m ? Math.round(+m[1] / 1024) : null,
   };
 }

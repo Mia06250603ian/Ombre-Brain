@@ -224,6 +224,12 @@ const eq = (a, b, name) => ok(JSON.stringify(a) === JSON.stringify(b), `${name}\
   eq(r.lines.length, 3, "尾部：不够也把有的都给出来");
 }
 {
+  // ⚠️ 这一条盯的是「切点正好落在换行上」:那第一行是**完整的**，不许丢(审查抓到的)
+  const r = tailLines("\n{\"text\":\"完整的一条\"}\n{\"text\":\"最后一条\"}\n", { cap: 5, fromStart: false });
+  eq(r.lines.length, 2, "尾部：这段正好从换行开始时，一条都不丢");
+  eq(JSON.parse(r.lines[0]).text, "完整的一条", "尾部：第一条是完整的那条，没被当成半行丢掉");
+}
+{
   eq(tailLines("", { cap: 5 }).lines.length, 0, "尾部：空的不报错");
   eq(tailLines("只有半截一行", { cap: 5, fromStart: false }).lines.length, 0,
      "尾部：整段只有一行残行时，丢完就是空（不会把半行当成记录）");
@@ -243,22 +249,20 @@ const eq = (a, b, name) => ok(JSON.stringify(a) === JSON.stringify(b), `${name}\
 
 /* ───── ④d 内存读数 ───── */
 {
-  const m = memFrom({ cgroup: "31138816\n", meminfo: "MemTotal:  3813404 kB\nMemAvailable:  1494616 kB\nCached: 1 kB\n" });
-  eq(m.self, 29.7, "内存:容器占用换算成 MiB");
+  const m = memFrom({ rss: 31138816, meminfo: "MemTotal:  3813404 kB\nMemAvailable:  1494616 kB\nCached: 1 kB\n" });
+  eq(m.self, 29.7, "内存:本进程 RSS 换算成 MiB");
   eq(m.avail, 1460, "内存:整机可用换算成 MiB");
 }
 {
   // 读不到就给 null —— 观察口坏掉不该把接口拖垮
   const m = memFrom({});
-  eq(m.self, null, "内存:读不到容器读数时给 null");
+  eq(m.self, null, "内存:没有 RSS 时给 null");
   eq(m.avail, null, "内存:读不到 meminfo 时给 null");
-  eq(memFrom({ cgroup: "max" }).self, null, "内存:cgroup 里是 max(没设上限)时给 null 不给 NaN");
+  eq(memFrom({ rss: NaN }).self, null, "内存:读数不是数时给 null 不给 NaN");
 }
 {
-  // v1 的文件内容形状一样,照样认;MemAvailable 不在第一行也要找得到
-  const m = memFrom({ cgroup: "1048576", meminfo: "MemFree: 9 kB\nMemAvailable: 2048 kB" });
-  eq(m.self, 1, "内存:cgroup v1 的读数一样认");
-  eq(m.avail, 2, "内存:MemAvailable 不在首行也找得到");
+  eq(memFrom({ rss: 1048576, meminfo: "MemFree: 9 kB\nMemAvailable: 2048 kB" }).avail, 2,
+     "内存:MemAvailable 不在首行也找得到");
 }
 
 /* ───── ⑤ 鉴权 ───── */

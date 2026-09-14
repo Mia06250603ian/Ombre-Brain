@@ -33,7 +33,19 @@ const TURN_TIMEOUT_MS = +(process.env.TURN_TIMEOUT_MS || 600000);   // 他想久
    (那台机器七八个服务共用,2026-08-02 出过 OOM,见 `../TIMELINE.md` 08-02)。
    一条 ≈ 她一句 / 他一句 / 一段思考 / 一个工具名;一轮对话通常 3~4 条。
    **改值 + restart 即生效,不用重新部署**;嫌占内存就调小,想翻更久就调大。 */
-const MSG_CAP = Math.max(100, +(process.env.MSG_CAP || 4000));
+/* ⚠️ 必须挡住「填了个不是数的值」(审查实跑出来的):`MSG_CAP=20k` 会算成 NaN,
+   于是 `items.length > NaN` 永远为假 —— **账本再也不截断,内存一路长到把机器吃光**,
+   正是这套东西要防的事;而且 `/api/health` 会显示 `cap:null`。填错就退回默认值并喊一声。 */
+const MSG_CAP = (() => {
+  const raw = process.env.MSG_CAP;
+  const n = Number(raw);
+  if (raw === undefined || raw === "") return 4000;
+  if (!Number.isFinite(n) || n < 100) {
+    console.log(`⚠️ MSG_CAP 填的是「${raw}」，不是一个 ≥100 的数字，已退回默认 4000`);
+    return 4000;
+  }
+  return Math.floor(n);
+})();
 const DATA_DIR = process.env.DATA_DIR || "";
 // ⚠️ 开机发现写不进去(路径填错、卷没挂上、只读)就**把它降回空**,
 // 这样 /api/health 的 `persisted` 会如实说 false。
@@ -89,12 +101,16 @@ function readTail(file, cap) {
       // 不判断的话,窗口刚好卡在行边界时会白白丢掉一条**完整的**记录(审查抓到的)。
       const from = Math.max(0, start - 1);
       const buf = Buffer.alloc(size - from);
-      // ⚠️ readSync 可能短读;拿它的返回值截断,否则尾巴上会留一片 Buffer.alloc 的 0,
-      // 解出来是一行读不懂的东西,**丢掉的正是最新那几条**,而日志还显示一切正常(审查抓到的)。
-      const got = fs.readSync(fd, buf, 0, buf.length, from);
-      const text = buf.subarray(0, got).toString("utf8");
-      const atBoundary = from === 0 || text[0] === "\n";
-      const r = tailLines(atBoundary && from !== 0 ? text.slice(1) : text, { cap, fromStart: atBoundary });
+      /* ⚠️ **短读要接着读,不能只截断**(审查抓到的第二版问题):
+         我们读的是文件末尾,短读缺的那截**正是最新的几条**;只截断的话
+         `enough` 还可能满足、日志一切正常,而最新几句悄悄没了。所以循环读到底。 */
+      let got = 0;
+      while (got < buf.length) {
+        const n = fs.readSync(fd, buf, got, buf.length - got, from + got);
+        if (n <= 0) break;                       // 真读不动了(文件被截短之类),有多少算多少
+        got += n;
+      }
+      const r = tailLines(buf.subarray(0, got).toString("utf8"), { cap, fromStart: from === 0 });
       if (r.enough || start === 0 || want >= TAIL_MAX) return { lines: r.lines, size, read: got };
       /* 重估:2026-09-14 在一份 63MB / 12 万行的存档上实测(cap=20000),
          盲目翻四倍要读 **39.1MB**,按行长重估只读 **19.5MB**、两次读完、开机 1.0 秒,
@@ -107,9 +123,25 @@ function readTail(file, cap) {
 
 function restoreLog() {
   if (!LOG_FILE) { log("[persist] DATA_DIR 没设——记录只在内存里，重建即丢"); return; }
+
+  /* ① 先探「能不能写」。**只有这一步失败才关掉落盘** ——
+     ⚠️ 审查抓到的:原来读和写共用一个 catch,于是**读的时候出个岔子也会把落盘永久关掉**,
+     还在日志里冤枉说「卷没挂上」。读失败最多是这次接不回历史,新记录照样该存。
+     ⚠️ 目录能写 ≠ 文件能写(也是审查抓到的):文件已存在但没有写权限时,
+     只探目录会一路报 persisted:true,而每一条 append 都在失败。所以两个都探。 */
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.accessSync(DATA_DIR, fs.constants.W_OK);      // 写不进去的话下面这行就抛，走 catch 关掉落盘
+    fs.accessSync(DATA_DIR, fs.constants.W_OK);
+    if (fs.existsSync(LOG_FILE)) fs.accessSync(LOG_FILE, fs.constants.W_OK);
+  } catch (e) {
+    LOG_FILE = "";
+    log("⚠️ [persist] 这里写不进去，落盘已关闭（记录会像以前一样重建即丢）:", DATA_DIR, e.message);
+    log("⚠️ [persist] 多半是卷没挂上、路径填错、或文件权限不对。/api/health 的 persisted 会如实报 false");
+    return;
+  }
+
+  /* ② 再把历史接回来。**这一步失败不关落盘**,只是这次从空开始。 */
+  try {
     if (!fs.existsSync(LOG_FILE)) { log("[persist] 还没有记录文件，从空开始"); return; }
     const t = readTail(LOG_FILE, MSG_CAP);
     const r = parseLog(t.lines.join("\n"));
@@ -117,9 +149,7 @@ function restoreLog() {
         `（存档 ${(t.size / 1048576).toFixed(1)}MB，只读了末尾 ${(t.read / 1048576).toFixed(1)}MB`,
         r.bad ? `，丢掉 ${r.bad} 行读不懂的）` : "）");
   } catch (e) {
-    LOG_FILE = "";
-    log("⚠️ [persist] 这个目录用不了，落盘已关闭（记录会像以前一样重建即丢）:", DATA_DIR, e.message);
-    log("⚠️ [persist] 多半是卷没挂上或路径填错了。/api/health 的 persisted 会如实报 false");
+    log("⚠️ [persist] 历史没接回来（新记录照常落盘，不影响聊天）:", e.message);
   }
 }
 restoreLog();
@@ -205,17 +235,19 @@ app.get("/", (req, res) => {
 
 const guard = (req, res, next) => authed(req) ? next() : res.status(401).json({ ok: false });
 
-/* 内存读数。每次问的时候现读(两个小文件,几十微秒),别缓存——缓存了就看不出涨没涨。
+/* 内存读数。本进程的 RSS 直接问运行时(不读文件);整机余量要读 `/proc/meminfo`,
+   **那一下缓存 2 秒** —— `/api/health` 是不过口令的公开接口,不该每来一个请求就同步读一次文件
+   (审查提的)。2 秒的粒度看「涨没涨」绰绰有余。
    读不到就给 null,绝不让观察口把接口拖垮。 */
+let memInfoCache = { at: 0, text: "" };
 function readMem() {
-  const pick = (...paths) => {
-    for (const p of paths) { try { return fs.readFileSync(p, "utf8"); } catch {} }
-    return "";
-  };
-  return memFrom({
-    cgroup: pick("/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory/memory.usage_in_bytes"),
-    meminfo: pick("/proc/meminfo"),
-  });
+  const now = Date.now();
+  if (now - memInfoCache.at > 2000) {
+    let text = "";
+    try { text = fs.readFileSync("/proc/meminfo", "utf8"); } catch {}
+    memInfoCache = { at: now, text };
+  }
+  return memFrom({ rss: process.memoryUsage.rss(), meminfo: memInfoCache.text });
 }
 
 app.get("/api/health", (req, res) => res.json({
