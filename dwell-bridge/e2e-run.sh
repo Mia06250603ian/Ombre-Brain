@@ -79,6 +79,7 @@ HV=$(curl -s -b /tmp/dwell-jar localhost:8790/api/health | sed 's/.*"ver":"\([^"
 PV=$(curl -s -b /tmp/dwell-jar 'localhost:8790/api/poll?since=999999' | sed 's/.*"ver":"\([^"]*\)".*/\1/')
 check "poll 里带着指纹" "$PV" "$HV"
 if [ "$PV" = "1" ] || [ -z "$PV" ]; then say "  ✗ 指纹还是写死的 1 — 自动重载不会生效"; fail=1; else say "  ✓ 指纹不再是写死的 1"; fi
+check "能翻多少条(cap)如实报出来" "$(curl -s -b /tmp/dwell-jar localhost:8790/api/health | grep -c '"cap":4000')" "1"
 
 say "⑧ 落盘:重启一次,记录还在(这是「每推一次就丢一次」的解法,**要挂持久卷才成立**)"
 DD=$(mktemp -d)

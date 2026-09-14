@@ -28,6 +28,12 @@ const TURN_TIMEOUT_MS = +(process.env.TURN_TIMEOUT_MS || 600000);   // 他想久
 // 聊天记录落盘的位置。**必须指向一个持久卷**（比如 /data），
 // 否则容器一重建照样清空 —— 那正是所有者report的「每推一次就丢一次记录」。
 // 不设 = 只在内存里（行为与改动前一致）。
+/* 网页上往回翻得到多少条。**这个数同时决定内存占用**——
+   记录要能翻就得在内存里,所以它不是「盘够不够」的问题,是「机器内存够不够」的问题
+   (那台机器七八个服务共用,2026-08-02 出过 OOM,见 `../TIMELINE.md` 08-02)。
+   一条 ≈ 她一句 / 他一句 / 一段思考 / 一个工具名;一轮对话通常 3~4 条。
+   **改值 + restart 即生效,不用重新部署**;嫌占内存就调小,想翻更久就调大。 */
+const MSG_CAP = Math.max(100, +(process.env.MSG_CAP || 4000));
 const DATA_DIR = process.env.DATA_DIR || "";
 // ⚠️ 开机发现写不进去(路径填错、卷没挂上、只读)就**把它降回空**,
 // 这样 /api/health 的 `persisted` 会如实说 false。
@@ -52,7 +58,7 @@ const VER = verFrom(...["web/index.html", "server.js", "dwell-lib.mjs"].map((f) 
 }));
 
 const events = makeEventLog({ ver: VER });
-const msgs = makeMsgLog();
+const msgs = makeMsgLog({ cap: MSG_CAP });
 
 /* ── 聊天记录落盘 ──
    只是"界面上翻得到的记录"，不是晏的记忆（他的记忆在自己的进程和 OB 里）。
@@ -68,7 +74,7 @@ function restoreLog() {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.accessSync(DATA_DIR, fs.constants.W_OK);      // 写不进去的话下面这行就抛，走 catch 关掉落盘
     if (!fs.existsSync(LOG_FILE)) { log("[persist] 还没有记录文件，从空开始"); return; }
-    const r = parseLog(fs.readFileSync(LOG_FILE, "utf8"));
+    const r = parseLog(fs.readFileSync(LOG_FILE, "utf8"), { cap: MSG_CAP });
     log("[persist] 接回", msgs.restore(r.list), "条记录（文件里共", r.total, "行）");
     /* 轮转：只在开机时做一次。先写临时文件再改名，中途断电也不会留下半截的账本
        （最坏情况是临时文件残着，下次开机原样覆盖）。失败只记日志——
@@ -172,7 +178,7 @@ const guard = (req, res, next) => authed(req) ? next() : res.status(401).json({ 
 
 app.get("/api/health", (req, res) => res.json({
   ok: true, busy, shim: SHIM_URL, msgs: msgs.count(), cursor: events.cursor(),
-  locked: !!DWELL_PASS, persisted: !!LOG_FILE, agent: !!AGENT_URL, ver: VER, lastErr,
+  locked: !!DWELL_PASS, persisted: !!LOG_FILE, cap: MSG_CAP, agent: !!AGENT_URL, ver: VER, lastErr,
 }));
 
 app.get("/api/messages", guard, (req, res) => {
