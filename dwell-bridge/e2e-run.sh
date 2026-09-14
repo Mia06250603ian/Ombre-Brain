@@ -80,6 +80,9 @@ PV=$(curl -s -b /tmp/dwell-jar 'localhost:8790/api/poll?since=999999' | sed 's/.
 check "poll 里带着指纹" "$PV" "$HV"
 if [ "$PV" = "1" ] || [ -z "$PV" ]; then say "  ✗ 指纹还是写死的 1 — 自动重载不会生效"; fail=1; else say "  ✓ 指纹不再是写死的 1"; fi
 check "能翻多少条(cap)如实报出来" "$(curl -s -b /tmp/dwell-jar localhost:8790/api/health | grep -c '"cap":4000')" "1"
+# 内存观察口:读不到就该是 null,绝不能把 /api/health 拖垮(所以只要求字段在、接口 200)
+has   "内存读数这个字段在" "$(curl -s localhost:8790/api/health)" '"mem":'
+check "带着内存读数时 health 照常 200" "$(curl -s -o /dev/null -w '%{http_code}' localhost:8790/api/health)" "200"
 
 say "⑧ 落盘:重启一次,记录还在(这是「每推一次就丢一次」的解法,**要挂持久卷才成立**)"
 DD=$(mktemp -d)

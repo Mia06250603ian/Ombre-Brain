@@ -14,7 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   makeSSEParser, makeStripper, makeEventLog, makeMsgLog,
-  safeEqual, makeToken, buildShimBody, parseLog, verFrom,
+  safeEqual, makeToken, buildShimBody, parseLog, verFrom, memFrom,
   evEcho, evText, evThink, evToolUse, evToolDone, evFinal, evResult,
 } from "./dwell-lib.mjs";
 
@@ -176,9 +176,23 @@ app.get("/", (req, res) => {
 
 const guard = (req, res, next) => authed(req) ? next() : res.status(401).json({ ok: false });
 
+/* 内存读数。每次问的时候现读(两个小文件,几十微秒),别缓存——缓存了就看不出涨没涨。
+   读不到就给 null,绝不让观察口把接口拖垮。 */
+function readMem() {
+  const pick = (...paths) => {
+    for (const p of paths) { try { return fs.readFileSync(p, "utf8"); } catch {} }
+    return "";
+  };
+  return memFrom({
+    cgroup: pick("/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory/memory.usage_in_bytes"),
+    meminfo: pick("/proc/meminfo"),
+  });
+}
+
 app.get("/api/health", (req, res) => res.json({
   ok: true, busy, shim: SHIM_URL, msgs: msgs.count(), cursor: events.cursor(),
-  locked: !!DWELL_PASS, persisted: !!LOG_FILE, cap: MSG_CAP, agent: !!AGENT_URL, ver: VER, lastErr,
+  locked: !!DWELL_PASS, persisted: !!LOG_FILE, cap: MSG_CAP, mem: readMem(),
+  agent: !!AGENT_URL, ver: VER, lastErr,
 }));
 
 app.get("/api/messages", guard, (req, res) => {

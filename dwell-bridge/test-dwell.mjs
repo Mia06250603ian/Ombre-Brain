@@ -6,7 +6,7 @@
 
 import {
   makeSSEParser, makeStripper, makeEventLog, makeMsgLog,
-  safeEqual, makeToken, buildShimBody, parseLog, verFrom,
+  safeEqual, makeToken, buildShimBody, parseLog, verFrom, memFrom,
   evEcho, evText, evThink, evToolUse, evToolDone, evFinal, evResult,
 } from "./dwell-lib.mjs";
 import { stripDemo } from "./strip-demo.mjs";
@@ -218,6 +218,26 @@ const eq = (a, b, name) => ok(JSON.stringify(a) === JSON.stringify(b), `${name}\
   const q = makeEventLog({ ver: "deadbeef" });
   eq(q.since(0).ver, "deadbeef", "指纹：poll 回复里带着这一版的值");
   eq(makeEventLog().since(0).ver, "1", "指纹：不给就还是老的写死值（兼容）");
+}
+
+/* ───── ④d 内存读数 ───── */
+{
+  const m = memFrom({ cgroup: "31138816\n", meminfo: "MemTotal:  3813404 kB\nMemAvailable:  1494616 kB\nCached: 1 kB\n" });
+  eq(m.self, 29.7, "内存:容器占用换算成 MiB");
+  eq(m.avail, 1460, "内存:整机可用换算成 MiB");
+}
+{
+  // 读不到就给 null —— 观察口坏掉不该把接口拖垮
+  const m = memFrom({});
+  eq(m.self, null, "内存:读不到容器读数时给 null");
+  eq(m.avail, null, "内存:读不到 meminfo 时给 null");
+  eq(memFrom({ cgroup: "max" }).self, null, "内存:cgroup 里是 max(没设上限)时给 null 不给 NaN");
+}
+{
+  // v1 的文件内容形状一样,照样认;MemAvailable 不在第一行也要找得到
+  const m = memFrom({ cgroup: "1048576", meminfo: "MemFree: 9 kB\nMemAvailable: 2048 kB" });
+  eq(m.self, 1, "内存:cgroup v1 的读数一样认");
+  eq(m.avail, 2, "内存:MemAvailable 不在首行也找得到");
 }
 
 /* ───── ⑤ 鉴权 ───── */

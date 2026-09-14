@@ -291,6 +291,25 @@ export function verFrom(...parts) {
   return (h1.toString(36) + h2.toString(36)).slice(0, 10);
 }
 
+/* ─────────── ⑥d 内存读数 ─────────── */
+// 所有者的原话:「怕硬盘不够用影响 VPS,我怕杀进程」。**那台机器没给任何容器设内存上限**
+// (`/sys/fs/cgroup/memory.max` = `max`),真爆了内核会挑一个进程杀,
+// 历史上第一顺位是 ears、**第二顺位就是晏**(`../TIMELINE.md` 08-02)。
+// 所以给她一个不用找人、不用钥匙、点开就能看的读数:`/api/health` 里的 `mem`。
+//
+// `self` = 这个容器现在占多少(cgroup v2 的 memory.current;v1 是另一个文件名,一并认)
+// `avail` = **整台机器**还剩多少可用(/proc/meminfo 的 MemAvailable,机器级、不是容器级)
+// 两个都是 MiB。读不到就给 null —— 观察口坏掉不该影响聊天。
+export function memFrom({ cgroup = "", meminfo = "" } = {}) {
+  const self = Number(String(cgroup).trim());
+  const m = /^MemAvailable:\s+(\d+)\s*kB/m.exec(String(meminfo));
+  const mib = (bytes) => Math.round((bytes / 1048576) * 10) / 10;
+  return {
+    self: Number.isFinite(self) && self > 0 ? mib(self) : null,
+    avail: m ? Math.round(+m[1] / 1024) : null,
+  };
+}
+
 /* ─────────── ⑦ 发给 shim 的请求体 ─────────── */
 // shim 只取**最后一条 user 消息**（server.js:541）——历史活在他的常驻进程里，
 // 我们不用把上下文送回去，也**不该**送（送了等于重复喂）。
