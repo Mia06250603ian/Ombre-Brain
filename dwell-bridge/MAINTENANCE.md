@@ -178,6 +178,10 @@ curl -s https://yan-dwell.zeabur.app/api/health   # persisted 要变成 true
 ```
 开机日志里会有一行 `[persist] 接回 N 条记录（文件里共 M 行）`,**那才是真接回来了的凭据**。
 
+⚠️ **路径填错/卷没挂上不会把服务弄坏,也不会骗你**:开机写不进去就**自己把落盘关掉**,
+`persisted` 如实报 `false`,日志里喊一句 `落盘已关闭`,聊天照常。
+(**这是 2026-09-14 自查补的**:原来那版只 catch 不降级,会一边报 `true` 一边每条都写失败。)
+
 ### 机制(动这块之前看一眼)
 
 - 记录写在 `<DATA_DIR>/messages.jsonl`,**一行一条,只追加**;开机读回**最后 4000 条**(`makeMsgLog` 的 cap)。

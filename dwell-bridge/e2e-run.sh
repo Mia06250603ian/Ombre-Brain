@@ -113,6 +113,16 @@ sleep 1
 check "不设 DATA_DIR 就还是旧行为（重建即丢）" "$(curl -s localhost:8793/api/health | grep -c '"persisted":false')" "1"
 kill $P3 2>/dev/null || true
 wait $P3 2>/dev/null || true
+
+# 路径填错 / 卷没挂上:必须**如实报 false**,不能一边报 true 一边每条都写失败
+SHIM_URL=http://127.0.0.1:8791 SHIM_KEY=testkey DWELL_PASS=hunter2 PORT=8794 DATA_DIR=/etc/hostname node server.js > "$DD/4.log" 2>&1 &
+P4=$!
+sleep 1
+check "路径用不了时 persisted 如实报 false" "$(curl -s localhost:8794/api/health | grep -c '"persisted":false')" "1"
+has   "开机日志喊出来了" "$(cat "$DD/4.log")" '落盘已关闭'
+check "但服务照常起来（聊天不受影响）" "$(curl -s -o /dev/null -w '%{http_code}' localhost:8794/api/health)" "200"
+kill $P4 2>/dev/null || true
+wait $P4 2>/dev/null || true
 rm -rf "$DD"
 
 say ""

@@ -29,7 +29,10 @@ const TURN_TIMEOUT_MS = +(process.env.TURN_TIMEOUT_MS || 600000);   // 他想久
 // 否则容器一重建照样清空 —— 那正是所有者report的「每推一次就丢一次记录」。
 // 不设 = 只在内存里（行为与改动前一致）。
 const DATA_DIR = process.env.DATA_DIR || "";
-const LOG_FILE = DATA_DIR ? path.join(DATA_DIR, "messages.jsonl") : "";
+// ⚠️ 开机发现写不进去(路径填错、卷没挂上、只读)就**把它降回空**,
+// 这样 /api/health 的 `persisted` 会如实说 false。
+// 别让它一直报 true —— 那会让人以为记录存着了,其实每条都在悄悄写失败。
+let LOG_FILE = DATA_DIR ? path.join(DATA_DIR, "messages.jsonl") : "";
 
 // 盐每次启动换一把：重启 = 所有已登录的会话失效。对一个维护入口来说这是想要的。
 const SALT = Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -63,6 +66,7 @@ function restoreLog() {
   if (!LOG_FILE) { log("[persist] DATA_DIR 没设——记录只在内存里，重建即丢"); return; }
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.accessSync(DATA_DIR, fs.constants.W_OK);      // 写不进去的话下面这行就抛，走 catch 关掉落盘
     if (!fs.existsSync(LOG_FILE)) { log("[persist] 还没有记录文件，从空开始"); return; }
     const r = parseLog(fs.readFileSync(LOG_FILE, "utf8"));
     log("[persist] 接回", msgs.restore(r.list), "条记录（文件里共", r.total, "行）");
@@ -77,7 +81,11 @@ function restoreLog() {
         log("[persist] 记录文件已轮转:", r.total, "→", r.tail.length, "行");
       } catch (e) { log("[persist] 轮转失败（不影响聊天）:", e.message); }
     }
-  } catch (e) { log("[persist] 读不回来:", e.message); }
+  } catch (e) {
+    LOG_FILE = "";
+    log("⚠️ [persist] 这个目录用不了，落盘已关闭（记录会像以前一样重建即丢）:", DATA_DIR, e.message);
+    log("⚠️ [persist] 多半是卷没挂上或路径填错了。/api/health 的 persisted 会如实报 false");
+  }
 }
 restoreLog();
 let busy = false;
