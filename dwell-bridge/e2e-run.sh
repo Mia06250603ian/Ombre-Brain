@@ -39,9 +39,22 @@ check "错口令被拒" "$(curl -s -o /dev/null -w '%{http_code}' -X POST localh
 curl -s -c /tmp/dwell-jar -o /dev/null -X POST localhost:8790/login -d 'pass=hunter2'
 check "对口令拿到 cookie" "$(grep -c dwell /tmp/dwell-jar)" "1"
 check "登录后接口放行" "$(curl -s -b /tmp/dwell-jar -o /dev/null -w '%{http_code}' localhost:8790/api/messages)" "200"
-# 预览壳没拉下来时，/shell 只该自己 404，不该拖垮别的路由（web/ 在演练里本来就是空的）
+# /shell 的两条路都要走到,而且不能靠「演练时 web/ 恰好是空的」——
+# 跑过 fetch-frontend.sh 之后那个假设就不成立了(2026-09-19 当场被自己绊了一次)。
+# 所以先把文件挪开验「缺文件」,再挪回来验「有文件」;挪走期间由 trap 兜底还原。
+SHELLF=web/shell.html
+if [ -f "$SHELLF" ]; then
+  mv "$SHELLF" "$SHELLF.e2ebak"
+  trap 'kill $FAKE $BR 2>/dev/null || true; [ -f web/shell.html.e2ebak ] && mv web/shell.html.e2ebak web/shell.html' EXIT
+fi
 check "/shell 缺文件时如实 404" "$(curl -s -b /tmp/dwell-jar -o /dev/null -w '%{http_code}' localhost:8790/shell)" "404"
 check "/shell 缺文件时说清楚怎么办" "$(curl -s -b /tmp/dwell-jar localhost:8790/shell | grep -c 'fetch-frontend.sh')" "1"
+if [ -f "$SHELLF.e2ebak" ]; then
+  mv "$SHELLF.e2ebak" "$SHELLF"
+  trap 'kill $FAKE $BR 2>/dev/null || true' EXIT
+  check "/shell 有文件时发得出来" "$(curl -s -b /tmp/dwell-jar localhost:8790/shell | grep -c '<title>dwell 三栏版')" "1"
+  check "/shell 发的是完整文档(不是片段)" "$(curl -s -b /tmp/dwell-jar localhost:8790/shell | grep -c '<!doctype html>')" "1"
+fi
 
 say "③ 发一句话，收整条流"
 curl -s -b /tmp/dwell-jar -X POST localhost:8790/api/send \
