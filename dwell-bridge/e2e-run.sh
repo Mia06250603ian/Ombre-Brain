@@ -29,11 +29,19 @@ check "manifest 不带口令能取" "$(curl -s -o /dev/null -w '%{http_code}' lo
 check "/index.html 取不到（没把整个 web/ 静态化）" "$(curl -s -o /dev/null -w '%{http_code}' localhost:8790/index.html)" "404"
 check "未登录的根路径不含真页面" "$(curl -s localhost:8790/ | grep -c 'function handle')" "0"
 
+say "①c 预览壳 /shell 和聊天页同一把锁（2026-09-19，临时路由）"
+check "/shell 未登录给登录页" "$(curl -s localhost:8790/shell | grep -c '口令')" "1"
+check "/shell 未登录不漏内容" "$(curl -s localhost:8790/shell | grep -c 'dwell 三栏版')" "0"
+check "/shell.html 取不到（仍然没静态化 web/）" "$(curl -s -o /dev/null -w '%{http_code}' localhost:8790/shell.html)" "404"
+
 say "② 登录"
 check "错口令被拒" "$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8790/login -d 'pass=wrong')" "401"
 curl -s -c /tmp/dwell-jar -o /dev/null -X POST localhost:8790/login -d 'pass=hunter2'
 check "对口令拿到 cookie" "$(grep -c dwell /tmp/dwell-jar)" "1"
 check "登录后接口放行" "$(curl -s -b /tmp/dwell-jar -o /dev/null -w '%{http_code}' localhost:8790/api/messages)" "200"
+# 预览壳没拉下来时，/shell 只该自己 404，不该拖垮别的路由（web/ 在演练里本来就是空的）
+check "/shell 缺文件时如实 404" "$(curl -s -b /tmp/dwell-jar -o /dev/null -w '%{http_code}' localhost:8790/shell)" "404"
+check "/shell 缺文件时说清楚怎么办" "$(curl -s -b /tmp/dwell-jar localhost:8790/shell | grep -c 'fetch-frontend.sh')" "1"
 
 say "③ 发一句话，收整条流"
 curl -s -b /tmp/dwell-jar -X POST localhost:8790/api/send \

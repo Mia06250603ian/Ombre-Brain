@@ -21,6 +21,16 @@ node "$(dirname "$0")/strip-demo.mjs" "$OUT.raw" "$OUT"
 
 rm -f "$OUT.raw"
 
+# 新外壳的实机预览（2026-09-19 加，**临时**）。服务端走 /shell，和 `/` 同一把口令锁。
+# 拉不到只是 /shell 报 404，聊天页不受影响——所以这里不 set -e 退出。
+# ⚠️ 三栏壳并进 index.html 之后，这一段和 server.js 里那条路由一起删。
+if curl -fsSL "https://raw.githubusercontent.com/Mia06250603ian/dwell-on-something/${BRANCH}/web/shell.html" \
+     -o "$(dirname "$OUT")/shell.html"; then
+  echo "  ✓ shell.html（预览壳，/shell）"
+else
+  echo "  ！shell.html 没拉到（/shell 会 404，聊天页不受影响）"
+fi
+
 # 桌面图标与 manifest。index.html 的 <head> 早就引用了它们，
 # 缺了的话 iOS「添加到主屏幕」会拿网页截图当图标。
 BASE="https://raw.githubusercontent.com/Mia06250603ian/dwell-on-something/${BRANCH}/web"

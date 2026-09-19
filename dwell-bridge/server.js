@@ -231,6 +231,24 @@ app.get("/", (req, res) => {
   res.type("html").send(fs.readFileSync(f, "utf8"));
 });
 
+/* 新外壳的**实机预览**（2026-09-19 加）。
+   为什么单开一条、而不是把 index.html 换掉：换了她的聊天页当场就没了，
+   而这一步只是「让她在真机上全屏看一眼比例和字体」。两者共用同一把口令锁。
+   文件同样**不入库**（同上面那条理由），由 fetch-frontend.sh 从 dwell 仓库拉。
+   拉不到只是这一条 404，`/` 照常——所以它不会把部署拖下水。
+   ⚠️ **这是临时的**：三栏壳并进 index.html 之后，这条路由、`web/shell.html`
+   和 fetch-frontend.sh 里对应那行一起删。 */
+app.get("/shell", (req, res) => {
+  if (!authed(req)) return res.type("html").send(LOGIN_PAGE.replace("__ERR__", ""));
+  const f = path.join(HERE, "web", "shell.html");
+  if (!fs.existsSync(f)) {
+    return res.status(404).type("html").send(
+      "<meta charset=utf-8><p style='font:16px system-ui;padding:24px'>" +
+      "预览壳还没放进来。部署前跑一次 <code>./fetch-frontend.sh</code>。");
+  }
+  res.type("html").send(fs.readFileSync(f, "utf8"));
+});
+
 /* ─────────── 接口 ─────────── */
 
 const guard = (req, res, next) => authed(req) ? next() : res.status(401).json({ ok: false });
