@@ -65,7 +65,7 @@ if (!DWELL_PASS) log("⚠️ DWELL_PASS 没设——**页面没有锁**，绝对
    （`web/index.html` 的 `tryReload()`：输入框有草稿、或正在往上翻老账时会先挂起，不会打断她）。
    **算的是发出去的那三个文件**：网页本体 + 本层的两个源文件。
    拿不到网页文件（还没跑 fetch-frontend.sh）也不要紧，剩下两个照样算得出值。 */
-const VER = verFrom(...["web/index.html", "server.js", "dwell-lib.mjs"].map((f) => {
+const VER = verFrom(...["web/index.html", "web/chat.html", "server.js", "dwell-lib.mjs"].map((f) => {
   try { return fs.readFileSync(path.join(HERE, f), "utf8"); } catch { return `missing:${f}`; }
 }));
 
@@ -186,21 +186,28 @@ input{padding:13px 15px;font-size:16px;border-radius:10px;border:1px solid #ecec
 button{padding:13px;font-size:15px;border:0;border-radius:10px;background:#e1734f;color:#fff;font-weight:600}
 p{margin:0;text-align:center;font-size:13px;color:#c0392b;min-height:18px}
 </style>
-<form method="POST" action="login">
+<form method="POST" action="login__TO__">
   <h1>dwell</h1>
   <input type="password" name="pass" placeholder="口令" autofocus autocomplete="current-password">
   <button>进去</button>
   <p>__ERR__</p>
 </form>`;
 
+/* 登录页要记得「她本来想去哪」。
+   ⚠️ 不记的话有个很难查的后果:聊天页是装在外壳 iframe 里的,cookie 过期后
+   iframe 里弹出登录页,输完口令 `redirect("./")` 会把**整个三栏壳再套进那个 iframe**。
+   ⚠️ **只认白名单里的值**,绝不把 query 原样塞进 redirect(那是开放重定向)。 */
+const loginPage = (err = "", to = "") =>
+  LOGIN_PAGE.replace("__ERR__", err).replace("__TO__", to === "chat" ? "?to=chat" : "");
+
 app.post("/login", express.urlencoded({ extended: false }), (req, res) => {
   if (!safeEqual(req.body?.pass, DWELL_PASS)) {
     log("[login] 口令不对");
-    return res.status(401).type("html").send(LOGIN_PAGE.replace("__ERR__", "口令不对"));
+    return res.status(401).type("html").send(loginPage("口令不对", req.query?.to));
   }
   res.setHeader("Set-Cookie",
     `dwell=${encodeURIComponent(makeToken(DWELL_PASS, SALT))}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`);
-  res.redirect("./");
+  res.redirect(req.query?.to === "chat" ? "./chat.html" : "./");
 });
 
 /* ─────────── 网页本体 ─────────── */
@@ -221,12 +228,29 @@ app.get("/manifest.json", (req, res) => {
 });
 
 app.get("/", (req, res) => {
-  if (!authed(req)) return res.type("html").send(LOGIN_PAGE.replace("__ERR__", ""));
+  if (!authed(req)) return res.type("html").send(loginPage());
   const f = path.join(HERE, "web", "index.html");
   if (!fs.existsSync(f)) {
     return res.status(500).type("html").send(
       "<meta charset=utf-8><p style='font:16px system-ui;padding:24px'>" +
       "网页文件还没放进来。部署前跑一次 <code>./fetch-frontend.sh</code>。");
+  }
+  res.type("html").send(fs.readFileSync(f, "utf8"));
+});
+
+/* 聊天页本体(2026-09-19 起)。
+   外壳(index.html)的 Chats 列表点一行,就把这一页用 iframe 装进来。
+   ⚠️ **它就是 2026-09-19 之前那整页聊天,一个字节没改** —— 所有者的要求是
+   「chat 目前的 ui 不变,点进去做聊天页」;那页里 43 处「照官端」是她一处处对齐的。
+   **和 `/` 同一把口令锁**;同样不入库,由 fetch-frontend.sh 从 dwell 仓库拉并删演示块。
+   ⚠️ 别改名:外壳里写死的是 `chat.html` 这个相对地址。 */
+app.get("/chat.html", (req, res) => {
+  if (!authed(req)) return res.status(401).type("html").send(loginPage("", "chat"));
+  const f = path.join(HERE, "web", "chat.html");
+  if (!fs.existsSync(f)) {
+    return res.status(404).type("html").send(
+      "<meta charset=utf-8><p style='font:16px system-ui;padding:24px'>" +
+      "聊天页还没放进来。部署前跑一次 <code>./fetch-frontend.sh</code>。");
   }
   res.type("html").send(fs.readFileSync(f, "utf8"));
 });

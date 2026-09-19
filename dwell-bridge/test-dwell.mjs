@@ -351,20 +351,62 @@ const eq = (a, b, name) => ok(JSON.stringify(a) === JSON.stringify(b), `${name}\
 }
 
 /* ───── ⑨ 真前端（如果已经拉下来了）───── */
+/* ⚠️ 2026-09-19 起 index.html 有两种形态,这里要分开查:
+   - **新壳**(现在线上就是这个):三栏外壳,**聊天还没接进来**;
+   - **聊天页**(8088ef7 那份):完整的聊天管线。
+   所有者的计划是先换壳、功能之后一间间接回来。**聊天接回来之后,下面自动走回聊天那一支** ——
+   所以别把聊天那几条删掉,它们是接回来时的验收单。 */
 if (fs.existsSync(new URL("./web/index.html", import.meta.url))) {
   const html = fs.readFileSync(new URL("./web/index.html", import.meta.url), "utf8");
   ok(!html.includes("window.fetch ="), "真前端：演示拦截器确实不在了");
-  ok(html.includes("function handle(d)"), "真前端：事件处理函数还在");
-  ok(html.includes("api/poll?since="), "真前端：长轮询还在");
-  ok(html.includes("api/messages?limit="), "真前端：历史回放还在");
-  ok(html.includes("api/send"), "真前端：发送还在");
-  // 跨服务的契约（规矩 6）：ver 这个字段是前端那边先写好的，本层负责让它真的会变。
-  // 前端哪天不看它了，这条会挂——那时本层算指纹就白算了。
-  ok(html.includes("d.ver"), "真前端：自动重载读的那个 ver 字段还在");
-  ok(html.includes("location.reload()"), "真前端：换版之后会自己重载");
-  ok(!html.includes("'api/said':"), "真前端：写死的演示数据没了");
+
+  const isShell = html.includes('data-tab="chats"') && !html.includes("function handle(d)");
+  if (isShell) {
+    ok(html.includes('data-tab="home"') && html.includes('data-tab="diary"'), "新壳：底部三栏都在");
+    ok(html.includes("id=\"tab-home\""), "新壳：首页那屏在");
+    // 跨服务的契约（规矩 6）：ver 这个字段的约定是前端定的，本层负责让它真的会变。
+    // 新壳没有长轮询，所以它改成直接读 /api/health 的 ver —— 契约本身必须还在，
+    // 否则部署完她那页会停在旧内容上（2026-09-19「界面完全没变」沾的就是这个边）。
+    ok(html.includes("api/health"), "新壳：换版自动重载还连着（读 /api/health 的 ver）");
+    ok(html.includes("d.ver"), "新壳：读的确实是 ver 这个字段");
+    ok(html.includes("location.reload()"), "新壳：换版之后会自己重载");
+    console.log("  ⚠️ 现在的 index.html 是【三栏新壳】，聊天还没接进来（所有者 2026-09-19 定的顺序：先换壳）");
+  } else {
+    ok(html.includes("function handle(d)"), "真前端：事件处理函数还在");
+    ok(html.includes("api/poll?since="), "真前端：长轮询还在");
+    ok(html.includes("api/messages?limit="), "真前端：历史回放还在");
+    ok(html.includes("api/send"), "真前端：发送还在");
+    ok(html.includes("d.ver"), "真前端：自动重载读的那个 ver 字段还在");
+    ok(html.includes("location.reload()"), "真前端：换版之后会自己重载");
+    ok(!html.includes("'api/said':"), "真前端：写死的演示数据没了");
+  }
 } else {
   console.log("  （跳过真前端检查：还没跑 fetch-frontend.sh）");
+}
+
+/* ───── ⑩ 聊天页(2026-09-19 起单独一份,外壳用 iframe 装它)───── */
+if (fs.existsSync(new URL("./web/chat.html", import.meta.url))) {
+  const c = fs.readFileSync(new URL("./web/chat.html", import.meta.url), "utf8");
+  ok(!c.includes("window.fetch ="), "聊天页：演示拦截器确实不在了");
+  ok(c.includes("function handle(d)"), "聊天页：事件处理函数还在");
+  ok(c.includes("api/poll?since="), "聊天页：长轮询还在");
+  ok(c.includes("api/messages?limit="), "聊天页：历史回放还在");
+  ok(c.includes("api/send"), "聊天页：发送还在");
+  ok(c.includes("d.ver"), "聊天页：自动重载读的那个 ver 字段还在");
+  ok(c.includes("location.reload()"), "聊天页：换版之后会自己重载");
+  ok(!c.includes("'api/said':"), "聊天页：写死的演示数据没了");
+  /* 外壳里写死的是相对地址 chat.html，这条钉住「别改名」。
+     ⚠️ 只在 index.html 真的是新壳时才查 —— 中间状态(chat.html 已经拉下来、
+     index.html 还是老聊天页)是合法的，那时这条不该红。 */
+  const idx = new URL("./web/index.html", import.meta.url);
+  if (fs.existsSync(idx)) {
+    const ih = fs.readFileSync(idx, "utf8");
+    if (ih.includes('data-tab="chats"')) {
+      ok(ih.includes('data-chat="chat.html"'), "外壳：Chats 那一行指向的确实是 chat.html");
+    }
+  }
+} else {
+  console.log("  （跳过聊天页检查：还没跑 fetch-frontend.sh）");
 }
 
 console.log(fail ? `\n✗ ${pass} 过 / ${fail} 挂` : `\n✓ 全绿：${pass} 项`);
