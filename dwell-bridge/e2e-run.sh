@@ -38,6 +38,13 @@ say "② 登录"
 check "错口令被拒" "$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8790/login -d 'pass=wrong')" "401"
 curl -s -c /tmp/dwell-jar -o /dev/null -X POST localhost:8790/login -d 'pass=hunter2'
 check "对口令拿到 cookie" "$(grep -c dwell /tmp/dwell-jar)" "1"
+# ⚠️ 2026-09-19 的真 bug:加了 /shell 却没动登录的跳转,于是从 /shell 输完口令被弹回聊天页,
+# 所有者看到的还是老界面(「界面完全没变」)。这三条钉住「登录后回到她本来想去的那一页」。
+check "从 /shell 登录会回到 /shell" "$(curl -s -o /dev/null -w '%{redirect_url}' -X POST 'localhost:8790/login?to=shell' -d 'pass=hunter2' | sed 's#.*/##')" "shell"
+check "从聊天页登录仍然回聊天页" "$(curl -s -o /dev/null -w '%{redirect_url}' -X POST 'localhost:8790/login' -d 'pass=hunter2' | grep -c 'shell')" "0"
+check "口令输错时不丢「本来想去哪」" "$(curl -s -X POST 'localhost:8790/login?to=shell' -d 'pass=wrong' | grep -c 'action="login?to=shell"')" "1"
+check "未登录开 /shell,登录页记得目的地" "$(curl -s localhost:8790/shell | grep -c 'action="login?to=shell"')" "1"
+check "未登录开聊天页,登录页不带目的地" "$(curl -s localhost:8790/ | grep -c 'action="login"')" "1"
 check "登录后接口放行" "$(curl -s -b /tmp/dwell-jar -o /dev/null -w '%{http_code}' localhost:8790/api/messages)" "200"
 # /shell 的两条路都要走到,而且不能靠「演练时 web/ 恰好是空的」——
 # 跑过 fetch-frontend.sh 之后那个假设就不成立了(2026-09-19 当场被自己绊了一次)。
