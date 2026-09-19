@@ -38,6 +38,12 @@ check "登录后接口放行" "$(curl -s -b /tmp/dwell-jar -o /dev/null -w '%{ht
 say "②b 聊天页(2026-09-19:外壳点一行用 iframe 装它)"
 check "/chat.html 未登录被挡" "$(curl -s -o /dev/null -w '%{http_code}' localhost:8790/chat.html)" "401"
 check "/chat.html 未登录不漏内容" "$(curl -s localhost:8790/chat.html | grep -c 'function handle')" "0"
+# ⚠️ 聊天页装在外壳的 iframe 里:cookie 过期后在 iframe 里重登,不能把整个三栏壳套回 iframe
+check "/chat.html 的登录页记得目的地" "$(curl -s localhost:8790/chat.html | grep -c 'action="login?to=chat"')" "1"
+check "从聊天页登录会回到聊天页" "$(curl -s -o /dev/null -w '%{redirect_url}' -X POST 'localhost:8790/login?to=chat' -d 'pass=hunter2' | sed 's#.*/##')" "chat.html"
+check "从外壳登录仍然回外壳" "$(curl -s -o /dev/null -w '%{redirect_url}' -X POST 'localhost:8790/login' -d 'pass=hunter2' | grep -c 'chat')" "0"
+check "口令输错时不丢目的地" "$(curl -s -X POST 'localhost:8790/login?to=chat' -d 'pass=wrong' | grep -c 'action="login?to=chat"')" "1"
+check "外壳的登录页不带目的地" "$(curl -s localhost:8790/ | grep -c 'action="login"')" "1"
 if [ -f web/chat.html ]; then
   check "/chat.html 登录后发得出来" "$(curl -s -b /tmp/dwell-jar localhost:8790/chat.html | grep -c 'function handle')" "1"
 else

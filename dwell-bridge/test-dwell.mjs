@@ -395,11 +395,15 @@ if (fs.existsSync(new URL("./web/chat.html", import.meta.url))) {
   ok(c.includes("d.ver"), "聊天页：自动重载读的那个 ver 字段还在");
   ok(c.includes("location.reload()"), "聊天页：换版之后会自己重载");
   ok(!c.includes("'api/said':"), "聊天页：写死的演示数据没了");
-  // 外壳里写死的是相对地址 chat.html。这条钉住「别改名」。
+  /* 外壳里写死的是相对地址 chat.html，这条钉住「别改名」。
+     ⚠️ 只在 index.html 真的是新壳时才查 —— 中间状态(chat.html 已经拉下来、
+     index.html 还是老聊天页)是合法的，那时这条不该红。 */
   const idx = new URL("./web/index.html", import.meta.url);
   if (fs.existsSync(idx)) {
-    ok(fs.readFileSync(idx, "utf8").includes('data-chat="chat.html"'),
-       "外壳：Chats 那一行指向的确实是 chat.html");
+    const ih = fs.readFileSync(idx, "utf8");
+    if (ih.includes('data-tab="chats"')) {
+      ok(ih.includes('data-chat="chat.html"'), "外壳：Chats 那一行指向的确实是 chat.html");
+    }
   }
 } else {
   console.log("  （跳过聊天页检查：还没跑 fetch-frontend.sh）");

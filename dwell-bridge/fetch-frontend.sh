@@ -21,14 +21,15 @@ node "$(dirname "$0")/strip-demo.mjs" "$OUT.raw" "$OUT"
 
 rm -f "$OUT.raw"
 
-# 聊天页(2026-09-19 起):外壳的 Chats 点一行就用 iframe 装它。
-# 演示块同样要删 —— 不删的话它会把 api/ 全拦成假数据。
+# 聊天页(2026-09-19 起):外壳的 Chats 点一行就用 iframe 装它,所以它和网页本体一样是**必需品**。
+# ⚠️ 故意不加兜底:拉不到就该当场停(set -e),而且**停在拉图标/桌宠之前** ——
+# 半套文件传上去比整个不传更难查。演示块同样要删,不删它会把 api/ 全拦成假数据。
+CHAT="$(dirname "$OUT")/chat.html"
 echo "拉聊天页…"
-curl -fsSL "https://raw.githubusercontent.com/Mia06250603ian/dwell-on-something/${BRANCH}/web/chat.html" \
-  -o "$(dirname "$OUT")/chat.html.raw"
-node "$(dirname "$0")/strip-demo.mjs" "$(dirname "$OUT")/chat.html.raw" "$(dirname "$OUT")/chat.html"
-rm -f "$(dirname "$OUT")/chat.html.raw"
-echo "  ✓ chat.html（$(wc -c < "$(dirname "$OUT")/chat.html") 字节）"
+curl -fsSL "https://raw.githubusercontent.com/Mia06250603ian/dwell-on-something/${BRANCH}/web/chat.html" -o "$CHAT.raw"
+node "$(dirname "$0")/strip-demo.mjs" "$CHAT.raw" "$CHAT"
+rm -f "$CHAT.raw"
+echo "  ✓ chat.html（$(wc -c < "$CHAT") 字节）"
 
 # 桌面图标与 manifest。index.html 的 <head> 早就引用了它们，
 # 缺了的话 iOS「添加到主屏幕」会拿网页截图当图标。
