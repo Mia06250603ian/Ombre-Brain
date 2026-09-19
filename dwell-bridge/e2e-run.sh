@@ -33,6 +33,17 @@ say "② 登录"
 check "错口令被拒" "$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8790/login -d 'pass=wrong')" "401"
 curl -s -c /tmp/dwell-jar -o /dev/null -X POST localhost:8790/login -d 'pass=hunter2'
 check "对口令拿到 cookie" "$(grep -c dwell /tmp/dwell-jar)" "1"
+check "登录后接口放行" "$(curl -s -b /tmp/dwell-jar -o /dev/null -w '%{http_code}' localhost:8790/api/messages)" "200"
+
+say "②b 聊天页(2026-09-19:外壳点一行用 iframe 装它)"
+check "/chat.html 未登录被挡" "$(curl -s -o /dev/null -w '%{http_code}' localhost:8790/chat.html)" "401"
+check "/chat.html 未登录不漏内容" "$(curl -s localhost:8790/chat.html | grep -c 'function handle')" "0"
+if [ -f web/chat.html ]; then
+  check "/chat.html 登录后发得出来" "$(curl -s -b /tmp/dwell-jar localhost:8790/chat.html | grep -c 'function handle')" "1"
+else
+  check "/chat.html 缺文件时如实 404" "$(curl -s -b /tmp/dwell-jar -o /dev/null -w '%{http_code}' localhost:8790/chat.html)" "404"
+fi
+
 say "③ 发一句话，收整条流"
 curl -s -b /tmp/dwell-jar -X POST localhost:8790/api/send \
   -H 'Content-Type: application/json' -d '{"text":"你还记得吗"}' > /dev/null

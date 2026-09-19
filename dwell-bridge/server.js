@@ -65,7 +65,7 @@ if (!DWELL_PASS) log("⚠️ DWELL_PASS 没设——**页面没有锁**，绝对
    （`web/index.html` 的 `tryReload()`：输入框有草稿、或正在往上翻老账时会先挂起，不会打断她）。
    **算的是发出去的那三个文件**：网页本体 + 本层的两个源文件。
    拿不到网页文件（还没跑 fetch-frontend.sh）也不要紧，剩下两个照样算得出值。 */
-const VER = verFrom(...["web/index.html", "server.js", "dwell-lib.mjs"].map((f) => {
+const VER = verFrom(...["web/index.html", "web/chat.html", "server.js", "dwell-lib.mjs"].map((f) => {
   try { return fs.readFileSync(path.join(HERE, f), "utf8"); } catch { return `missing:${f}`; }
 }));
 
@@ -227,6 +227,23 @@ app.get("/", (req, res) => {
     return res.status(500).type("html").send(
       "<meta charset=utf-8><p style='font:16px system-ui;padding:24px'>" +
       "网页文件还没放进来。部署前跑一次 <code>./fetch-frontend.sh</code>。");
+  }
+  res.type("html").send(fs.readFileSync(f, "utf8"));
+});
+
+/* 聊天页本体(2026-09-19 起)。
+   外壳(index.html)的 Chats 列表点一行,就把这一页用 iframe 装进来。
+   ⚠️ **它就是 2026-09-19 之前那整页聊天,一个字节没改** —— 所有者的要求是
+   「chat 目前的 ui 不变,点进去做聊天页」;那页里 43 处「照官端」是她一处处对齐的。
+   **和 `/` 同一把口令锁**;同样不入库,由 fetch-frontend.sh 从 dwell 仓库拉并删演示块。
+   ⚠️ 别改名:外壳里写死的是 `chat.html` 这个相对地址。 */
+app.get("/chat.html", (req, res) => {
+  if (!authed(req)) return res.status(401).type("html").send(LOGIN_PAGE.replace("__ERR__", ""));
+  const f = path.join(HERE, "web", "chat.html");
+  if (!fs.existsSync(f)) {
+    return res.status(404).type("html").send(
+      "<meta charset=utf-8><p style='font:16px system-ui;padding:24px'>" +
+      "聊天页还没放进来。部署前跑一次 <code>./fetch-frontend.sh</code>。");
   }
   res.type("html").send(fs.readFileSync(f, "utf8"));
 });

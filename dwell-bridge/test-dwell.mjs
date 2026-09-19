@@ -384,5 +384,26 @@ if (fs.existsSync(new URL("./web/index.html", import.meta.url))) {
   console.log("  （跳过真前端检查：还没跑 fetch-frontend.sh）");
 }
 
+/* ───── ⑩ 聊天页(2026-09-19 起单独一份,外壳用 iframe 装它)───── */
+if (fs.existsSync(new URL("./web/chat.html", import.meta.url))) {
+  const c = fs.readFileSync(new URL("./web/chat.html", import.meta.url), "utf8");
+  ok(!c.includes("window.fetch ="), "聊天页：演示拦截器确实不在了");
+  ok(c.includes("function handle(d)"), "聊天页：事件处理函数还在");
+  ok(c.includes("api/poll?since="), "聊天页：长轮询还在");
+  ok(c.includes("api/messages?limit="), "聊天页：历史回放还在");
+  ok(c.includes("api/send"), "聊天页：发送还在");
+  ok(c.includes("d.ver"), "聊天页：自动重载读的那个 ver 字段还在");
+  ok(c.includes("location.reload()"), "聊天页：换版之后会自己重载");
+  ok(!c.includes("'api/said':"), "聊天页：写死的演示数据没了");
+  // 外壳里写死的是相对地址 chat.html。这条钉住「别改名」。
+  const idx = new URL("./web/index.html", import.meta.url);
+  if (fs.existsSync(idx)) {
+    ok(fs.readFileSync(idx, "utf8").includes('data-chat="chat.html"'),
+       "外壳：Chats 那一行指向的确实是 chat.html");
+  }
+} else {
+  console.log("  （跳过聊天页检查：还没跑 fetch-frontend.sh）");
+}
+
 console.log(fail ? `\n✗ ${pass} 过 / ${fail} 挂` : `\n✓ 全绿：${pass} 项`);
 process.exit(fail ? 1 : 0);

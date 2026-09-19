@@ -21,6 +21,15 @@ node "$(dirname "$0")/strip-demo.mjs" "$OUT.raw" "$OUT"
 
 rm -f "$OUT.raw"
 
+# 聊天页(2026-09-19 起):外壳的 Chats 点一行就用 iframe 装它。
+# 演示块同样要删 —— 不删的话它会把 api/ 全拦成假数据。
+echo "拉聊天页…"
+curl -fsSL "https://raw.githubusercontent.com/Mia06250603ian/dwell-on-something/${BRANCH}/web/chat.html" \
+  -o "$(dirname "$OUT")/chat.html.raw"
+node "$(dirname "$0")/strip-demo.mjs" "$(dirname "$OUT")/chat.html.raw" "$(dirname "$OUT")/chat.html"
+rm -f "$(dirname "$OUT")/chat.html.raw"
+echo "  ✓ chat.html（$(wc -c < "$(dirname "$OUT")/chat.html") 字节）"
+
 # 桌面图标与 manifest。index.html 的 <head> 早就引用了它们，
 # 缺了的话 iOS「添加到主屏幕」会拿网页截图当图标。
 BASE="https://raw.githubusercontent.com/Mia06250603ian/dwell-on-something/${BRANCH}/web"
