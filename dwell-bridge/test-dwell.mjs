@@ -351,18 +351,35 @@ const eq = (a, b, name) => ok(JSON.stringify(a) === JSON.stringify(b), `${name}\
 }
 
 /* ───── ⑨ 真前端（如果已经拉下来了）───── */
+/* ⚠️ 2026-09-19 起 index.html 有两种形态,这里要分开查:
+   - **新壳**(现在线上就是这个):三栏外壳,**聊天还没接进来**;
+   - **聊天页**(8088ef7 那份):完整的聊天管线。
+   所有者的计划是先换壳、功能之后一间间接回来。**聊天接回来之后,下面自动走回聊天那一支** ——
+   所以别把聊天那几条删掉,它们是接回来时的验收单。 */
 if (fs.existsSync(new URL("./web/index.html", import.meta.url))) {
   const html = fs.readFileSync(new URL("./web/index.html", import.meta.url), "utf8");
   ok(!html.includes("window.fetch ="), "真前端：演示拦截器确实不在了");
-  ok(html.includes("function handle(d)"), "真前端：事件处理函数还在");
-  ok(html.includes("api/poll?since="), "真前端：长轮询还在");
-  ok(html.includes("api/messages?limit="), "真前端：历史回放还在");
-  ok(html.includes("api/send"), "真前端：发送还在");
-  // 跨服务的契约（规矩 6）：ver 这个字段是前端那边先写好的，本层负责让它真的会变。
-  // 前端哪天不看它了，这条会挂——那时本层算指纹就白算了。
-  ok(html.includes("d.ver"), "真前端：自动重载读的那个 ver 字段还在");
-  ok(html.includes("location.reload()"), "真前端：换版之后会自己重载");
-  ok(!html.includes("'api/said':"), "真前端：写死的演示数据没了");
+
+  const isShell = html.includes('data-tab="chats"') && !html.includes("function handle(d)");
+  if (isShell) {
+    ok(html.includes('data-tab="home"') && html.includes('data-tab="diary"'), "新壳：底部三栏都在");
+    ok(html.includes("id=\"tab-home\""), "新壳：首页那屏在");
+    // 跨服务的契约（规矩 6）：ver 这个字段的约定是前端定的，本层负责让它真的会变。
+    // 新壳没有长轮询，所以它改成直接读 /api/health 的 ver —— 契约本身必须还在，
+    // 否则部署完她那页会停在旧内容上（2026-09-19「界面完全没变」沾的就是这个边）。
+    ok(html.includes("api/health"), "新壳：换版自动重载还连着（读 /api/health 的 ver）");
+    ok(html.includes("d.ver"), "新壳：读的确实是 ver 这个字段");
+    ok(html.includes("location.reload()"), "新壳：换版之后会自己重载");
+    console.log("  ⚠️ 现在的 index.html 是【三栏新壳】，聊天还没接进来（所有者 2026-09-19 定的顺序：先换壳）");
+  } else {
+    ok(html.includes("function handle(d)"), "真前端：事件处理函数还在");
+    ok(html.includes("api/poll?since="), "真前端：长轮询还在");
+    ok(html.includes("api/messages?limit="), "真前端：历史回放还在");
+    ok(html.includes("api/send"), "真前端：发送还在");
+    ok(html.includes("d.ver"), "真前端：自动重载读的那个 ver 字段还在");
+    ok(html.includes("location.reload()"), "真前端：换版之后会自己重载");
+    ok(!html.includes("'api/said':"), "真前端：写死的演示数据没了");
+  }
 } else {
   console.log("  （跳过真前端检查：还没跑 fetch-frontend.sh）");
 }

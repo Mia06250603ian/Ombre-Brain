@@ -29,40 +29,10 @@ check "manifest 不带口令能取" "$(curl -s -o /dev/null -w '%{http_code}' lo
 check "/index.html 取不到（没把整个 web/ 静态化）" "$(curl -s -o /dev/null -w '%{http_code}' localhost:8790/index.html)" "404"
 check "未登录的根路径不含真页面" "$(curl -s localhost:8790/ | grep -c 'function handle')" "0"
 
-say "①c 预览壳 /shell 和聊天页同一把锁（2026-09-19，临时路由）"
-check "/shell 未登录给登录页" "$(curl -s localhost:8790/shell | grep -c '口令')" "1"
-check "/shell 未登录不漏内容" "$(curl -s localhost:8790/shell | grep -c 'dwell 三栏版')" "0"
-check "/shell.html 取不到（仍然没静态化 web/）" "$(curl -s -o /dev/null -w '%{http_code}' localhost:8790/shell.html)" "404"
-
 say "② 登录"
 check "错口令被拒" "$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8790/login -d 'pass=wrong')" "401"
 curl -s -c /tmp/dwell-jar -o /dev/null -X POST localhost:8790/login -d 'pass=hunter2'
 check "对口令拿到 cookie" "$(grep -c dwell /tmp/dwell-jar)" "1"
-# ⚠️ 2026-09-19 的真 bug:加了 /shell 却没动登录的跳转,于是从 /shell 输完口令被弹回聊天页,
-# 所有者看到的还是老界面(「界面完全没变」)。这三条钉住「登录后回到她本来想去的那一页」。
-check "从 /shell 登录会回到 /shell" "$(curl -s -o /dev/null -w '%{redirect_url}' -X POST 'localhost:8790/login?to=shell' -d 'pass=hunter2' | sed 's#.*/##')" "shell"
-check "从聊天页登录仍然回聊天页" "$(curl -s -o /dev/null -w '%{redirect_url}' -X POST 'localhost:8790/login' -d 'pass=hunter2' | grep -c 'shell')" "0"
-check "口令输错时不丢「本来想去哪」" "$(curl -s -X POST 'localhost:8790/login?to=shell' -d 'pass=wrong' | grep -c 'action="login?to=shell"')" "1"
-check "未登录开 /shell,登录页记得目的地" "$(curl -s localhost:8790/shell | grep -c 'action="login?to=shell"')" "1"
-check "未登录开聊天页,登录页不带目的地" "$(curl -s localhost:8790/ | grep -c 'action="login"')" "1"
-check "登录后接口放行" "$(curl -s -b /tmp/dwell-jar -o /dev/null -w '%{http_code}' localhost:8790/api/messages)" "200"
-# /shell 的两条路都要走到,而且不能靠「演练时 web/ 恰好是空的」——
-# 跑过 fetch-frontend.sh 之后那个假设就不成立了(2026-09-19 当场被自己绊了一次)。
-# 所以先把文件挪开验「缺文件」,再挪回来验「有文件」;挪走期间由 trap 兜底还原。
-SHELLF=web/shell.html
-if [ -f "$SHELLF" ]; then
-  mv "$SHELLF" "$SHELLF.e2ebak"
-  trap 'kill $FAKE $BR 2>/dev/null || true; [ -f web/shell.html.e2ebak ] && mv web/shell.html.e2ebak web/shell.html' EXIT
-fi
-check "/shell 缺文件时如实 404" "$(curl -s -b /tmp/dwell-jar -o /dev/null -w '%{http_code}' localhost:8790/shell)" "404"
-check "/shell 缺文件时说清楚怎么办" "$(curl -s -b /tmp/dwell-jar localhost:8790/shell | grep -c 'fetch-frontend.sh')" "1"
-if [ -f "$SHELLF.e2ebak" ]; then
-  mv "$SHELLF.e2ebak" "$SHELLF"
-  trap 'kill $FAKE $BR 2>/dev/null || true' EXIT
-  check "/shell 有文件时发得出来" "$(curl -s -b /tmp/dwell-jar localhost:8790/shell | grep -c '<title>dwell 三栏版')" "1"
-  check "/shell 发的是完整文档(不是片段)" "$(curl -s -b /tmp/dwell-jar localhost:8790/shell | grep -c '<!doctype html>')" "1"
-fi
-
 say "③ 发一句话，收整条流"
 curl -s -b /tmp/dwell-jar -X POST localhost:8790/api/send \
   -H 'Content-Type: application/json' -d '{"text":"你还记得吗"}' > /dev/null

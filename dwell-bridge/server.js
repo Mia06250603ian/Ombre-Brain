@@ -186,28 +186,21 @@ input{padding:13px 15px;font-size:16px;border-radius:10px;border:1px solid #ecec
 button{padding:13px;font-size:15px;border:0;border-radius:10px;background:#e1734f;color:#fff;font-weight:600}
 p{margin:0;text-align:center;font-size:13px;color:#c0392b;min-height:18px}
 </style>
-<form method="POST" action="login__TO__">
+<form method="POST" action="login">
   <h1>dwell</h1>
   <input type="password" name="pass" placeholder="口令" autofocus autocomplete="current-password">
   <button>进去</button>
   <p>__ERR__</p>
 </form>`;
 
-/* 登录页要记得「她本来想去哪」。
-   ⚠️ 2026-09-19 的一个真 bug:加了 /shell 之后没动这里,于是她从 /shell 输完口令
-   被 `redirect("./")` 弹回聊天页,看到的还是老界面 ——「界面完全没变」就是这么来的。
-   ⚠️ **只认白名单里的那一个值**,绝不把 query 原样塞进 redirect(那是开放重定向)。 */
-const loginPage = (err = "", to = "") =>
-  LOGIN_PAGE.replace("__ERR__", err).replace("__TO__", to === "shell" ? "?to=shell" : "");
-
 app.post("/login", express.urlencoded({ extended: false }), (req, res) => {
   if (!safeEqual(req.body?.pass, DWELL_PASS)) {
     log("[login] 口令不对");
-    return res.status(401).type("html").send(loginPage("口令不对", req.query?.to));
+    return res.status(401).type("html").send(LOGIN_PAGE.replace("__ERR__", "口令不对"));
   }
   res.setHeader("Set-Cookie",
     `dwell=${encodeURIComponent(makeToken(DWELL_PASS, SALT))}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`);
-  res.redirect(req.query?.to === "shell" ? "./shell" : "./");
+  res.redirect("./");
 });
 
 /* ─────────── 网页本体 ─────────── */
@@ -228,30 +221,12 @@ app.get("/manifest.json", (req, res) => {
 });
 
 app.get("/", (req, res) => {
-  if (!authed(req)) return res.type("html").send(loginPage());
+  if (!authed(req)) return res.type("html").send(LOGIN_PAGE.replace("__ERR__", ""));
   const f = path.join(HERE, "web", "index.html");
   if (!fs.existsSync(f)) {
     return res.status(500).type("html").send(
       "<meta charset=utf-8><p style='font:16px system-ui;padding:24px'>" +
       "网页文件还没放进来。部署前跑一次 <code>./fetch-frontend.sh</code>。");
-  }
-  res.type("html").send(fs.readFileSync(f, "utf8"));
-});
-
-/* 新外壳的**实机预览**（2026-09-19 加）。
-   为什么单开一条、而不是把 index.html 换掉：换了她的聊天页当场就没了，
-   而这一步只是「让她在真机上全屏看一眼比例和字体」。两者共用同一把口令锁。
-   文件同样**不入库**（同上面那条理由），由 fetch-frontend.sh 从 dwell 仓库拉。
-   拉不到只是这一条 404，`/` 照常——所以它不会把部署拖下水。
-   ⚠️ **这是临时的**：三栏壳并进 index.html 之后，这条路由、`web/shell.html`
-   和 fetch-frontend.sh 里对应那行一起删。 */
-app.get("/shell", (req, res) => {
-  if (!authed(req)) return res.type("html").send(loginPage("", "shell"));
-  const f = path.join(HERE, "web", "shell.html");
-  if (!fs.existsSync(f)) {
-    return res.status(404).type("html").send(
-      "<meta charset=utf-8><p style='font:16px system-ui;padding:24px'>" +
-      "预览壳还没放进来。部署前跑一次 <code>./fetch-frontend.sh</code>。");
   }
   res.type("html").send(fs.readFileSync(f, "utf8"));
 });
