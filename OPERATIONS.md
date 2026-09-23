@@ -348,7 +348,7 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
 `kelivo-shim/MAINTENANCE.md` 的「环境变量」一节,这里只列名字帮你对号:
 
 - 链路:**`CLAUDE_CODE_OAUTH_TOKEN`**(**2026-09-12 起线上已设,走的就是它** = 直连,并自动摘掉下面那两个;删掉它 + restart 就退回代理。到期 2027-09-12,详见第 7 节《长期令牌直连》) `ANTHROPIC_BASE_URL` `ANTHROPIC_AUTH_TOKEN`(**代理那条路的,线上仍留着当退路,但现在不生效**) `SHIM_KEY` `MCP_CONFIG` `MCP_WARMUP_MS` `ALLOWED_TOOLS`
-- 双引擎 / 思考翻译(2026-09-23,未部署):`NEXT_CLI_MODELS` `NEXT_CLI_WINDOW`(`CLAUDE_BIN_NEXT` 由 entrypoint 自动导出,别手设) `THINK_TRANSLATE_MODELS`(急救开关:设空) `THINK_TRANSLATE_MODEL` `THINK_TRANSLATE_TIMEOUT_MS` `THINK_TRANSLATE_CONCURRENCY`(默认 1,**一个翻译进程约 300 MB,别随手调大**)。详见 `kelivo-shim/MAINTENANCE.md` 改动清单第 13、14 条
+- 双引擎 / 思考翻译(2026-09-23 第四十一次上线;**线上这几个都没设,走代码默认**):`NEXT_CLI_MODELS` `NEXT_CLI_WINDOW`(`CLAUDE_BIN_NEXT` 由 entrypoint 自动导出,别手设) `THINK_TRANSLATE_MODELS`(急救开关:设空) `THINK_TRANSLATE_MODEL` `THINK_TRANSLATE_TIMEOUT_MS` `THINK_TRANSLATE_CONCURRENCY`(默认 1,**一个翻译进程约 300 MB,别随手调大**)。详见 `kelivo-shim/MAINTENANCE.md` 改动清单第 13、14 条
 - 人格:`BRAIN_MODEL` **`BRAIN_MODELS`**(2026-08-24 起:Kelivo 菜单里能选的模型名单;**不设 = 功能休眠**,急救开关就是清掉它 + restart;详见 `kelivo-shim/MAINTENANCE.md` 改动清单第 11 条) `THINK_EFFORT` `USER_NAME` `AI_NAME` `SOUL_ANCHOR` `FORWARD_THINKING` `ENABLE_PROMPT_CACHING_1H`
 - 系统提示词(2026-08-23 起):`SYS_PROMPT_MODE`(`append` 默认 / `replace` 整段替换 CLI 自带那份)
   `SYSTEM_PROMPT_FILE`(默认 `base.md`) `SYSTEM_PROMPT`(覆盖正文) `SOUL_ANCHOR_REPLACE`(replace 模式的三段锚点)。
@@ -1025,7 +1025,7 @@ CLI 的优先级里 `ANTHROPIC_AUTH_TOKEN`(第 2)排在 `CLAUDE_CODE_OAUTH_TOKEN
 | 节拍 | cron 写的是**每小时**(`0 * * * *`),⚠️ **但实际不是**,见下面《节拍是假的》 | 原来每天 10:00 一次。改法是原文自己写好等着的下一步:「那样才抓得住 08-11 那种断三小时」 |
 | 报警出口 | **邮件 + Telegram 两条腿** | 原来只有邮件。**所有者 09-02 说她不看邮件** —— 送不到手上的告警等于零。是**并联不是替换**:邮件仍是主判据,TG 推不出去不影响结论 |
 | 认不认得出备份断了 | **认得**(2026-09-23 加):读 *Daily Backup* 的运行记录(同一把 `GITHUB_TOKEN`,不是新密钥),**连续 2 次失败**或**最近一次超过 50 小时**才叫;只失败一次只打印。自检 7 项。**起因**:09-21 起备份连挂三天,这只狗一声没吭(记忆库本身活着) | 新增 |
-| 认不认得出 5.5 用不了 | **认得**(2026-09-23 加,**合进 main 才生效**):读 shim `/health` 的 `modelsDropped` / `cli`,**配了 5.5 却没有新版 CLI**、或**正在跑 5.5 却走旧版 CLI**(= 空回)才叫;她用 4.6 时这条永远不响,老代码没这几个字段就整段跳过。自检 7 项 | 新增 |
+| 认不认得出 5.5 用不了 | **认得**(2026-09-23 加,PR #149 合进 main 后当天就在跑):读 shim `/health` 的 `modelsDropped` / `cli`,**配了 5.5 却没有新版 CLI**、或**正在跑 5.5 却走旧版 CLI**(= 空回)才叫;她用 4.6 时这条永远不响,老代码没这几个字段就整段跳过。自检 7 项 | 新增 |
 | 认不认得出 OAuth 断了 | **认得**(`⚠️[体检] …`) | **原来认不出** —— 08-11 那天它查的项目全绿。现在会看 `/debug` 的 `lastApiError`,但只在**一个「窗口」内**发生**且是认证类**(401/403/authentication/auth_unavailable/oauth/invalid bearer)时才叫;陈年旧账和 529 过载照旧只打印。⚠️ ~~**那个窗口原来写死 2 小时**~~ —— **2026-09-02 当天就改成现场量了**,理由见下节 |
 
 #### ⚠️ 节拍是假的:cron 写「每小时」≠ 真的每小时(2026-09-02 发现并修)
