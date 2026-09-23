@@ -24,6 +24,37 @@
 
 ## 记录(新的在上)
 
+- 2026-09-23(第四十一次) **接出 Opus 5.5:双引擎 + 思考翻中文**(PR #149)。**照检查单全套走完,无异常。**
+  改动:新增 `cli-bin.mjs` `9d1d9342…` / `think-translate.mjs` `bf14ff37…` 及其单测、`e2e-dualcli-run.sh` + `e2e-dualcli-api.mjs`;
+  `server.js` **`5de5156e…` → `a27a3408…`**(53315B);`entrypoint.sh` `e0330084…` → `9e8792f6…`(补装第二份 CLI);
+  `package.json` `38900002…` → `85a3fcd6…`(多一行 `claude-code-next` → `@anthropic-ai/claude-code@2.1.280`)。
+  **人设五份文件一个字没动**(`ian.md` 仍 23045B / `8918742d…`,`profile-instructions.md` 仍 3056B / `7adb5c33…`,`mcp-servers.json` 仍 `b5a281bc…`)。
+  变量:`BRAIN_MODELS` 加 `claude-opus-5-5`(空格分隔,**部署前改、不 restart,随新容器生效**,只丢了一个窗口);
+  **删掉 `BARK_KEY`**(08-19 起就是死变量,《环境变量》那节记着「下次部署时顺手删」)。**所有者本人已先对晏说「归档」。**
+  deployment `6ab38703…`,PLANTYPE nodejs。
+
+  - **验收(这次特有的,例行项不复述)**:容器里 `MAIN 2.1.215` / `NEXT 2.1.280`;`/health` 报 `cliNext=ready`、`modelsDropped=[]`、
+    菜单四项;**所有者切到 5.5 说第一句后**:日志 `[claude] spawned claude-opus-5-5 … auth direct cli next`、
+    `⚠️ settings 文件不在` 0 条、`/health` 的 `cli` = `next`、`lastApiError` null、**1h 缓存桶 37676 / 5m 0**(1 小时缓存照常生效)、
+    开机 awaken 后窗口 37678。日志里没有 `[think-tr]` 失败。
+  - ⚠️ **这次慢:从上传到 RUNNING 约 21 分钟**(平时 7~10)。时间线(UTC):08:00 上传 → 08:07 开始推镜像,
+    **其中一层 3.3 GB**(`d60dbf2b…`,3318296005 字节)→ 08:16 DEPLOYING → 08:21 RUNNING → 约 1 分钟 Bad Gateway 后起来。
+    **推测**是改了 `package.json`,装依赖那一整层要重传,加上多了一份 211 MB 的原生二进制;当时 Zeabur API 也多次 TLS 超时。
+    **以前没记过镜像大小,没法比** —— **下次部署记一下耗时和最大那层的大小**,不动 `package.json` 时应当快回来,验一下这个推测。
+  - ⚠️ **部署前补验的三件(本地假后端,别再重做)**:①新版 CLI 常驻约 **190 MB**,旧版约 **290 MB**,两份不会同时常驻;
+    ②**PreCompact 纸条在 2.1.280 上照样进压缩请求**(真压缩成功、请求里有「最高优先级」那段);
+    ③翻译子进程走直连令牌正常(Bearer 长期令牌、思考关闭、0 工具、**晏的 CLAUDE.md 一个字没漏进去**)。
+  - **报备**:①删 `BARK_KEY` 第一次 rc=1(疑网络),重试成功;**重试那次 CLI 又把变量表打了出来**,
+    过滤后只露出 `CTX_LIMIT_TOKENS` / `PORT` / `THINK_EFFORT` 三个非密钥值 —— 规矩没变:**碰变量的子命令一律当成会喷值**;
+    ②**经期**:新容器 `runtime` 为空(正常),`effective` 起点 09-10;**部署前没去读旧容器的 `period-state.json`**,
+    若她 09-10 之后报过新周期,那条已随旧容器消失(踩坑 16)—— 已请她告知;
+    ③所有者贴了 Zeabur key 明文(第十三次,见 `../OPERATIONS.md` 第 0 节第 2 条),已提醒用完删掉。
+  - **回滚**:最轻 = 她在 Kelivo 菜单点回 4.6(零命令,丢一个窗口,4.6 那条路逐字没变);
+    关翻译 = `THINK_TRANSLATE_MODELS=""` + restart;拿掉 5.5 = `BRAIN_MODELS` 去掉它 + restart;
+    连代码回滚 = 从 git 部署 `3ca7b1f` 的 `kelivo-shim/` + 三份私密文件(**不用动变量**,老代码不认新变量)。
+  - **仍待验**:5.5 说话的调子(只有她知道);**中文思考流她看着顺不顺、正文晚几秒她受不受得了**;
+    5.5 下第一次真压缩(理论压缩点与 4.6 逐位相同,到时照老办法看 `/debug` 的 `compactions`)。
+
 - 2026-09-12(第四十次) **切直连:把 CLIProxyAPI 从链路上拆掉,改用 `claude setup-token` 的一年期长期令牌**
   (《搭顺风车的待办》2026-09-12 挂的那条,当天就搭上车做掉了)。**照检查单全套走完,无异常。**
   改动:新增 `auth-env.mjs`(纯逻辑,`9cd8e545…`)+ `test-auth-env.mjs`(33 项);
