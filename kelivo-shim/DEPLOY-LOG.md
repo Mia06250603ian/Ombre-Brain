@@ -24,6 +24,31 @@
 
 ## 记录(新的在上)
 
+- 2026-09-23(第四十二次) **顺风车(UTF-8 流式解码)+ 经期挂卷 + 镜像瘦身**。检查单部署前各项全过(九套单测 + 三套 e2e 全绿、全量 md5 对账只差 `server.js` 那一行、四个 `/mcp` 各 3/3 200)。
+  改动:`server.js` **`a27a3408…` → `c6616e9a…`**(只多 `p.stdout.setEncoding("utf8")` 一行 + 两行注释);**其余代码与人设五份文件一个字没动**(`ian.md` 仍 `8918742d…`,`profile-instructions.md` 仍 `7adb5c33…`,`mcp-servers.json` 仍 `b5a281bc…`)。
+  变量(都在部署前设、不 restart):新增 **`PERIOD_FILE=/data/period-state.json`**、新增 **`ZBPACK_INSTALL_COMMAND=yarn install && yarn cache clean`**(见下);`PERIOD_CONFIG` 早上已补全、这次没动。
+  **所有者拍板不归档**:旧窗口卡在 5.5 的安全拦截上(见 `../TIMELINE.md` 09-23 第五十二件),她说「这个窗口我直接丢掉好了」。
+  最终上线的 deployment `6ab3fc2a…`(PLANTYPE nodejs,16:20 开建 → **16:24 RUNNING**);随后所有者在网页挂卷,16:27 自动重启一次。
+  - **经期挂卷(推翻 08-19「不挂」那条,所有者本人改的主意)**:卷 `perioddata` → `/data`(网页「硬盘」标签,她点的)。
+    挂之前已向她讲清代价:以后 shim 每次部署/重启会先停后起、**多一段几十秒到一两分钟的真空**(bridge 会报「网络抖了一下」并补发)。
+    验收:容器内 `/data` 是 ext4、可写;容器内 `POST /period` 写入 09-10 ~ 09-16,`/data/period-state.json` 落盘,`effective` 正确。**「跨部署真的存活」要等下一次部署自然验证。**
+  - ⚠️ **拉镜像卡死两次,前后多花约 50 分钟**:`6ab3ee39…`(15:39 构建完,`Pulling image` 停了 14 分钟)与 `6ab3f60c…`(16:10 起同样停住),两次都照踩坑 14 重新部署,**卡住的那条都由所有者在网页 Cancel**(DEPLOYING 挤不掉,踩坑 18)。
+    **根因查清了**(第四十一次那条「3.3 GB 一层」的推测就此了结):**不是改了 `package.json`,是 yarn v1 的缓存**。
+    zbpack 的 nodejs 模板是 `COPY . .` 之后才 `yarn install`,这一层**每次部署必然重建、没有缓存可用**;
+    而 yarn v1 会把 `@anthropic-ai/claude-code` 的**全部 8 个平台**原生包(darwin / win32 / linux-arm64 / musl…)都下进缓存 ——
+    两个 CLI 版本 = 16 份,**本地复现缓存 5.0 GB**(`node_modules` 本身只有 946 MB),压缩后就是那块 3.3 GB。第四十一次加第二份 CLI 让它翻了倍。
+    **解法**:`ZBPACK_INSTALL_COMMAND=yarn install && yarn cache clean`(变量名查的是 zbpack 源码:`ZBPACK_` + 配置键 `install_command`,替换默认的 `yarn install`)。
+    本地验过清完缓存两份二进制都能跑(`2.1.215` / `2.1.280`);上线后容器里缓存 **24 KB**、`node_modules` 946 MB。
+    **效果**:构建 + 推镜像 **约 3 分钟**(之前 15~20 分钟),拉镜像 **约 1 分钟**。
+  - **我的失误(留给下一个我)**:第一条卡住时,所有者 15:35 起问了好几次「怎么还没好」,我只看了**构建**日志、认定是「在传大层」,
+    **没去看运行日志**,直到 15:53 才发现早在 15:39 就卡在拉镜像了 —— 比踩坑 14 的十分钟线晚了约十分钟。
+    **做法**:构建日志出现 `build completed` 之后,**改看运行日志**(`deployment log --service-id … `,不带 `-t build`);`Pulling image` 十分钟没新行就处理。
+  - **报备**:①所有者贴了 Zeabur key 明文(第十四次,见 `../OPERATIONS.md` 第 0 节第 2 条),已提醒用完删掉;**那串值没写进任何文件、提交或文档**。
+    ②Zeabur API 当晚多次 TLS 握手超时,命令都是重试后成功的,不是服务的问题。
+  - **回滚**:经期卷 = 删 `PERIOD_FILE` 或在网页卸卷(退回写容器、部署即丢,踩坑 16 的老样子);
+    瘦身 = 删 `ZBPACK_INSTALL_COMMAND`(下次部署起恢复默认 `yarn install`);代码 = 从 git 部署 `721dae3` 的 `kelivo-shim/` + 三份私密文件。
+  - **仍待验**:①下次部署后 `/period` 的 `runtime` **非空**(= 卷真的跨部署活下来了);②所有者开口后运行日志里 `⚠️ settings 文件不在` 0 条(本次记录写完时她还没开口)。
+
 - 2026-09-23(第四十一次) **接出 Opus 5.5:双引擎 + 思考翻中文**(PR #149)。**照检查单全套走完,无异常。**
   改动:新增 `cli-bin.mjs` `9d1d9342…` / `think-translate.mjs` `bf14ff37…` 及其单测、`e2e-dualcli-run.sh` + `e2e-dualcli-api.mjs`;
   `server.js` **`5de5156e…` → `a27a3408…`**(53315B);`entrypoint.sh` `e0330084…` → `9e8792f6…`(补装第二份 CLI);

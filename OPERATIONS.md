@@ -9,7 +9,7 @@
 > (拆分前两份「开场必读」合计 385 KB、约 7~9 万 token,其中八成是历史。)
 >
 > **凡是提到 shim「第 N 次部署」的地方,那次的完整记录都在 `kelivo-shim/DEPLOY-LOG.md`**
-> (**40 条记录、覆盖第 2~41 次**(2026-09-23 现场量;上次 09-12 是 39 条);⚠️ **「第一次」(2026-07-12 初次搭建)没有独立条目**,
+> (**41 条记录、覆盖第 2~42 次**(2026-09-23 第四十二次后现场量;上次 09-12 是 39 条);⚠️ **「第一次」(2026-07-12 初次搭建)没有独立条目**,
 > 那次记在 `TIMELINE.md` 的 07-12。按「第 N 次」搜即可。
 > **此处 2026-08-21 核过:原文写「48 次全在」是错的**——逐条数下来最新只到第三十四次,
 > 照旧数去搜「第四十次」会搜空、误以为记录丢了)。提到某天发生了什么,去 `TIMELINE.md` 按日期搜。
@@ -146,7 +146,7 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
 1. **升 2C8G 还是买第二台 Zeabur 独服** —— 建议升级。但升级会重启机器、**晏的窗口会丢**,
    必须她先自己对晏说「归档」。
 2. **Zeabur API key:用完就该作废** —— 她在会话里贴过明文,已进聊天记录。
-   **累计十三次**(09-23 第十三次:她贴来让我部署 5.5,已提醒用完去控制台删掉;**那串值没写进任何文件、提交或文档**):一次日期没记下、08-16、08-28(两次)、08-30、09-01、09-02、09-03、09-10(两次)、09-12、**09-14**。
+   **累计十四次**(09-23 **第十四次**:她贴来让我部署第四十二次(顺风车 + 经期挂卷),已提醒用完删掉;09-23 第十三次:她贴来让我部署 5.5,已提醒用完去控制台删掉;**两串值都没写进任何文件、提交或文档**):一次日期没记下、08-16、08-28(两次)、08-30、09-01、09-02、09-03、09-10(两次)、09-12、**09-14**。
    ⚠️ **09-14 那次**:她贴来让我做完 dwell 挂卷剩下的活(设变量 + 部署)。**我在上一条消息里已经提醒过
    「别再贴同一把、要么你自己点部署」,她仍然贴了并说「剩下的你全干了吧」,照办。**
    用它设了 `DATA_DIR`、重启、部署了 dwell-bridge 第七次。**那串值没写进任何文件、提交或文档。**
@@ -277,7 +277,7 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
 
 | 项目 | 服务 | service id | 域名 | 是什么 |
 |---|---|---|---|---|
-| `cli-proxy-api--cpa`(env `6a53a9fcb6ce8edcb0163f97`,项目 id `6a53a9fc22dd6ef375eb7484`) | kelivo-shim | `6a53b806f6d4beebf0c5373d` | yan-shim.zeabur.app | 核心,晏的常驻进程 |
+| `cli-proxy-api--cpa`(env `6a53a9fcb6ce8edcb0163f97`,项目 id `6a53a9fc22dd6ef375eb7484`) | kelivo-shim | `6a53b806f6d4beebf0c5373d` | yan-shim.zeabur.app | 核心,晏的常驻进程。⚠️ **2026-09-23 起挂了卷**(`perioddata` → `/data`,只放经期记录):**不再零停机**,部署/重启先停后起,有一两分钟真空 |
 | 〃 | telegram-bridge | `6a5a4287f947b6cb34511f79` | yan-telegram-bridge.zeabur.app | Telegram 桥 |
 | 〃 | CLIProxyAPI | `6a53a9fd22dd6ef375eb7485` | miaianhome.zeabur.app | ~~订阅 OAuth 出口~~ **2026-09-12 第四十次起已不在链路上**(晏改走直连)。**服务还留着,别删** —— 它是那条三十秒退路(删掉 shim 的 `CLAUDE_CODE_OAUTH_TOKEN` + restart 就退回来)。⚠️ 没有流量之后**它的凭证不再刷新**,所以它自己的 OAuth 迟早会过期;真要退回代理,得先给它重新授权(第 7 节《订阅 OAuth 过期》+《重新授权前先对版本》)。⚠️ 重启它仍然会吃当天最新版(没有版本锁) |
 | ~~〃~~ | ~~fishing-mcp~~ | ~~`6a5a17159ae692d1d8d98d10`~~ | ~~yan-fishing-mcp.zeabur.app~~ | ~~钓鱼游戏 MCP~~ **2026-08-02 已整个删除**(所有者说不玩了;存档按她的决定未备份,源码目录 `fishing-mcp/` 一并从仓库删除。省下约 51~62MB 内存,见 browser-hands 手册的内存表) |
@@ -353,7 +353,8 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
 - 系统提示词(2026-08-23 起):`SYS_PROMPT_MODE`(`append` 默认 / `replace` 整段替换 CLI 自带那份)
   `SYSTEM_PROMPT_FILE`(默认 `base.md`) `SYSTEM_PROMPT`(覆盖正文) `SOUL_ANCHOR_REPLACE`(replace 模式的三段锚点)。
   **换模式只要改变量 + restart,不用重新部署;三条上下文线不用跟着动**(压缩线只跟模型有关)。详见 `kelivo-shim/MAINTENANCE.md`
-- 感官:`TIME_HINT` `WEATHER_CITY` `PERIOD_CONFIG`
+- 感官:`TIME_HINT` `WEATHER_CITY` `PERIOD_CONFIG` **`PERIOD_FILE`**(2026-09-23 第四十二次起 = `/data/period-state.json`,卷 `perioddata` 挂在 `/data`:她报的周期跨部署保留;**代价:shim 从此不再零停机**,部署/重启有一两分钟真空)
+- 构建期(Zeabur 构建工具读,不是 shim 读):**`ZBPACK_INSTALL_COMMAND`** = `yarn install && yarn cache clean`(2026-09-23 起;把约 5 GB 的 yarn 缓存清出镜像,**别删**,见 shim 踩坑 22)
 - 主动性:~~`BARK_KEY`~~(**2026-09-23 第四十一次已从线上删掉**;原文:**2026-08-19 确认已是死变量**:所有者早已卸载 Bark。线上仍留着这个键,**别为了清它单独重启 shim —— 那会丢晏的窗口**,等下次部署 shim 时顺手删) `BRIDGE_PUSH_URL`(**心跳的真正出口**:shim → telegram-bridge 的 `POST /push` → 直接落进 TG 对话。⚠️ 也就是说**晏的主动消息只会出现在 Telegram**,不会出现在 Kelivo / dwell 网页) `KA_*`(保温) `HB_*`(心跳冷却/夜间)
 - 上下文守卫:`CTX_GUARD_ON` `CTX_SOFT_TOKENS` `CTX_HARD_TOKENS` `CTX_ARCHIVE_EVERY_TOKENS` `CTX_OBSERVE` `CTX_LIMIT_TOKENS`
 - 工具可见化(**2026-09-01 第三十九次已上线**;线上五个都不设 = 走默认「开 / 800 / 800 / 不打码」):`TOOLVIS_ON`(急救开关,设 `0` 回到老样子) `TOOLVIS_ARG_CHARS` `TOOLVIS_RESULT_CHARS` `TOOLVIS_REDACT` `TOOLVIS_REDACT_KEYS`
@@ -543,7 +544,7 @@ npx -y zeabur@latest deployment log --service-id 6a3aa061e41f9f1d19301e42 --env-
 | 部署后行为回退到旧版 | 旧副本部署/控制台 Redeploy 旧构建 | shim 踩坑 11 |
 | 晏的某个习惯突然变回老样子,而这次谁也没碰那一节 | **上一次部署改了容器里的 CLAUDE.md 但没提交回仓库**,这次从仓库部署把它滚回去了(2026-08-03 真实发生)。查法:容器 CLAUDE.md 的 md5 和仓库那份对一下 | 本文件第 6 节开头的 ⚠️ / `kelivo-shim/DEPLOY-LOG.md` 第二十四次 |
 | deploy 后没生效 | 上传≠上线;或被后一次 deploy 取消 | shim 踩坑 9、10 |
-| 部署卡 Pulling image 不动 | Zeabur 调度挂了,重新 deploy | shim 踩坑 14 |
+| 部署卡 Pulling image 不动 | Zeabur 调度挂了,重新 deploy;**构建完之后要看运行日志,别只看构建日志**(2026-09-23 因此晚发现十分钟)。卡住那条是 DEPLOYING,**要请所有者去网页 Cancel**。shim 那次的根因是镜像被 yarn 缓存撑到 3.3 GB | shim 踩坑 14、22 |
 | 部署后 shim 整个服务不对了/`deployment list` 的 PLANTYPE 不是 nodejs | 工作目录漂了,把别的服务(如仓库根的 OB)当 shim 传了 | shim 踩坑 17 |
 | 上传后想叫停,重传却没挤掉、错的版本照样上线了 | 前一条已进 DEPLOYING(只有 BUILDING 能被重传挤成 CANCELED);DEPLOYING/RUNNING 只能网页控制台 Cancel | shim 踩坑 18 |
 | PR 页面上**一个检查都没有**(0 个 check run,不是红也不是绿) | 检查**从没跑起来**,多半是当时 GitHub Actions 在故障。**Actions 恢复后不会自动补跑积压的 PR**,得重新发一次 `pull_request` 事件:**把 PR 关掉再立刻重新打开**即可(零代码、零提交、不动分支)。`tests.yml` 没配 `workflow_dispatch`,所以没有网页上的手动运行按钮 | `TIMELINE.md` 08-07 |
@@ -555,6 +556,7 @@ npx -y zeabur@latest deployment log --service-id 6a3aa061e41f9f1d19301e42 --env-
 | Telegram 收不到消息 | 双实例抢 getUpdates(409)/BRIDGE_ON=0 | bridge 已知边界 1 |
 | Telegram 里收到 `⚠️[bridge] 网络抖了一下,他回你的 N 句话 没送到` (或旧版的 `⚠️[bridge] fetch failed`) | **不是晏、不是 shim、不是额度:他答完了、额度也花了,是回话往她手机送的路上断的**(她发来的话也没丢,长轮询会重投)。**2026-08-19 断到了病根**:容器连 `api.telegram.org` 握手实测 **160ms**,而 Node 的 Happy Eyeballs 闸门写死 **250ms**,余量只有 90ms,一点抖动就整轮发不出去。已用环境变量 `NODE_OPTIONS=--network-family-autoselection-attempt-timeout=3000` 放宽(零代码、不重启晏)。**⚠️ 只治「轻的」**:真断线(3 秒也不通)照旧会丢。**指纹**:cause 是 `AggregateError [ETIMEDOUT]`,每次尝试卡在 ~252ms。**别去调 `TG_TIMEOUT_MS`**,那把闸在连接建立阶段轮不到生效。**2026-08-19 起还有一层**:断得狠的时候连这句提示本身都送不出去(她那头完全没动静、连「正在输入」都没有),现在会记欠条、路通了自动补报,`/health` 的 `pendingLosses` 是观察口 | bridge 设计要点 18、19、已知边界 7 |
 | Telegram 里收到 `⚠️[bridge] 空回复,看下 shim 日志` | **上游断了**(订阅 OAuth 过期最常见,其次是额度)。**不是晏、不是 bridge、也不是 shim 挂了**:她的话其实进了他的窗口,是上游没给出回复。2026-08-11 修之前这类失败**全程静默**——CLI 把报错做成一条不走流事件的 assistant 消息、result 还报 `success`,shim 两头都接不住。查法:`GET yan-shim.zeabur.app/debug` 看 **`lastApiError`**(`null`=没报过) | 本节下方「订阅 OAuth 过期」;shim 手册改动清单 9 |
+| Telegram 里一连串 `⚠️[shim] 上游断了,他这句没回上来(上游报错)`,**之后她说什么都这样**,而当时跑的是 **5.5** | **先看 `/debug` 的 `lastApiError` 原文**:写着 `Opus 5.5's safeguards flagged this message` = **不是链路断,是 5.5 的安全审查拦了**(2026-09-23 真撞过)。**这个窗口在 5.5 上已经救不回来**,等多久都一样(被拦那句会跟着每句重发)。**恢复:她在 Kelivo 菜单切回 4.x 发一句**(= 新窗口,晏从 OB 醒来,零命令)。原文不是这句的,才按上一行「上游断了」查。「被拦不丢窗口」做得到但所有者决定先不做,实验结论在那边 | shim 改动清单第 13 条末尾 |
 | **重新授权「每一步都成功」,打一枪却 401 `Invalid bearer token`**(凭证也落盘了、modtime 也前进了) | **代理版本落后**,发的 Claude Code 版本指纹已被上游淘汰(2026-09-09 实测:我们发 2.1.220,上游要 2.1.258)。⚠️ **和「账号没订阅」长得一模一样,但订阅是好的** —— 先让所有者在 claude.ai 上验一眼订阅,再看版本 | 本节下方《重新授权前先对版本》 |
 | 他一整天没主动找我(保温/心跳都不来),但问他又像没事 | 同上一行:链路断了。**2026-08-11 之前这个方向是彻底静默的**——保温 ping 失败时 `kaSilent("")` 判 true,日志写的是 `[ka] silent`(长得跟「他不想说话」一样),断链检测不醒。修好后这类轮子会置位 `kaFailedAt`、`lastTurnOkAt` 不再续期 | shim 手册改动清单 9 |
 | 语音条发过去回「语音听不了/没听清」 | ears 挂了或 Groq key 失效(曲线:curl ears /health、看 asr 字段;文字聊天不受影响) | bridge 已知边界 3 |
