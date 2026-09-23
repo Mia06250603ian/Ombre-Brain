@@ -24,7 +24,7 @@ def authfiles(hours_ago, status="active", **extra):
 
 
 def run(debug_payload, prev_run_hours=None, auth_files=None, cpa_pw=None,
-        shim_auth=None, token_expires=None):
+        shim_auth=None, token_expires=None, shim_extra=None):
     """把所有 HTTP 请求换成假的;只有 /debug 用传进来的内容,其余一律健康。
 
     `prev_run_hours`:假装上一趟巡逻是几小时前(给告警窗口那段用)。
@@ -83,6 +83,7 @@ def run(debug_payload, prev_run_hours=None, auth_files=None, cpa_pw=None,
         health = {"ok": True, "model": "m"}
         if shim_auth is not None:
             health["auth"] = shim_auth
+        health.update(shim_extra or {})     # 双引擎那几个字段(2026-09-23);不传 = 老代码的样子
         return FakeResp(json.dumps(health))
 
     urllib.request.urlopen = fake_urlopen
@@ -247,6 +248,41 @@ fail += 0 if ok else 1
 
 for name, payload, prev, want_code, want_text in WINDOW_CASES:
     code, out = run(payload, prev_run_hours=prev)
+    ok = (code == want_code) and (want_text in out)
+    print(("  ✅ " if ok else "  ❌ ") + name + (f"   [退出码 {code},期望 {want_code}]" if not ok else ""))
+    if not ok:
+        fail += 1
+        print("     ---- 实际输出 ----")
+        print("     " + "\n     ".join(out.strip().splitlines()[-14:]))
+
+# 双引擎(2026-09-23):5.5 只能走新版 CLI。两个方向都钉死 ——
+# 该叫:配了 5.5 但新版没装上;正在跑 5.5 却走旧版(= 空回)。
+# 不许叫:老代码(没这几个字段);4.6 日常;还没起进程(cli=None);一切正常地跑着 5.5。
+M55 = "claude-opus-5-5"
+DUAL_CASES = [
+    ("老代码(/health 没有双引擎字段)→ 整段跳过,不许叫",
+     None, 0, "晏 · 状态 ok"),
+    ("4.6 日常、新版在 → 不许叫",
+     {"model": "claude-opus-4-6", "cli": "main", "cliNext": "ready", "nextModels": [M55], "modelsDropped": []},
+     0, "新模型那份 CLI 在"),
+    ("配了 5.5 但新版没装上 → 必须叫",
+     {"model": "claude-opus-4-6", "cli": "main", "cliNext": "missing", "nextModels": [M55], "modelsDropped": [M55]},
+     1, "新版 CLI 没装上"),
+    ("正在跑 5.5 却走旧版 → 必须叫(会空回)",
+     {"model": M55, "cli": "main", "cliNext": "missing", "nextModels": [M55], "modelsDropped": []},
+     1, "旧版不认识它"),
+    ("正在跑 5.5、走新版 → 不许叫",
+     {"model": M55, "cli": "next", "cliNext": "ready", "nextModels": [M55], "modelsDropped": []},
+     0, "新模型走的是新版 CLI"),
+    ("刚部署完还没起进程(cli=None)→ 不许叫",
+     {"model": M55, "cli": None, "cliNext": "ready", "nextModels": [M55], "modelsDropped": []},
+     0, "新模型那份 CLI 在"),
+    ("没配 5.5、新版也不在 → 不许叫(没配就不该吵)",
+     {"model": "claude-opus-4-6", "cli": "main", "cliNext": "missing", "nextModels": [M55], "modelsDropped": []},
+     0, "新模型那份 CLI 在"),
+]
+for name, extra, want_code, want_text in DUAL_CASES:
+    code, out = run({"lastApiError": None}, shim_extra=extra)
     ok = (code == want_code) and (want_text in out)
     print(("  ✅ " if ok else "  ❌ ") + name + (f"   [退出码 {code},期望 {want_code}]" if not ok else ""))
     if not ok:

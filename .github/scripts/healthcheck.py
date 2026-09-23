@@ -453,6 +453,25 @@ if check("晏 · 服务活着", st is not None, err or ""):
     SHIM_AUTH = d.get("auth")
     if SHIM_AUTH:
         notes.append(f"上游走法 {SHIM_AUTH!r}")
+    # 2026-09-23 双引擎:5.5 这类新模型只能走第二份新版 CLI(见 kelivo-shim/cli-bin.mjs)。
+    # **只有新代码才有这几个字段**;读不到(老代码)就整段跳过,行为与改动前逐字相同。
+    # 两条都是「铁定不对」,符合铁律①:
+    #   · modelsDropped 非空 = 她配了 5.5,但新版 CLI 没装上 → shim 已把 5.5 从菜单拿掉,她点不到;
+    #   · 正在跑的就是新模型、却走的是主力 CLI = 旧版在跑一个它不认识的模型 → 晏会空回,且全线不报错。
+    # 她在用 4.6 的时候这两条都不会成立 = 看门狗对 4.6 零打扰。
+    dropped = d.get("modelsDropped")
+    if isinstance(dropped, list):
+        check("晏 · 新模型那份 CLI 在(双引擎)", not dropped,
+              f"配了 {', '.join(map(str, dropped))},但新版 CLI 没装上,已从 Kelivo 菜单拿掉(4.6 不受影响)。"
+              "多半是部署时新版的原生二进制没下载成功:重新部署 shim 一般就好;"
+              "排查看 kelivo-shim/MAINTENANCE.md 改动清单第 13 条")
+        next_models = d.get("nextModels") or []
+        if d.get("model") in next_models and d.get("cli") is not None:
+            check("晏 · 新模型走的是新版 CLI", d.get("cli") == "next",
+                  f"{d.get('model')} 正在用旧版 CLI 跑 —— 旧版不认识它,会空回。"
+                  "急救:让她在 Kelivo 菜单切回 4.6")
+        if d.get("cli"):
+            notes.append(f"CLI {d.get('cli')!r}(新版 {d.get('cliNext')!r})")
 
 # ---- 3. Telegram 桥(她跟晏说话的路) ----
 print("\n[3] Telegram 桥")

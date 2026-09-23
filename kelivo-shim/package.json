@@ -5,6 +5,7 @@
   "scripts": { "start": "bash entrypoint.sh" },
   "dependencies": {
     "express": "^4.19.2",
-    "@anthropic-ai/claude-code": "2.1.215"
+    "@anthropic-ai/claude-code": "2.1.215",
+    "claude-code-next": "npm:@anthropic-ai/claude-code@2.1.280"
   }
 }
