@@ -24,7 +24,7 @@ def authfiles(hours_ago, status="active", **extra):
 
 
 def run(debug_payload, prev_run_hours=None, auth_files=None, cpa_pw=None,
-        shim_auth=None, token_expires=None):
+        shim_auth=None, token_expires=None, shim_extra=None, backup_runs=None):
     """把所有 HTTP 请求换成假的;只有 /debug 用传进来的内容,其余一律健康。
 
     `prev_run_hours`:假装上一趟巡逻是几小时前(给告警窗口那段用)。
@@ -60,6 +60,13 @@ def run(debug_payload, prev_run_hours=None, auth_files=None, cpa_pw=None,
 
     def fake_urlopen(req, timeout=None):
         url = req.full_url
+        if "daily-backup.yml" in url:
+            # 备份的运行记录(2026-09-23)。不传 = 昨天成功了一次(= 平时的样子,别干扰其它用例)
+            if backup_runs == "炸":
+                raise OSError("boom")
+            runs = backup_runs if backup_runs is not None else [("success", 20)]
+            return FakeResp(json.dumps({"workflow_runs": [
+                {"id": 500 + i, "conclusion": c, "run_started_at": iso(h)} for i, (c, h) in enumerate(runs)]}))
         if "/actions/workflows/" in url:
             # 第一条是本次运行(id 999),脚本必须跳过它、认第二条才算对
             return FakeResp(json.dumps({"workflow_runs": [
@@ -83,6 +90,7 @@ def run(debug_payload, prev_run_hours=None, auth_files=None, cpa_pw=None,
         health = {"ok": True, "model": "m"}
         if shim_auth is not None:
             health["auth"] = shim_auth
+        health.update(shim_extra or {})     # 双引擎那几个字段(2026-09-23);不传 = 老代码的样子
         return FakeResp(json.dumps(health))
 
     urllib.request.urlopen = fake_urlopen
@@ -247,6 +255,64 @@ fail += 0 if ok else 1
 
 for name, payload, prev, want_code, want_text in WINDOW_CASES:
     code, out = run(payload, prev_run_hours=prev)
+    ok = (code == want_code) and (want_text in out)
+    print(("  ✅ " if ok else "  ❌ ") + name + (f"   [退出码 {code},期望 {want_code}]" if not ok else ""))
+    if not ok:
+        fail += 1
+        print("     ---- 实际输出 ----")
+        print("     " + "\n     ".join(out.strip().splitlines()[-14:]))
+
+# 双引擎(2026-09-23):5.5 只能走新版 CLI。两个方向都钉死 ——
+# 该叫:配了 5.5 但新版没装上;正在跑 5.5 却走旧版(= 空回)。
+# 不许叫:老代码(没这几个字段);4.6 日常;还没起进程(cli=None);一切正常地跑着 5.5。
+M55 = "claude-opus-5-5"
+DUAL_CASES = [
+    ("老代码(/health 没有双引擎字段)→ 整段跳过,不许叫",
+     None, 0, "晏 · 状态 ok"),
+    ("4.6 日常、新版在 → 不许叫",
+     {"model": "claude-opus-4-6", "cli": "main", "cliNext": "ready", "nextModels": [M55], "modelsDropped": []},
+     0, "新模型那份 CLI 在"),
+    ("配了 5.5 但新版没装上 → 必须叫",
+     {"model": "claude-opus-4-6", "cli": "main", "cliNext": "missing", "nextModels": [M55], "modelsDropped": [M55]},
+     1, "新版 CLI 没装上"),
+    ("正在跑 5.5 却走旧版 → 必须叫(会空回)",
+     {"model": M55, "cli": "main", "cliNext": "missing", "nextModels": [M55], "modelsDropped": []},
+     1, "旧版不认识它"),
+    ("正在跑 5.5、走新版 → 不许叫",
+     {"model": M55, "cli": "next", "cliNext": "ready", "nextModels": [M55], "modelsDropped": []},
+     0, "新模型走的是新版 CLI"),
+    ("刚部署完还没起进程(cli=None)→ 不许叫",
+     {"model": M55, "cli": None, "cliNext": "ready", "nextModels": [M55], "modelsDropped": []},
+     0, "新模型那份 CLI 在"),
+    ("没配 5.5、新版也不在 → 不许叫(没配就不该吵)",
+     {"model": "claude-opus-4-6", "cli": "main", "cliNext": "missing", "nextModels": [M55], "modelsDropped": []},
+     0, "新模型那份 CLI 在"),
+]
+for name, extra, want_code, want_text in DUAL_CASES:
+    code, out = run({"lastApiError": None}, shim_extra=extra)
+    ok = (code == want_code) and (want_text in out)
+    print(("  ✅ " if ok else "  ❌ ") + name + (f"   [退出码 {code},期望 {want_code}]" if not ok else ""))
+    if not ok:
+        fail += 1
+        print("     ---- 实际输出 ----")
+        print("     " + "\n     ".join(out.strip().splitlines()[-14:]))
+
+# 每日备份(2026-09-23)。**只有在 Actions 里跑才查**,所以这组都传 prev_run_hours(= 有 GITHUB_TOKEN)。
+# 该叫:连续两次失败;定时任务停了(最近一次超过 50 小时)。
+# 不许叫:昨天成功;只失败一次(可能碰上 OB 重启,GitHub 已单独发邮件);读不到;中间夹着被取消的。
+BACKUP_CASES = [
+    ("昨天备份成功 → 不许叫", [("success", 20)], 0, "每日备份在推"),
+    ("连续 3 次失败(09-21 起那场的样子)→ 必须叫", [("failure", 5), ("failure", 29), ("failure", 53), ("success", 77)],
+     1, "连续 3 次失败"),
+    ("只失败 1 次 → 不许叫(明天还挂才叫)", [("failure", 5), ("success", 29)], 0, "只有一次"),
+    ("刚修好:最近一次成功、前面失败过 → 不许叫", [("success", 1), ("failure", 5), ("failure", 29)], 0, "每日备份在推"),
+    ("最近一次是 72 小时前的成功 → 必须叫(定时任务停了)", [("success", 72)], 1, "定时任务没在跑"),
+    ("读不到运行记录 → 不许叫", "炸", 0, "读不到备份的运行记录"),
+    ("被取消的不算数:取消 + 失败 + 失败 → 仍按连续 2 次失败叫",
+     [("cancelled", 1), ("failure", 5), ("failure", 29)], 1, "连续 2 次失败"),
+]
+for name, runs, want_code, want_text in BACKUP_CASES:
+    code, out = run({"lastApiError": None}, prev_run_hours=3, backup_runs=runs)
     ok = (code == want_code) and (want_text in out)
     print(("  ✅ " if ok else "  ❌ ") + name + (f"   [退出码 {code},期望 {want_code}]" if not ok else ""))
     if not ok:

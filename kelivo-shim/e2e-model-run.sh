@@ -3,6 +3,9 @@
 # 真 server.js + 真 claude 二进制 + 假 Anthropic 后端。零额度、不碰线上。
 #
 #   bash e2e-model-run.sh
+#   E2E_CLI_VERSION=2.1.280 bash e2e-model-run.sh   # 拿候选版本跑(升级前验证)
+#   ⚠️ 2026-09-23 之前这个脚本**不认 E2E_CLI_VERSION**,永远只测钉死的版本 —— 照手册设了变量
+#      去测新版,它照样测旧版并报 ALL PASS。已修;别的 e2e 脚本一直是认的。
 #
 # 两个阶段:
 #   A 名单开着(BRAIN_MODELS=4.6,4.5)—— 验切换真的发生、且**只在报了名单里的模型时**发生;
@@ -10,7 +13,7 @@
 # 全绿输出 "E2E MODEL ALL PASS"。
 set -u
 SHIM_DIR="$(cd "$(dirname "$0")" && pwd)"
-VER="$(node -p "require('$SHIM_DIR/package.json').dependencies['@anthropic-ai/claude-code'].replace(/^[^0-9]*/,'')")"
+VER="${E2E_CLI_VERSION:-$(node -p "require('$SHIM_DIR/package.json').dependencies['@anthropic-ai/claude-code'].replace(/^[^0-9]*/,'')")}"
 PLAT="$(node -p "({'linux-x64':'linux-x64','linux-arm64':'linux-arm64','darwin-x64':'darwin-x64','darwin-arm64':'darwin-arm64'})[process.platform+'-'+process.arch]||''")"
 [ -n "$PLAT" ] || { echo "不支持的平台:$(node -p 'process.platform+"-"+process.arch')"; exit 1; }
 
@@ -32,7 +35,7 @@ fi
 WORK="${TMPDIR:-/tmp}/kelivo-shim-e2e-model-work"
 rm -rf "$WORK" && mkdir -p "$WORK" && cd "$WORK"
 # ⚠️ server.js 每 import 一个新模块,这行就得跟着加(踩坑 20:漏了的现象是满屏 connect refused)。
-cp "$SHIM_DIR"/server.js "$SHIM_DIR"/ctxguard.mjs "$SHIM_DIR"/senses.mjs "$SHIM_DIR"/keepalive.mjs "$SHIM_DIR"/apierror.mjs "$SHIM_DIR"/sysprompt.mjs "$SHIM_DIR"/toolvis.mjs "$SHIM_DIR"/auth-env.mjs .
+cp "$SHIM_DIR"/server.js "$SHIM_DIR"/ctxguard.mjs "$SHIM_DIR"/senses.mjs "$SHIM_DIR"/keepalive.mjs "$SHIM_DIR"/apierror.mjs "$SHIM_DIR"/sysprompt.mjs "$SHIM_DIR"/toolvis.mjs "$SHIM_DIR"/auth-env.mjs "$SHIM_DIR"/cli-bin.mjs "$SHIM_DIR"/think-translate.mjs .
 cp "$SHIM_DIR"/shim-settings.json "$SHIM_DIR"/precompact-note.txt "$SHIM_DIR"/base.md .
 sed -i "s#/src/precompact-note.txt#$WORK/precompact-note.txt#" shim-settings.json
 ln -s "$DEPS/node_modules" node_modules

@@ -10,6 +10,8 @@ import { pickApiError, apiErrorKind, resultOutcome } from "./apierror.mjs";
 import { buildPromptArgs, helpMentionsReplace, BASE_PROMPT_DEFAULT, ANCHOR_TAIL_REPLACE, SOUL_ANCHOR_DEFAULT } from "./sysprompt.mjs";
 import { formatArgs, formatResult, pickToolResults, toolName, charLimit, TOOLVIS_DEFAULTS } from "./toolvis.mjs";
 import { buildAuthEnv, authMode } from "./auth-env.mjs";
+import { parseModelList, nextWindow, pickCli, menuModels } from "./cli-bin.mjs";
+import { wrapTranslatingSink, makeCliTranslator, translatePrompt, limitConcurrency } from "./think-translate.mjs";
 
 const PORT = process.env.PORT || 8080;
 const SHIM_KEY = process.env.SHIM_KEY || "";            // Kelivo 要填的 API Key,自己编
@@ -20,21 +22,49 @@ const MODEL = process.env.BRAIN_MODEL || "claude-opus-4-6";
 // **急救开关**:清掉 BRAIN_MODELS + service restart,立刻回到原行为,不用回滚部署。
 // ⚠️ 名单里只许放**窗口大小相同**的模型(4.5/4.6/4.8 压缩点都是 167000,见 ../docs/多模型接出方案.md 4.3)——
 // 窗口不同的模型要连三条上下文线一起按模型分,否则会不报警地丢尾巴。
-// ⚠️ Opus 5 现在别放:CLI 2.1.215 不认识它(同文 4.5 节),要先单独立项升 CLI。
+// ⚠️ Opus 5 / 5.5 这类 2.1.215 不认识的模型,**只能**经下面的「双引擎」走第二份新版 CLI
+// (2026-09-23,见 cli-bin.mjs 头注);新版没装上时它们会被自动从菜单里拿掉。
 // ⚠️ 分隔符逗号/空格/分号都认,并**剥掉包裹的引号** —— 2026-08-24 实翻:
 // `zeabur variable create -k K=a,b,c` 的 `-k` 是 stringToString,逗号是它的分隔符,
 // 加引号绕开又会把引号本身存进值里(线上真存成了 `"claude-opus-4-6,...`)。
 // 那样第一项会变成带引号的假型号,进了她的菜单、点了就是个不存在的模型名。
 // 所以这里兜住:名单怎么写都不该产出脏条目。**线上现在存的是空格分隔的那种。**
-const MODELS = [...new Set((process.env.BRAIN_MODELS || "")
-  .split(/[,;\s]+/).map((x) => x.trim().replace(/^["']+|["']+$/g, "")).filter(Boolean))];
-if (!MODELS.includes(MODEL)) MODELS.unshift(MODEL);
+const MODELS_CONFIGURED = parseModelList(process.env.BRAIN_MODELS);
+if (!MODELS_CONFIGURED.includes(MODEL)) MODELS_CONFIGURED.unshift(MODEL);
 const EFFORT = process.env.THINK_EFFORT || "low";        // low省额度 / medium思考更长
 const CLAUDE_BIN = process.env.CLAUDE_BIN || "claude";
+// ---- 双引擎(2026-09-23,见 cli-bin.mjs 头注)----
+// CLAUDE_BIN_NEXT 由 entrypoint.sh 在新版 CLI 真能跑时才导出;不在 = 需要它的模型不进菜单。
+// NEXT_CLI_MODELS:点名走新版的模型,默认只有 5.5。**清空 = 双引擎整个休眠**,
+// 所有模型逐字走 2.1.215(急救开关:改值 + restart,不用回滚部署)。
+// NEXT_CLI_WINDOW:新版那份的窗口上限,默认 200000(= 和 4.6 同一个压缩点,三条线不用动);0 = 不限。
+const CLAUDE_BIN_NEXT = process.env.CLAUDE_BIN_NEXT || "";
+const NEXT_CLI_MODELS = parseModelList(process.env.NEXT_CLI_MODELS ?? "claude-opus-5-5");
+const NEXT_CLI_WINDOW = nextWindow(process.env.NEXT_CLI_WINDOW);
+const NEXT_READY = !!CLAUDE_BIN_NEXT && fs.existsSync(CLAUDE_BIN_NEXT);
+const { menu: MODELS, dropped: MODELS_DROPPED } = menuModels(MODELS_CONFIGURED, { nextModels: NEXT_CLI_MODELS, nextReady: NEXT_READY, keep: MODEL });
+const cliFor = (model) => pickCli(model, { bin: CLAUDE_BIN, nextBin: NEXT_READY ? CLAUDE_BIN_NEXT : "", nextModels: NEXT_CLI_MODELS, window: NEXT_CLI_WINDOW });
+let spawnedCli = null;   // 当前进程用的是哪一份:"main" / "next"(还没起进程时为 null)
 const MCP_CONFIG = process.env.MCP_CONFIG || ".mcp.json";
 const FORWARD_THINKING = process.env.FORWARD_THINKING !== "0";
 const USER_NAME = process.env.USER_NAME || "你";          // 你的称呼
 const AI_NAME = process.env.AI_NAME || "TA";             // AI 的名字
+// ---- 思考翻中文(2026-09-23,见 think-translate.mjs 头注)----
+// 5.5 的思考只给英文摘要。名单里的模型,思考流逐段交给另一个模型译成中文再发。
+// **急救开关:THINK_TRANSLATE_MODELS="" + restart** = 立刻不翻、原样显示英文(不用回滚部署)。
+// 翻译走主力 CLI(2.1.215 认识 sonnet-4-6),一次性子进程,不碰晏的进程和窗口。
+const THINK_TRANSLATE_MODELS = parseModelList(process.env.THINK_TRANSLATE_MODELS ?? "claude-opus-5-5");
+const THINK_TRANSLATE_MODEL = process.env.THINK_TRANSLATE_MODEL || "claude-sonnet-4-6";
+// ⚠️ 并发默认 1:一个翻译子进程峰值约 300 MB,整机可用只有 1.2~1.5 GB(见 think-translate.mjs 的 limitConcurrency)。
+const translateThinking = limitConcurrency(makeCliTranslator({
+  bin: CLAUDE_BIN,
+  model: THINK_TRANSLATE_MODEL,
+  env: buildAuthEnv(process.env),
+  prompt: translatePrompt({ userName: process.env.USER_NAME || "她", aiName: process.env.AI_NAME || "他" }),
+  // 正文要排在思考后面,所以翻译卡住 = 正文跟着卡。20 秒封顶,超时发原文。
+  timeoutMs: +(process.env.THINK_TRANSLATE_TIMEOUT_MS || 20000) || 20000,
+  log: (...a) => log(...a),
+}), +(process.env.THINK_TRANSLATE_CONCURRENCY || 1));
 
 // ---- 工具可见化(2026-09-01,见 toolvis.mjs 头注)----
 // 思考流里除了 `〔🔧 工具名〕`,再显示参数(`→`)和返回值(`←`)。
@@ -87,17 +117,20 @@ const SOUL_ANCHOR_REPLACE = process.env.SOUL_ANCHOR_REPLACE || ANCHOR_TAIL_REPLA
 // 硬传一个 CLI 不认识的参数,后果不是「功能没生效」,是子进程带着非法参数直接退出,
 // 而下面 close 回调 1.5 秒后又把它拉起来 —— **无限重启、晏彻底失联**(性质同踩坑 19)。
 // 探不到(超时/抛错/CLI 不在)一律按不支持处理,降级回 append,晏照常活着。
-let _cliReplaceOk = null;
-function cliSupportsReplace() {
-  if (_cliReplaceOk !== null) return _cliReplaceOk;
+// 双引擎之后两份 CLI 各探各的(按可执行文件路径缓存)。
+const _cliReplaceOk = new Map();
+function cliSupportsReplace(bin = CLAUDE_BIN) {
+  if (_cliReplaceOk.has(bin)) return _cliReplaceOk.get(bin);
+  let ok;
   try {
-    const out = execFileSync(CLAUDE_BIN, ["--help"], { encoding: "utf8", timeout: 30000 });
-    _cliReplaceOk = helpMentionsReplace(out);
+    const out = execFileSync(bin, ["--help"], { encoding: "utf8", timeout: 30000 });
+    ok = helpMentionsReplace(out);
   } catch (e) {
-    _cliReplaceOk = false;
+    ok = false;
     log("[claude] --help 探测失败,按不支持 --system-prompt 处理:", String(e?.message || e).slice(0, 120));
   }
-  return _cliReplaceOk;
+  _cliReplaceOk.set(bin, ok);
+  return ok;
 }
 // 实际生效的模式。⚠️ 初值必须是 null(= 尚未生效),**不能拿配置值当初值**:
 // 进程还没起来时降级判定根本没跑过,拿配置值去报会在上线核对时骗人。
@@ -153,6 +186,9 @@ let ctxFinalFired = false;
 function spawnClaude(kelivoSystem, model) {
   spawnedSystem = kelivoSystem || "";
   spawnedModel = model || MODEL;
+  // 双引擎:这个模型走哪一份 CLI(见 cli-bin.mjs)。main 那份的 bin/env 与改动前逐字相同。
+  const cli = cliFor(spawnedModel);
+  spawnedCli = cli.which;
   ctxTokens = 0; ctxSoftFired = false; ctxTrusted = true;   // 新进程=空上下文,守卫状态清零(覆盖世界书切换/窗口重启/崩溃复活各路径)
   ctxArchivedAt = 0; ctxCompactions = 0; ctxLastWould = null; ctxFinalFired = false;
   // 系统提示词参数由 sysprompt.mjs 决定(纯逻辑,单测 test-sysprompt.mjs 覆盖两种模式与两道降级阀)。
@@ -163,7 +199,7 @@ function spawnClaude(kelivoSystem, model) {
     anchor: SOUL_ANCHOR,
     anchorReplace: SOUL_ANCHOR_REPLACE,
     worldbook: spawnedSystem,
-    cliSupportsReplace: SYS_PROMPT_MODE === "replace" ? cliSupportsReplace() : false,
+    cliSupportsReplace: SYS_PROMPT_MODE === "replace" ? cliSupportsReplace(cli.bin) : false,
     promptFile: SYSTEM_PROMPT_FILE,
     fileExists: (f) => { try { return fs.existsSync(f); } catch { return false; } },
   });
@@ -198,8 +234,9 @@ function spawnClaude(kelivoSystem, model) {
   // 两条路:设了 CLAUDE_CODE_OAUTH_TOKEN = 直连(顺手摘掉代理那两个变量,**不摘就等于没换**,
   // 理由见 auth-env.mjs 头注);没设 = 逐字回到原来走 CLIProxyAPI 的行为。
   // `ANTHROPIC_API_KEY` 两条路都删(它存在会无条件压过订阅授权 = 这一轮变按量计费)。
-  const env = buildAuthEnv(process.env);
-  const p = spawn(CLAUDE_BIN, args, { cwd: process.cwd(), env, stdio: ["pipe", "pipe", "pipe"] });
+  // 新版那份额外带上窗口上限等几个变量(cli.extraEnv);main 那份 extraEnv 为空 = 逐字不变。
+  const env = { ...buildAuthEnv(process.env), ...cli.extraEnv };
+  const p = spawn(cli.bin, args, { cwd: process.cwd(), env, stdio: ["pipe", "pipe", "pipe"] });
   p.stdout.on("data", onStdout);
   p.stderr.on("data", (d) => log("[claude]", d.toString().slice(0, 300)));
   p.on("close", (code) => {
@@ -212,7 +249,8 @@ function spawnClaude(kelivoSystem, model) {
   procReadyAt = Date.now() + MCP_WARMUP_MS;
   log("[claude] spawned", spawnedModel, "sysLen", spawnedSystem.length,
       "sysPrompt", `${SYS_PROMPT_MODE}->${sp.mode}/${sp.source || "-"}(${sp.reason})`,
-      "auth", authMode(process.env));   // direct = 直连 / proxy = 走 CLIProxyAPI,只有这两个字,不带值
+      "auth", authMode(process.env),    // direct = 直连 / proxy = 走 CLIProxyAPI,只有这两个字,不带值
+      "cli", cli.which);                // main = 钉死的 2.1.215 / next = 双引擎的新版
   return p;
 }
 function ensureProc(sys, model) { if (!proc) proc = spawnClaude(sys, model); }
@@ -260,7 +298,11 @@ function handleEvent(ev) {
     }
     if (e.type === "content_block_delta") {
       if (d.type === "text_delta" && d.text) { turn.fullText += d.text; turn.sse?.text(d.text); }
-      else if (d.type === "thinking_delta") { turn.sse?.thinking(d.thinking || d.text || ""); }
+      else if (d.type === "thinking_delta") {
+        // 翻译层在的时候(5.5 且她看得见思考)先攒着,一段结束整段翻;否则原样直发
+        const t = d.thinking || d.text || "";
+        if (turn.sse?.thinkingRaw) turn.sse.thinkingRaw(t); else turn.sse?.thinking(t);
+      }
       // 工具参数是一片片流过来的,攒到 content_block_stop 再一次吐出去
       // (半路吐会把一个 JSON 劈成许多行,而且攒不全就没法打码)。
       else if (d.type === "input_json_delta" && typeof d.partial_json === "string") {
@@ -269,6 +311,7 @@ function handleEvent(ev) {
       }
     }
     if (e.type === "content_block_stop") {
+      turn.sse?.boundary?.();   // 一段思考结束 → 翻译层整段送去翻(没有翻译层时这行什么都不做)
       const b = turn.toolBlocks.get(e.index);
       if (b) { turn.sse?.thinking(formatArgs(b.json, TOOLVIS)); turn.toolBlocks.delete(e.index); }
     }
@@ -347,7 +390,12 @@ function pump() {
   if (proc && (item.system !== spawnedSystem || item.model !== spawnedModel)) { try { proc.kill(); } catch {} proc = null; }
   ensureProc(item.system, item.model);
   // toolBlocks/toolNames 是**每轮**的:index 会跨轮重用,跨轮留着会把上一轮的参数吐到这一轮。
-  turn = { sse: item.sse, fullText: "", newWindow: !!item.newWindow, isKA: !!item.isKA, isSystem: !!item.isSystem, lastCallUsage: null, apiError: "", toolBlocks: new Map(), toolNames: new Map() };
+  // 思考翻中文:只包「她真看得见思考」的出口(流式 SSE,Kelivo/Telegram 桥/网页都走这条),
+  // 保温轮和系统回合(查岗/写信提醒)不翻 —— 看不见,翻了白花额度。
+  const sse = item.sse?.showsThinking && !item.isKA && !item.isSystem && THINK_TRANSLATE_MODELS.includes(item.model)
+    ? wrapTranslatingSink(item.sse, translateThinking, { log })
+    : item.sse;
+  turn = { sse, fullText: "", newWindow: !!item.newWindow, isKA: !!item.isKA, isSystem: !!item.isSystem, lastCallUsage: null, apiError: "", toolBlocks: new Map(), toolNames: new Map() };
   const content = item.images?.length ? [{ type: "text", text: item.text }, ...item.images] : item.text;
   const p = proc;
   const wait = Math.max(0, procReadyAt - Date.now());
@@ -377,6 +425,7 @@ function makeSSE(res) {
   }
   function close() { if (cur === null) return; send("content_block_stop", { type: "content_block_stop", index: idx }); cur = null; }
   return {
+    showsThinking: FORWARD_THINKING,   // 思考翻译层据此决定要不要包这一轮
     text(t) { ensureStart(); open("text"); send("content_block_delta", { type: "content_block_delta", index: idx, delta: { type: "text_delta", text: t } }); },
     thinking(t) { if (!FORWARD_THINKING || !t) return; ensureStart(); open("thinking"); send("content_block_delta", { type: "content_block_delta", index: idx, delta: { type: "thinking_delta", thinking: t } }); },
     finish(usage) { ensureStart(); close(); send("message_delta", { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: usage || { output_tokens: 0 } }); send("message_stop", { type: "message_stop" }); try { res.end(); } catch {} },
@@ -414,8 +463,13 @@ app.use(express.json({ limit: "12mb" }));
 // (改动前的 /health 没有任何字段能区分新旧,部署后只能靠进容器 grep)。
 // ⚠️ 看门狗也在读它:`.github/scripts/healthcheck.py` 见到 `direct` 会自动跳过「代理续命」那条检查,
 // 否则代理不在链路上、凭证永不刷新 → 那条会开始刷假警报(假警报比没警报更糟)。
+// 双引擎那三个字段(2026-09-23)同样**不带任何值**,只报状态,也兼做上线判据(只有新代码才有):
+//   cli = 当前进程用哪一份(main/next,还没起进程时 null);cliNext = 新版在不在(ready/missing);
+//   modelsDropped = 因为新版不在而被拿出菜单的模型。**看门狗读后两个**:配了 5.5 却没有新版 = 叫人。
 app.get("/health", (_q, r) => r.json({ ok: true, model: spawnedModel, models: MODELS, busy, queued: queue.length,
-                                       auth: authMode(process.env) }));
+                                       auth: authMode(process.env),
+                                       cli: spawnedCli, cliNext: NEXT_READY ? "ready" : "missing",
+                                       nextModels: NEXT_CLI_MODELS, modelsDropped: MODELS_DROPPED }));
 app.get("/debug", (_q, r) => r.json({
   lastUsage,
   // 2026-08-11 起:最近一次上游报错(null = 从没报过)。「他怎么不说话」先看这里,
@@ -759,4 +813,7 @@ function handleMessages(req, res) {
 app.post("/v1/messages", handleMessages);
 app.post("/messages", handleMessages);
 
-app.listen(PORT, () => log(`kelivo-shim on :${PORT} model=${spawnedModel} models=${MODELS.join(",")}`));
+app.listen(PORT, () => {
+  log(`kelivo-shim on :${PORT} model=${spawnedModel} models=${MODELS.join(",")} cliNext=${NEXT_READY ? "ready" : "missing"}`);
+  if (MODELS_DROPPED.length) log("[cli] ⚠️ 新版 CLI 不在,这些模型已从菜单拿掉:", MODELS_DROPPED.join(","));
+});
