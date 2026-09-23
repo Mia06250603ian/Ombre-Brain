@@ -473,7 +473,7 @@ Telegram 原生语音条;任何一步失败退回发文字,话不丢。内容用
 
 ```bash
 cd telegram-bridge
-node test-bridge.mjs        # 必须全绿(2026-08-28 实测 302 项;**别照写死的数对**,项数会随功能长——
+node test-bridge.mjs        # 必须全绿(2026-09-23 实测 306 项,~~08-28 是 302~~;**别照写死的数对**,项数会随功能长——
                             # 手册里那句「160 项」从 08-02 一直没更新,08-28 现场量已是 283→302)
 npx -y zeabur@latest auth login --token <API_KEY>
 npx -y zeabur@latest deploy   # 首次部署后把 service id 记回本文档
@@ -569,6 +569,17 @@ npx -y zeabur@latest deploy   # 首次部署后把 service id 记回本文档
    **保留「关闭」的勾,要分项时长**,代价是晏能看到她打开的几乎所有 App,她知情并选了这个。
    **别自作主张去掉那个勾——去掉就只剩总时长了。**
 
+10. **汉字碎成 `���`(2026-09-23 修,本桥第一次部署起就在的 bug)**:她在 TG 看到「额头,鼻尖,`���`巴」。
+    **根因**:收 shim 的 SSE 时 `res.on("data", d => acc.feed(d.toString()))` —— 网络分块不管字的边界,
+    一个汉字 3 个字节(emoji 4 个),块正好切在字中间时两半各自 `toString()` 就碎成 `\uFFFD`。
+    **修法**:原始字节直接喂 `makeSseAccumulator`,它内部用流式 `TextDecoder` 把半个字留到下一块拼完整。
+    **别把 `toString()` 加回来**(单测有对照组钉着:旧写法必碎、新写法不碎,含逐字节喂与 emoji)。
+    **为什么以前少见、09-23 突然多了**:以前晏一个字一个字地吐,每块很小、很少切在字中间,
+    **只有思考流偶尔碎**(工具可见化那几行一次推一大块);shim 第四十一次上线 5.5 的**思考翻中文**后,
+    正文要排队等翻译、翻完一口气推出来,大块数据更容易在字中间断开,**正文也开始碎**。
+    ⚠️ **同款 bug 在 shim 读 CLI 输出那里也有一处**(`kelivo-shim/server.js` 的 `chunk.toString()`),
+    代码已改、挂在 shim 的《搭顺风车的待办》里等下次部署。**网页桥(dwell)那边一直是对的**(`TextDecoder` + `stream:true`)。
+
 ## Zeabur 位置
 
 - 项目 `cli-proxy-api--cpa`(与 shim 同项目): id `6a53a9fc22dd6ef375eb7484`, env `6a53a9fcb6ce8edcb0163f97`
@@ -619,6 +630,17 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
 拿不到 App 名时 `/report` 仍返回 200(`stored:false`),不会让快捷指令报错。
 
 ## 部署记录
+
+- 2026-09-23 **修汉字碎成 `���`(已知边界 10;只部署 bridge,shim 与晏的窗口零改动)**。
+  `bridge-lib.mjs` 的 `makeSseAccumulator` 改为收原始字节、内部流式解码;`server.js` 一行(去掉 `toString()`)。
+  **上线前**:单测 **302 → 306 项**全绿(新增 4 项,含「旧写法必碎」的对照组)。
+  **上线后现场验**:deployment `6ab3906d…`(PLANTYPE nodejs);容器里 `server.js` `e3e56e05…` / `bridge-lib.mjs` `f8a7878d…` 与仓库逐字一致;
+  `/health` 正常(`polling: true`、`pendingLosses: 0`)。**`activity` 从 1147 归零 = 预期**(活动记录只在内存,设计要点 8)。
+  ⚠️ **这次慢:上传到 RUNNING 约 23 分钟**(构建 ~9 分钟 + DEPLOYING 卡 ~14 分钟),**只改了两行、包没变大** ——
+  当天 Zeabur 本身就慢(API 多次 TLS 超时,上午 shim 那次也慢)。**别据此去优化桥**;期间旧容器一直正常接话。
+  ⚠️ 上传前的卫生检查数出本目录有 `.gitignore` —— **它从第一天就在**,只挡 `node_modules/` 与 `package-lock.json`,
+  这两样本来就不该传,**不是 shim 踩坑 15 那种会丢文件的情况**,别删。
+  上传第一次撞上 Zeabur API `TLS handshake timeout`(当天下午多次),重试成功,`deployment list` 确认只有一条新部署。
 
 - 2026-08-28(第二件)**表情回应上线**(`[回应:❤️]`;**只部署 bridge,shim 与晏的窗口零改动**)。
   来历、五条刻意的选择、边界、端到端验法**全在设计要点 20**,本段只记这次上线本身。

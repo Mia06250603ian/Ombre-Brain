@@ -107,6 +107,30 @@ eq(mergeTurn([{ text: "", images: [] }, { text: "b" }]), { text: "b", images: []
   eq(acc.result().text, "稳", "坏行跳过不炸");
 }
 
+// 2026-09-23:原始字节在汉字中间被切开,不许碎成 ���(她看到「额头,鼻尖,���巴」)。
+{
+  const full = Buffer.from('data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"额头,鼻尖,下巴"}}\n\n');
+  const cut = full.indexOf(Buffer.from("下")) + 1;           // 正好切在「下」的第一个字节之后
+  // 先复现旧写法:各块单独 toString() 必然碎
+  const old = makeSseAccumulator();
+  old.feed(full.subarray(0, cut).toString()); old.feed(full.subarray(cut).toString());
+  ok(old.result().text.includes("�"), "对照组:旧写法(外面 toString)确实会碎");
+  // 新写法:直接喂 Buffer
+  const acc = makeSseAccumulator();
+  acc.feed(full.subarray(0, cut)); acc.feed(full.subarray(cut));
+  eq(acc.result().text, "额头,鼻尖,下巴", "字节切在汉字中间也不碎");
+  // 逐字节喂(最坏情况):每个多字节字符都被劈开
+  const acc2 = makeSseAccumulator();
+  for (let i = 0; i < full.length; i++) acc2.feed(full.subarray(i, i + 1));
+  eq(acc2.result().text, "额头,鼻尖,下巴", "逐字节喂也不碎");
+  // emoji(4 字节)
+  const e = Buffer.from('data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"想你🥺"}}\n\n');
+  const acc3 = makeSseAccumulator();
+  const ce = e.indexOf(Buffer.from("🥺")) + 2;
+  acc3.feed(e.subarray(0, ce)); acc3.feed(e.subarray(ce));
+  eq(acc3.result().thinking, "想你🥺", "4 字节的 emoji 切在中间也不碎(思考流同样适用)");
+}
+
 // ---- escapeHtml ----
 eq(escapeHtml('<a b="c"> & </a>'), '&lt;a b="c"&gt; &amp; &lt;/a&gt;', "html 转义");
 

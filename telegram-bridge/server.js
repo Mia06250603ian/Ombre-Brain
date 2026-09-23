@@ -296,7 +296,7 @@ function shimTurn(turn) {
     }, (res) => {
       if (res.statusCode !== 200) { res.resume(); return reject(new Error(`shim HTTP ${res.statusCode}`)); }
       const acc = makeSseAccumulator();
-      res.on("data", (d) => acc.feed(d.toString()));
+      res.on("data", (d) => acc.feed(d));   // ⚠️ 原始字节直接喂,别 toString()(会把跨块的汉字劈成 ���,见 makeSseAccumulator)
       res.on("end", () => resolve(acc.result()));
       res.on("error", reject);
     });
