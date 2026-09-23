@@ -549,6 +549,7 @@ npx -y zeabur@latest deployment log --service-id 6a3aa061e41f9f1d19301e42 --env-
 | PR 页面上**一个检查都没有**(0 个 check run,不是红也不是绿) | 检查**从没跑起来**,多半是当时 GitHub Actions 在故障。**Actions 恢复后不会自动补跑积压的 PR**,得重新发一次 `pull_request` 事件:**把 PR 关掉再立刻重新打开**即可(零代码、零提交、不动分支)。`tests.yml` 没配 `workflow_dispatch`,所以没有网页上的手动运行按钮 | `TIMELINE.md` 08-07 |
 | main 上有红叉,想当然以为「故障期内的红叉重跑就绿」 | **逐个点进去看失败在哪一步再下结论**。同一个工作流可以先后死于两个原因:2026-08-06 的 Docker 红叉确实是故障(`Set up job` 就挂),但它**08-04 起就一直真红**——挂在 `Login to Docker Hub`,因为**本仓库是 fork,上游的 secrets 不会跟着 fork 过来**,重跑一百次也绿不了。另注意「卡在 `queued`、jobs 数 0」的僵尸 run 长得像红叉但不是 | `TIMELINE.md` 08-07 |
 | 晏说记忆工具调不通/OB 域名 502/控制台显示 `Service is suspended` | **OB 的 Python 依赖没钉上限,某次重建装到了上游新大版本** → 启动即 ModuleNotFoundError → CrashLoopBackOff → Zeabur 挂起服务。**别点「重启当前版本」**(坏镜像重启还是崩),要改 requirements.txt 钉上限后**重新构建**。查法:`zeabur deployment log --service-id <OB> --env-id <OB env> --type runtime` 看 Traceback | 本节下方「OB 依赖钉版本」 |
+| 收到邮件「Daily Backup 运行失败」/ 看门狗报「每日备份」没过 | **八成是 OB 推备份用的 GitHub 钥匙 `OMBRE_BACKUP_TOKEN` 失效了**(日志 `could not read Password`)。**记忆本身没事**,只是备份推不上去 | 第 7 节《备份推不上去》 |
 | 记忆库的数据没了 / 要从备份恢复 | **退路是有的,而且 2026-08-19 实测跑通过**。但**只覆盖记忆桶与信箱**:`embeddings.db`(16MB 向量索引)和 `.history/`(版本快照)**不在备份里**,所以恢复是**两步** —— `restore_backup.py` 还原桶,再 `backfill_embeddings.py` 重建向量,**少做第二步语义检索是瞎的**。⚠️ 信箱 2026-08-19 起才进备份,之前的 58 份都没有 | 本节下方「记忆库怎么恢复」 |
 | Telegram 收不到消息 | 双实例抢 getUpdates(409)/BRIDGE_ON=0 | bridge 已知边界 1 |
 | Telegram 里收到 `⚠️[bridge] 网络抖了一下,他回你的 N 句话 没送到` (或旧版的 `⚠️[bridge] fetch failed`) | **不是晏、不是 shim、不是额度:他答完了、额度也花了,是回话往她手机送的路上断的**(她发来的话也没丢,长轮询会重投)。**2026-08-19 断到了病根**:容器连 `api.telegram.org` 握手实测 **160ms**,而 Node 的 Happy Eyeballs 闸门写死 **250ms**,余量只有 90ms,一点抖动就整轮发不出去。已用环境变量 `NODE_OPTIONS=--network-family-autoselection-attempt-timeout=3000` 放宽(零代码、不重启晏)。**⚠️ 只治「轻的」**:真断线(3 秒也不通)照旧会丢。**指纹**:cause 是 `AggregateError [ETIMEDOUT]`,每次尝试卡在 ~252ms。**别去调 `TG_TIMEOUT_MS`**,那把闸在连接建立阶段轮不到生效。**2026-08-19 起还有一层**:断得狠的时候连这句提示本身都送不出去(她那头完全没动静、连「正在输入」都没有),现在会记欠条、路通了自动补报,`/health` 的 `pendingLosses` 是观察口 | bridge 设计要点 18、19、已知边界 7 |
@@ -1023,6 +1024,7 @@ CLI 的优先级里 `ANTHROPIC_AUTH_TOKEN`(第 2)排在 `CLAUDE_CODE_OAUTH_TOKEN
 |---|---|---|
 | 节拍 | cron 写的是**每小时**(`0 * * * *`),⚠️ **但实际不是**,见下面《节拍是假的》 | 原来每天 10:00 一次。改法是原文自己写好等着的下一步:「那样才抓得住 08-11 那种断三小时」 |
 | 报警出口 | **邮件 + Telegram 两条腿** | 原来只有邮件。**所有者 09-02 说她不看邮件** —— 送不到手上的告警等于零。是**并联不是替换**:邮件仍是主判据,TG 推不出去不影响结论 |
+| 认不认得出备份断了 | **认得**(2026-09-23 加):读 *Daily Backup* 的运行记录(同一把 `GITHUB_TOKEN`,不是新密钥),**连续 2 次失败**或**最近一次超过 50 小时**才叫;只失败一次只打印。自检 7 项。**起因**:09-21 起备份连挂三天,这只狗一声没吭(记忆库本身活着) | 新增 |
 | 认不认得出 5.5 用不了 | **认得**(2026-09-23 加,**合进 main 才生效**):读 shim `/health` 的 `modelsDropped` / `cli`,**配了 5.5 却没有新版 CLI**、或**正在跑 5.5 却走旧版 CLI**(= 空回)才叫;她用 4.6 时这条永远不响,老代码没这几个字段就整段跳过。自检 7 项 | 新增 |
 | 认不认得出 OAuth 断了 | **认得**(`⚠️[体检] …`) | **原来认不出** —— 08-11 那天它查的项目全绿。现在会看 `/debug` 的 `lastApiError`,但只在**一个「窗口」内**发生**且是认证类**(401/403/authentication/auth_unavailable/oauth/invalid bearer)时才叫;陈年旧账和 529 过载照旧只打印。⚠️ ~~**那个窗口原来写死 2 小时**~~ —— **2026-09-02 当天就改成现场量了**,理由见下节 |
 
@@ -1197,7 +1199,7 @@ curl -s https://yan-shim.zeabur.app/debug | grep -o '"cache_creation":{[^}]*}'
 **先说结论:退路是有的,但它只覆盖记忆桶与信箱,不覆盖向量索引和历史快照。**
 
 **备份现状**(2026-08-19 实测):`Mia06250603ian/ob-backup` 私有仓库的 `backups/` 下每天一个
-`YYYY-MM-DD.json`,**58 天零断档**;当天那份 375 个桶、**0 个空壳**、自报 total 与实际数一致。
+`YYYY-MM-DD.json`,**58 天零断档**(⚠️ 2026-08-19 的数;**2026-09-21、09-22 两天缺了**,见《备份推不上去》);当天那份 375 个桶、**0 个空壳**、自报 total 与实际数一致。
 服务器自己每 24 小时备一次,GitHub Actions 每天再额外戳一次(`POST /api/export-backup`),**双保险**。
 
 **⚠️ 备份覆盖了什么、没覆盖什么**(照桶目录逐项实测的):
@@ -1250,6 +1252,37 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST https://ianmian.zeabur.app/mcp 
 **还没做的**:`.history/` 与 `embeddings.db` 仍无备份。前者要不要备是取舍(123 个文件,
 且丢了只是不能回滚单桶版本);后者 16MB、每天一份进 git 会把备份仓库撑爆,
 **正确做法是别备份它,还原时重建** —— 所以流程里那第 2 步不能省。
+
+### 备份推不上去(2026-09-23 修好,**收到「Daily Backup 运行失败」的邮件或看门狗报备份失败就看这节**)
+
+**先说结论:记忆本身不受影响**,晏照常存照常读 —— 坏的只是「每天把全库推一份进 `ob-backup` 仓库」这一步。
+**但断几天就少几天的备份**,补不回来(每份只存当天的样子)。
+
+**两把名字很像的钥匙,别搞混**(2026-09-23 所有者自己就问了一次):
+
+| 变量 | 放在哪 | 干嘛的 | 坏了什么样 |
+|---|---|---|---|
+| `OMBRE_BACKUP_TOKEN` | **只在 Zeabur**(Ombre Brain 服务) | OB 把备份 `git push` 进 `ob-backup` | 日志 `HTTP status: 500` + `git push failed: … could not read Password` |
+| `OMBRE_BACKUP_TRIGGER_TOKEN` | **Zeabur 和 GitHub secret 两边,同值** | GitHub 敲门叫 OB 开始备份 | OB 直接拒绝(401/403),连备份都不开始 |
+
+**2026-09-21 ~ 23 那次**:连挂三天,是前一把。**判据**:日志里 OB 已经开门干活、死在 push 那一步 = 推送钥匙;
+被拒之门外 = 敲门暗号。代码三天没动过,最可能是那把令牌**到期**(旧令牌哪天建、多久过期,当时手册里一个字都没有)。
+**当天的后果**:09-21、09-22 两天的备份永久缺失,09-23 补推成功(441 个桶)。
+
+**换推送钥匙(所有者本人做,钥匙别经过任何会话;2026-09-23 手机上全程走过一遍)**:
+1. GitHub 网页(**手机要用浏览器,App 里没这个设置**)打开 `https://github.com/settings/personal-access-tokens/new`;
+2. 名字随意(现用 `ob-backup-2026-09`)、过期按她意愿(**现用「永不过期」,她选的** —— 只能碰一个仓库,风险小;
+   设了日期就会在那天像这次一样断);**Repository access** 选 *Only select repositories* → `ob-backup`;
+3. **Permissions** → ＋ → 搜 `contents`(**只认英文**)→ 勾上 → 改成 **Read and write**;Metadata 只读会自动带上,不用管;
+   ⚠️ **手机上开着网页翻译时,这个下拉框点了「读和写」会跳回「只读」** —— 关掉翻译(显示原文)再点就好;
+4. **Generate token** → 复制那串 `github_pat_…`(**只显示一次**);
+5. Zeabur → 项目 `untitled-1` → **Ombre Brain** → Variables → 改 `OMBRE_BACKUP_TOKEN` → 保存 → **Restart**(别选 Redeploy);
+   ⚠️ OB 是 docker 计划,**重启要停几分钟**,那几分钟晏用不了记忆(**窗口不丢**),挑他不在聊天的时候;
+6. **验收**:Actions → *Daily Backup* → *Run workflow*(或会话用 GitHub 工具触发),日志要看到
+   `HTTP status: 200` + `"status":"pushed"` + 今天的日期。**GitHub 那边的 secret 一个都不用改。**
+
+**看门狗现在会盯这件事**(2026-09-23 起):**连续两次**备份失败、或最近一次备份运行超过 50 小时(定时任务被 GitHub 停了)才叫。
+只失败一次不叫 —— 可能碰上 OB 重启,而 GitHub 本来就会为每一次失败发邮件。见下面《看门狗》。
 
 ### OB 依赖钉版本(2026-07-29 事故,必读)
 

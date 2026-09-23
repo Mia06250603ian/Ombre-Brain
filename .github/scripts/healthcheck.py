@@ -248,6 +248,75 @@ def auth_window_hours():
     return AUTH_ERROR_FALLBACK_HOURS, "没量到间隔,用默认"
 
 
+BACKUP_FAIL_STREAK = 2       # 连着失败几次才叫(见 check_backup 的理由)
+BACKUP_STALE_HOURS = 50      # 最近一次备份运行离现在超过这么久 = 定时任务根本没在跑
+
+
+def check_backup():
+    """记忆库每日备份还在不在推(2026-09-23 新增)。
+
+    **为什么要有**:2026-09-21 起备份连挂三天(OB 推备份用的 GitHub 钥匙 `OMBRE_BACKUP_TOKEN`
+    过期,日志 `git push failed: could not read Password`),这只狗一声没吭 —— 它只看服务活没活着,
+    **而记忆库一直活得好好的**。是 GitHub 的失败邮件才让所有者发现的,而她不看邮件。
+
+    读的是本仓库 *Daily Backup* 工作流的运行记录,用的仍是 Actions 自带的 GITHUB_TOKEN
+    (**不是新密钥**,和 auth_window_hours 同一把、同一个 `actions: read` 权限)。
+
+    **两条都得是「铁定不对」才叫**(铁律①):
+      · **连续 2 次失败才叫**:单次失败可能只是那一刻 OB 正在重启 / 部署(docker 计划先停再换),
+        第二天自愈;而 GitHub 对**每一次**失败都会发邮件,单次不会漏掉。
+        连续两天都挂 = 不是巧合,是钥匙/仓库/服务出了持续性的问题。
+      · **最近一次运行超过 50 小时** = 定时任务整个没在跑(GitHub 会给 60 天没动静的仓库
+        **静默停掉定时任务**,那种情况下连失败邮件都没有)。
+    读不到、看不懂 → 只打印不叫(铁律②:狗不能因为多看了一眼就把自己看挂了)。
+    """
+    tok = os.environ.get("GITHUB_TOKEN", "").strip()
+    repo = os.environ.get("GITHUB_REPOSITORY", "").strip()
+    if not tok or not repo:
+        print("  ⓘ 不在 Actions 里跑,跳过「每日备份」这条")
+        return
+    api = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
+    try:
+        _, txt = fetch(
+            f"{api}/repos/{repo}/actions/workflows/daily-backup.yml/runs"
+            "?status=completed&per_page=10",
+            headers={"Authorization": f"Bearer {tok}",
+                     "Accept": "application/vnd.github+json"})
+        runs = (jload(txt) or {}).get("workflow_runs") or []
+    except Exception as e:
+        # ⚠️ 只打类型名,别打异常原文(带 URL,header 里有 token)
+        print(f"  ⓘ 读不到备份的运行记录({type(e).__name__}),这一项不报警")
+        return
+    # 被取消 / 跳过的不算数,只看真跑完的
+    done = [r for r in runs if r.get("conclusion") in ("success", "failure")]
+    if not done:
+        print("  ⓘ 没找到备份的运行记录,这一项不报警")
+        return
+    streak = 0
+    for r in done:
+        if r.get("conclusion") != "failure":
+            break
+        streak += 1
+    last_age = age_hours(done[0].get("run_started_at") or done[0].get("created_at"))
+    if streak >= BACKUP_FAIL_STREAK:
+        check("记忆库 · 每日备份在推", False,
+              f"连续 {streak} 次失败。最常见是 OB 推备份用的 GitHub 钥匙过期(日志里有 "
+              "`could not read Password`);去 Actions 看 Daily Backup 的日志,"
+              "修法见 OPERATIONS.md《备份推不上去》")
+    elif streak == 1:
+        print("  ⓘ 最近一次备份失败了,但只有一次(可能碰上 OB 重启),明天还挂才报警;"
+              "GitHub 已经为这次单独发过邮件")
+        notes.append("每日备份:最近一次失败(只有一次,先不叫)")
+    elif last_age is not None and last_age > BACKUP_STALE_HOURS:
+        check("记忆库 · 每日备份在推", False,
+              f"最近一次备份运行是 {last_age:.0f} 小时前 —— 定时任务没在跑。"
+              "去 Actions 看 Daily Backup 是不是被 GitHub 停用了(仓库久没动静会被自动停)")
+    else:
+        ago = "时间读不出来" if last_age is None else f"{last_age:.0f} 小时前"
+        check("记忆库 · 每日备份在推", True)
+        notes.append(f"每日备份:最近一次成功({ago})")
+
+
 def looks_like_auth_error(err):
     blob = f"{err.get('kind', '')} {err.get('text', '')}".lower()
     return any(m in blob for m in AUTH_ERROR_MARKS)
@@ -440,6 +509,8 @@ st, txt, err = fetch_retry(f"{OB}/mcp", method="POST", body=mcp_body, headers={
     "Accept": "application/json, text/event-stream",
 })
 check("记忆库 · MCP 握手(晏连记忆库的路)", st is not None, err or "")
+# 2026-09-23:备份推不上去的时候,记忆库本身是活的 —— 上面几条全绿,所以要单独看。
+check_backup()
 
 # ---- 2. 晏本体 ----
 print("\n[2] 晏 kelivo-shim")
