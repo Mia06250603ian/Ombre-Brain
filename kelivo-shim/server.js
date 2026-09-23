@@ -237,6 +237,9 @@ function spawnClaude(kelivoSystem, model) {
   // 新版那份额外带上窗口上限等几个变量(cli.extraEnv);main 那份 extraEnv 为空 = 逐字不变。
   const env = { ...buildAuthEnv(process.env), ...cli.extraEnv };
   const p = spawn(cli.bin, args, { cwd: process.cwd(), env, stdio: ["pipe", "pipe", "pipe"] });
+  // ⚠️ 2026-09-23:按 UTF-8 流式解码。原来 onStdout 里是 `chunk.toString()`,管道分块正好切在
+  // 汉字中间时会碎成 `���`(telegram-bridge 同款 bug 当天在 TG 上撞到;这里概率低但同理)。
+  p.stdout.setEncoding("utf8");
   p.stdout.on("data", onStdout);
   p.stderr.on("data", (d) => log("[claude]", d.toString().slice(0, 300)));
   p.on("close", (code) => {

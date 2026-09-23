@@ -53,8 +53,14 @@ export function buildShimBody(turn, { system }) {
 }
 
 // ---- Anthropic SSE 累积器:喂原始 chunk,攒出 text / thinking ----
+// ⚠️ 2026-09-23:**喂原始字节(Buffer),别在外面 `d.toString()`**。
+// 网络分块不管字的边界:一个汉字 3 个字节,块正好从中间断开时,各自 toString() 就碎成 `���`
+// (她在 Telegram 看到「额头,鼻尖,���巴」——「下」字被劈成两半)。这里用流式 TextDecoder,
+// 半个字先留着、等下一块拼完整再解。这个 bug 一直都在,**5.5 的思考翻译上线后才频繁撞上**:
+// 翻译期间正文排队,翻完一口气推出来,大块数据更容易在字中间断开。字符串照收(老调用方式不变)。
 export function makeSseAccumulator() {
   let buf = "", text = "", thinking = "", done = false;
+  const dec = new TextDecoder("utf-8");
   function handleData(json) {
     let ev; try { ev = JSON.parse(json); } catch { return; }
     if (ev.type === "content_block_delta") {
@@ -65,7 +71,7 @@ export function makeSseAccumulator() {
   }
   return {
     feed(chunk) {
-      buf += chunk;
+      buf += typeof chunk === "string" ? chunk : dec.decode(chunk, { stream: true });
       let i;
       while ((i = buf.indexOf("\n\n")) >= 0) {
         const block = buf.slice(0, i); buf = buf.slice(i + 2);
