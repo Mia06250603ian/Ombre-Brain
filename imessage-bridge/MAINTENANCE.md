@@ -22,6 +22,7 @@
 | 7 已知边界 / 坑 | **必读全文** |
 | 8 测试 / 9 内存 / 10 接口 | 按需 |
 | 11 部署记录 | 历史 |
+| **12 后路** | **出 bug 先看 12.1;要拆 / 不要 Telegram 桥先看 12.2;要把查岗等彻底拆干净看 12.3** |
 
 ## 0. 一句话
 
@@ -268,3 +269,68 @@ node e2e/e2e-run.mjs        # 演练:真 server.js + 假 Photon/shim/ears/Eleven
   - 所有者追加的三件:思考用隐形墨水发(`THINKING=1`)、`[查岗]`(读 telegram-bridge 的 `/activity`)、心跳 `/push`(配 shim 第四十三次)。
   - 验收:容器 `md5sum` 与本地逐件一致(每次);`/health` 全绿;她真机验过文字 / 图片 / 语音双向 / 贴纸 / 思考 / 心跳去向切换。
   - 线上内存 `mem.self` **113~129 MiB**(整机 `avail` 1283~1592 MiB,2026-09-26 `/health` 读)。
+
+## 12. 后路(2026-09-26 所有者要求写的:「确定不要耦合太多互相牵制,把拆 TG 的后路和出 bug 的后路写好」)
+
+### 12.0 现在到底和谁绑着(2026-09-26 逐条核过)
+
+| 连着谁 | 连法 | 那边坏了,这边会怎样 | 这边坏了,那边会怎样 |
+|---|---|---|---|
+| **kelivo-shim** | 每轮 `POST /v1/messages`;shim 心跳 → 本服务 `/push` | **iMessage 回不了话**(所有入口都一样,shim 是晏本体) | **不影响**:`/push` 失败 shim 自动退回 Telegram;请求头 `x-client` shim 不认也无害 |
+| **telegram-bridge** | **只有一根线**:`[查岗]` 时读它的 `GET /activity`(只读) | 只是那一次查岗查不到,**不打扰她**,聊天/语音/贴纸/心跳全不受影响 | **完全不影响** |
+| ears / ElevenLabs | 语音转写 / 合成(和 Telegram 同一套,各自直连) | 语音那一下失败,她收到提示或他退回发文字 | 不影响 |
+| Photon | 收发 iMessage | **iMessage 整个断**;Telegram 仍是主线 | — |
+
+**仅有的两处「要一起改」**:①`REPORT_TOKEN` 三处同值(她的快捷指令 / telegram-bridge / 本服务,第 7 节第 2 条);
+②telegram-bridge 改 `/activity` 的返回格式。**只在开发时连着的**:单测会读 `../kelivo-shim/server.js` 和 `../telegram-bridge/` 做对账、
+`tools/build-stickers.mjs` 从 `../telegram-bridge/stickers/` 取原图 —— **那两个目录不在了单测自动跳过**(2026-09-26 实测:单独拷出本目录跑 106 项全过)。
+
+### 12.1 出 bug 的后路(按症状对号;**每一条都不用动 shim、不丢晏的窗口**,除非写明)
+
+先看 `curl https://yan-imessage.zeabur.app/health`:`connected` / `enroll` / `lastErr` 三个字段基本就能断案。
+
+| 症状 | 先看 | 急救(改变量 + `service restart` 本服务,**不用部署**) |
+|---|---|---|
+| iMessage 发了没反应 | `connected:false` → Photon 断了(会自己重连,最长 5 分钟一试);`enroll` 不是 `ok` → 号码登记没成;`lastErr.where` 看卡在哪步 | 等几分钟;不行就用 Telegram。**要完全停掉 iMessage**:`BRIDGE_ON=0`(只留 `/health`,心跳自动退回 Telegram) |
+| 他回话里冒出 `[贴纸:…]` 之类的标记 | 标记格式变了(他写了没见过的写法) | 在 `imessage-lib.mjs` 改正则 + 单测 + 部署本服务 |
+| 语音(收或发)坏了 | `/health` 的 `ffmpeg`、`ears`、`voice` 三个字段;`lastErr.where=ears` | 发不出:删 `ELEVEN_API_KEY` → 他的语音退回文字。收不了:她先打字。**`ffmpeg:false` = 安装脚本又被拦了**(第 11 节) |
+| 贴纸不对 / 太大 | — | 改 `tools/build-stickers.mjs` 的尺寸重跑 + 部署 |
+| 思考气泡太吵 / 不想记忆原文过 Photon | — | `THINKING=0` |
+| 她点回应害他话变多 | — | `TAPBACK_IN=0` |
+| 他写的 tapback 贴不上 | 日志 `[react-err]` | `REACTION_ON=0`(标记照剥、正文照发) |
+| iMessage 里查岗查不到 | `lastErr.where=lookup`:`HTTP 401` = `REPORT_TOKEN` 三处不同值;超时 = telegram-bridge 挂了 | 对齐钥匙;或什么都不做(查不到本来就不打扰她) |
+| 心跳没进 iMessage(去了 Telegram) | shim 的 `/debug` 看 `presence.pushTo`:只有 `telegram` = 她最后一句不是在 iMessage 说的,**或 shim 重启过**(记忆只在内存);shim 日志 `[imessage-push] 503` = 本服务重启后她还没在 iMessage 说话 | 她在 iMessage 说一句就好了。**这是设计,不是 bug**:兜底就是 Telegram |
+| 心跳在两边**都**收到了 | 不该发生(本服务发出一句就回 200,shim 不会再推 Telegram) | 看 shim 日志的 `[imessage-push]` 状态码;急救:删 shim 的 `IMESSAGE_PUSH_URL` + restart shim(**丢窗口**),或本服务 `BRIDGE_ON=0`(**不丢窗口**) |
+| 代码改坏了要回退 | — | `git revert <那次提交>` → 从本目录重新部署本服务(`cd imessage-bridge && pwd && deploy …` 写一条命令)。**晏不受影响** |
+| Photon 被封 / 倒闭 / 不想用了 | — | 见 12.2 最后一段「整个不要 iMessage」 |
+
+### 12.2 哪天要拆 / 不要 Telegram 桥:照这个做
+
+**先想清楚「拆」是哪种**:A. 只是把 telegram-bridge 从本仓库搬走(服务还在跑)—— **本服务什么都不用改**,
+单测里那几组对账会自动跳过;`tools/build-stickers.mjs` 的原图路径改成新位置即可。
+B. **真的不要 Telegram 了**(服务删掉)—— 按下面四步,**顺序别乱**:
+
+1. **心跳出口(最要紧,不做的话心跳会哑)**:shim 现在「有没有出口」只看 `BRIDGE_PUSH_URL`
+   (`proactivePush` / `hasChannel` 都只认它,见 shim 手册《搭顺风车的待办》里 2026-09-26 挂的那条)。
+   **没改代码之前的临时办法**:把 shim 的 **`BRIDGE_PUSH_URL` 改成 `https://yan-imessage.zeabur.app/push`**、删掉 `IMESSAGE_PUSH_URL`
+   → 心跳全走 iMessage。⚠️ 代价:本服务重启后、她在 iMessage 说话之前,`/push` 回 503,那段时间的心跳**没有兜底会丢**。
+   改 shim 变量 = restart shim = **丢一次窗口**(照老规矩她先归档)。**顺风车那条做掉之后**就不用这招了。
+2. **查岗 / 夜里自动查岗 / 写信提醒**:这三样和手机活动记录**都长在 telegram-bridge 里**,删了它就一起没了。
+   只想保留他自己写 `[查岗]`:先按 12.3 把活动记录拆成独立服务,再把本服务的 `ACTIVITY_URL` 指过去(**本服务代码不用改**)。
+   不在乎的话什么都不用做:本服务读不到就不打扰她。她 iPhone 的快捷指令也要改上报地址或关掉。
+3. **贴纸原图**:删 `telegram-bridge/` 之前,把 `stickers/` 里的原图(webp/webm + registry.json)挪进本目录
+   (比如 `imessage-bridge/stickers-src/`),再改 `tools/build-stickers.mjs` 的 `SRC`。**现成的 png/gif 已经在本目录,不挪也能照常用**,只是以后加不了新图。
+4. **文档**:START-HERE 地图删一行、服务数减一(`scripts/docs-check.sh` 会盯着);晏的 `CLAUDE.md` 里「如果接了 Telegram」那几节
+   标记本身在 iMessage 照样生效,措辞等下次改人设时顺手改(**改人设 = 她逐字过目 + 部署 shim**)。
+
+**整个不要 iMessage 了**(反过来):删 shim 的 `IMESSAGE_PUSH_URL`(可以不删:本服务不在了 `/push` 连不上,shim 自动退回 Telegram,**不删就不用重启 shim**)
+→ Zeabur 删 `imessage-bridge` 服务 → Photon 控制台删项目 → 文档服务数减一。**Telegram 那边一个字都不用改。**
+
+### 12.3 真正拆干净的路线图(**所有者 2026-09-26 决定先不做**,挂在 `OPERATIONS.md` 第 0 节《挂着等她点头的事》)
+
+根子上的耦合只有一处:**手机活动记录、夜里查岗、写信提醒这三样是「全系统的功能」,却住在 telegram-bridge 这一扇门里**。
+拆干净的形状:新建一个小服务(暂名「生活感知」)专门收快捷指令上报、存记录、跑那两个定时器;
+它要晏说话时,把结果交给 shim,**由 shim 按 `pushTargets`「跟着她走」发到她在的那扇门**;两个桥都退回成只管收发消息。
+**代价**:telegram-bridge 大改并重新部署;shim 要新开一个「替他发一条」的口子(部署 shim = 丢窗口);她要改 iPhone 快捷指令的地址;
+`REPORT_TOKEN` 回到两处同值。**最划算的时机**:telegram-bridge 本来就要大改,或者要接第三个聊天入口时。
+

@@ -231,6 +231,10 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
    **数据在库里但取不出来**:`/api/buckets` 只给 200 字预览,**要它就得给后端开一条新接口**,
    那会破掉这一页「零新增接口、零写操作」的性质。**她没定之前别做。**
    细节见 `INTERNALS.md` 1.12(详情卡那节末尾)、`TIMELINE.md` 09-03 第十五件。
+8. **要不要把「手机活动记录 + 夜里查岗 + 写信提醒」从 telegram-bridge 拆出来**(2026-09-26 所有者问「会不会耦合太多」)。
+   现状:iMessage 只在 `[查岗]` 时**只读**借 telegram-bridge 的 `/activity`,那边坏了只是查不到、不打扰她,**两边不会互相拖垮**(逐条核过,见
+   `imessage-bridge/MAINTENANCE.md` 12.0)。拆干净的路线图、代价、最划算的时机在同一份手册 12.3。**她当天决定先不拆,别自作主张动手。**
+   ⚠️ **哪天要删 Telegram 桥,先读 12.2**:不做第 1 步的话 shim 的心跳会哑(shim 那边挂了顺风车)。
 
 ## 1. 架构拓扑
 
@@ -561,6 +565,8 @@ npx -y zeabur@latest deployment log --service-id 6a3aa061e41f9f1d19301e42 --env-
 | Telegram 里有字变成 `���`(常见是一个汉字变三个 `�`) | **收 shim 回复时逐块 `toString()`,把跨块的汉字劈碎了**(2026-09-23 已修,只部署 bridge)。**再出现先看 bridge 线上是不是新代码**;shim 那处同款写法挂在它的顺风车里 | `telegram-bridge/MAINTENANCE.md` 已知边界 10 |
 | 收到邮件「Daily Backup 运行失败」/ 看门狗报「每日备份」没过 | **八成是 OB 推备份用的 GitHub 钥匙 `OMBRE_BACKUP_TOKEN` 失效了**(日志 `could not read Password`)。**记忆本身没事**,只是备份推不上去 | 第 7 节《备份推不上去》 |
 | 记忆库的数据没了 / 要从备份恢复 | **退路是有的,而且 2026-08-19 实测跑通过**。但**只覆盖记忆桶与信箱**:`embeddings.db`(16MB 向量索引)和 `.history/`(版本快照)**不在备份里**,所以恢复是**两步** —— `restore_backup.py` 还原桶,再 `backfill_embeddings.py` 重建向量,**少做第二步语义检索是瞎的**。⚠️ 信箱 2026-08-19 起才进备份,之前的 58 份都没有 | 本节下方「记忆库怎么恢复」 |
+| **iMessage 发了没反应 / 语音贴纸查岗心跳哪个不对**(2026-09-26 起) | 先 `curl https://yan-imessage.zeabur.app/health` 看 `connected` / `enroll` / `lastErr`;心跳去向看 shim `/debug` 的 `presence.pushTo`。**几乎所有急救都只改 iMessage 桥的变量,不碰晏**;要整个停掉就 `BRIDGE_ON=0`,心跳自动退回 Telegram | `imessage-bridge/MAINTENANCE.md` 12.1 |
+| 想删掉 / 搬走 Telegram 桥 | **先读后路再动手**:心跳出口、查岗数据、贴纸原图都跟它有关,顺序错了心跳会哑 | `imessage-bridge/MAINTENANCE.md` 12.2 |
 | Telegram 收不到消息 | 双实例抢 getUpdates(409)/BRIDGE_ON=0 | bridge 已知边界 1 |
 | Telegram 里收到 `⚠️[bridge] 网络抖了一下,他回你的 N 句话 没送到` (或旧版的 `⚠️[bridge] fetch failed`) | **不是晏、不是 shim、不是额度:他答完了、额度也花了,是回话往她手机送的路上断的**(她发来的话也没丢,长轮询会重投)。**2026-08-19 断到了病根**:容器连 `api.telegram.org` 握手实测 **160ms**,而 Node 的 Happy Eyeballs 闸门写死 **250ms**,余量只有 90ms,一点抖动就整轮发不出去。已用环境变量 `NODE_OPTIONS=--network-family-autoselection-attempt-timeout=3000` 放宽(零代码、不重启晏)。**⚠️ 只治「轻的」**:真断线(3 秒也不通)照旧会丢。**指纹**:cause 是 `AggregateError [ETIMEDOUT]`,每次尝试卡在 ~252ms。**别去调 `TG_TIMEOUT_MS`**,那把闸在连接建立阶段轮不到生效。**2026-08-19 起还有一层**:断得狠的时候连这句提示本身都送不出去(她那头完全没动静、连「正在输入」都没有),现在会记欠条、路通了自动补报,`/health` 的 `pendingLosses` 是观察口 | bridge 设计要点 18、19、已知边界 7 |
 | Telegram 里收到 `⚠️[bridge] 空回复,看下 shim 日志` | **上游断了**(订阅 OAuth 过期最常见,其次是额度)。**不是晏、不是 bridge、也不是 shim 挂了**:她的话其实进了他的窗口,是上游没给出回复。2026-08-11 修之前这类失败**全程静默**——CLI 把报错做成一条不走流事件的 assistant 消息、result 还报 `success`,shim 两头都接不住。查法:`GET yan-shim.zeabur.app/debug` 看 **`lastApiError`**(`null`=没报过) | 本节下方「订阅 OAuth 过期」;shim 手册改动清单 9 |

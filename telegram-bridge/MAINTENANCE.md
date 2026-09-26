@@ -635,6 +635,7 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
 | `POST /report {app_name}` | `Authorization: Bearer <REPORT_TOKEN>`(也认 `x-api-key` / `?key=`) | iOS 快捷指令上报「她打开了什么 App」 |
 | `GET /activity` | 同上 | 汇总:最后活跃时间 + 最近不重复的 App 名 + `streak` + **`durations`(每个 App 各用了多久,2026-08-06)** + **`lastRawReport`(最近一次上报的原始 body)** |
 
+⚠️ **要删 / 搬走本桥之前,先读 `../imessage-bridge/MAINTENANCE.md` 12.2**(2026-09-26 起 shim 心跳的兜底出口、iMessage 的查岗数据、iMessage 贴纸的原图都在本桥这儿;顺序错了心跳会哑)。
 ⚠️ **`GET /activity` 从 2026-09-26 起还有一个调用方:`../imessage-bridge/`**(晏在 iMessage 里写 `[查岗]` 时来取)。
 **改这个接口的返回格式,那边会跟着坏**;`REPORT_TOKEN` 也从两处同值变成**三处**(快捷指令 / 本桥 / imessage-bridge),换就一起换。
 

@@ -7,9 +7,15 @@ import {
   takeCheckMarker, takeReactionMarker, looksLikeEmoji, extractSegments, bubblesFor, splitLong, bubbleGapMs,
   formatEarsResult, classifyContent, createConversation, lookupPrompt, isSilentReply, fmtDur,
 } from "./imessage-lib.mjs";
-import * as TG from "../telegram-bridge/bridge-lib.mjs";
-
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+// 下面三组「和别的目录对账」的测试,**那个目录不在了就跳过**(不算失败):
+// 本服务运行时不依赖它们,只是趁它们还在时防止两边走样。拆掉 telegram-bridge / 挪走 shim 时见 MAINTENANCE.md 第 12 节。
+const TG_LIB = path.join(HERE, "../telegram-bridge/bridge-lib.mjs");
+const SHIM_SRC = path.join(HERE, "../kelivo-shim/server.js");
+const TG_STICKERS = path.join(HERE, "../telegram-bridge/stickers/registry.json");
+const TG = fs.existsSync(TG_LIB) ? await import(TG_LIB) : null;
+const skipped = [];
+
 let pass = 0, fail = 0;
 function eq(name, got, want) {
   const g = JSON.stringify(got), w = JSON.stringify(want);
@@ -58,11 +64,13 @@ const ok = (name, cond) => eq(name, !!cond, true);
   eq("普通话", detectReset("在吗"), null);
   eq("语音转写结果永远不触发", detectReset(formatEarsResult({ text: "归档" })), null);
   // 词表对账:从 shim 源码里抠出来比,shim 改了词表这里会红
-  const shim = fs.readFileSync(path.join(HERE, "../kelivo-shim/server.js"), "utf8");
-  const words = (name) => (new RegExp(`const ${name} = (\\[[^\\]]*\\])`).exec(shim) || [])[1];
-  eq("词表与 shim 一致:晚安", words("GOODNIGHT_WORDS"), '["晚安"]');
-  eq("词表与 shim 一致:归档", words("ARCHIVE_WORDS"), '["归档"]');
-  eq("词表与 shim 一致:换窗", words("SWITCH_WORDS"), '["换窗口", "开新窗口", "新窗口"]');
+  if (fs.existsSync(SHIM_SRC)) {
+    const shim = fs.readFileSync(SHIM_SRC, "utf8");
+    const words = (name) => (new RegExp(`const ${name} = (\\[[^\\]]*\\])`).exec(shim) || [])[1];
+    eq("词表与 shim 一致:晚安", words("GOODNIGHT_WORDS"), '["晚安"]');
+    eq("词表与 shim 一致:归档", words("ARCHIVE_WORDS"), '["归档"]');
+    eq("词表与 shim 一致:换窗", words("SWITCH_WORDS"), '["换窗口", "开新窗口", "新窗口"]');
+  } else skipped.push("重置词对账(../kelivo-shim/server.js 不在)");
 }
 
 // ---- 合并与请求体 ----
@@ -180,7 +188,8 @@ const ok = (name, cond) => eq(name, !!cond, true);
 }
 
 // ---- 查岗话术:必须和 telegram-bridge 逐字一致(晏在两扇门读到的一样)----
-{
+if (!TG) skipped.push("查岗话术对账(../telegram-bridge 不在)");
+else {
   const now = Date.parse("2026-09-26T15:00:00Z");
   const m = (min) => now - min * 60000;
   const cases = {
@@ -267,13 +276,16 @@ const ok = (name, cond) => eq(name, !!cond, true);
   const files = fs.readdirSync(dir).filter((f) => f !== "registry.json");
   eq("registry 里每张图都在", Object.values(reg).filter((f) => !files.includes(f)), []);
   eq("没有 registry 之外的孤儿图", files.filter((f) => !Object.values(reg).includes(f)), []);
-  const tg = JSON.parse(fs.readFileSync(path.join(HERE, "../telegram-bridge/stickers/registry.json"), "utf8"));
-  eq("标签与 telegram-bridge 完全一致(那边加了新图就重跑 tools/build-stickers.mjs)", Object.keys(reg).sort(), Object.keys(tg).sort());
+  if (fs.existsSync(TG_STICKERS)) {
+    const tg = JSON.parse(fs.readFileSync(TG_STICKERS, "utf8"));
+    eq("标签与 telegram-bridge 完全一致(那边加了新图就重跑 tools/build-stickers.mjs)", Object.keys(reg).sort(), Object.keys(tg).sort());
+  } else skipped.push("贴纸标签对账(../telegram-bridge/stickers 不在)");
   eq("静态 35 张是 png(webp 在 iMessage 里被当成大照片,2026-09-26 真机反馈)", Object.values(reg).filter((f) => f.endsWith(".png")).length, 35);
   eq("没有 webp 混进来", Object.values(reg).filter((f) => f.endsWith(".webp")).length, 0);
   eq("会动的 24 张是 gif", Object.values(reg).filter((f) => f.endsWith(".gif")).length, 24);
   eq("没有 webm 混进来(iMessage 不播)", Object.values(reg).filter((f) => f.endsWith(".webm")).length, 0);
 }
 
+if (skipped.length) console.log(`(跳过 ${skipped.length} 组对账:${skipped.join(";")})`);
 console.log(`\n${pass} 通过, ${fail} 失败`);
 process.exit(fail ? 1 : 0);
