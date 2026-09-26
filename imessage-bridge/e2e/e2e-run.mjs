@@ -120,7 +120,7 @@ ok("1 不报 model", !("model" in shimReqs[0].body));
 ok("1 不带 x-system-turn(她本人说话)", !shimReqs[0].headers["x-system-turn"]);
 eq("1 回应贴在最后一条上", reacted, [{ id: last.id, e: "❤️" }]);
 eq("1 发出去的顺序", sent.map((x) => typeof x === "string" ? x : `${x.type}:${path.basename(String(x.input))}`),
-  ["嗯嗯", "attachment:s04.webp", "想你"]);
+  ["嗯嗯", "attachment:s04.png", "想你"]);
 ok("1 没有标记漏给她", !texts().some((t) => /[\[【]/.test(t)));
 
 // 场景 2:陌生人 → 不理,shim 一次都不叫

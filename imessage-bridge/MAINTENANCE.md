@@ -93,7 +93,7 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
    | 他写的 | Telegram 那边 | 这边 |
    |---|---|---|
    | `[回应:❤️]` | 贴 Telegram 回应(官方白名单约 70 个) | 给她**这一轮最后一条**点 tapback。iOS 18 起任意 emoji 都行;只挡「明显不是表情」的(带字母/汉字/数字)。失败只落日志,不告诉她 |
-   | `[贴纸:x]` | sendSticker | 发图片附件(静态 webp / 会动的 gif,见第 5 节) |
+   | `[贴纸:x]` | sendSticker | 发图片附件(静态透明 png / 会动的 gif,见第 5 节) |
    | `[语音]英文[/语音]` | ElevenLabs → Ogg 语音条 | ElevenLabs → mp3 → **m4a** → iMessage 语音。没配/超长/失败 → 退回发文字 |
    | `[查岗]` | 查手机活动记录再喂回去 | **只剥掉,查不了**(见第 7 节第 2 条) |
    - 冒号**全角半角都认**。⚠️ telegram-bridge 那份正则其实只认半角(见第 7 节第 6 条)。
@@ -149,13 +149,15 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
 ## 5. 贴纸
 
 `stickers/` 是 `../telegram-bridge/stickers/` 的**转换副本**,由 `tools/build-stickers.mjs` 生成、产物入库:
-- 静态 35 张 `.webp` **原样拷贝**(iPhone 能直接显示;试过转 png,0.6 MB 涨到十几 MB,不值);
+- 静态 35 张 `.webp` → **缩到 300px 的透明 `.png`**(共 2.8 MB)。~~原样拷贝 512px webp~~ **已撤销,别改回去**:
+  2026-09-26 上线当天所有者真机反馈「巨大一个,而且是图片形式」—— iMessage 把 webp 当普通照片按整宽铺开;
+  透明 PNG 才像贴纸一样浮在对话里。(512px 的 png 也试过,35 张十几 MB,也不行。)
 - 会动的 24 张螃蟹 `.webm` → `.gif`(iMessage 不播 webm)。240px、15fps、48 色不抖动,共 2.7 MB(2026-09-26)。
   **解码必须 `-c:v libvpx-vp9`**,否则 alpha 丢光、背景变黑。
 - 标签和 Telegram 那边**逐字相同**(晏只会一套标签)。
 
 ⚠️ **telegram-bridge 加了新贴纸,这边要重跑一次**:`cd imessage-bridge && node tools/build-stickers.mjs`,
-然后跑单测(它会校验两边标签一致、webp=35 / gif=24),再部署本服务。**不重跑的话,新标签在 iMessage 里只剥不发**(不会漏标记,只是少一张图)。
+然后跑单测(它会校验两边标签一致、png=35 / gif=24),再部署本服务。**不重跑的话,新标签在 iMessage 里只剥不发**(不会漏标记,只是少一张图)。
 
 ## 6. 部署检查单(**尚未走过,第一次上线时照这个做**)
 

@@ -241,7 +241,8 @@ const ok = (name, cond) => eq(name, !!cond, true);
   eq("没有 registry 之外的孤儿图", files.filter((f) => !Object.values(reg).includes(f)), []);
   const tg = JSON.parse(fs.readFileSync(path.join(HERE, "../telegram-bridge/stickers/registry.json"), "utf8"));
   eq("标签与 telegram-bridge 完全一致(那边加了新图就重跑 tools/build-stickers.mjs)", Object.keys(reg).sort(), Object.keys(tg).sort());
-  eq("静态 35 张是 webp", Object.values(reg).filter((f) => f.endsWith(".webp")).length, 35);
+  eq("静态 35 张是 png(webp 在 iMessage 里被当成大照片,2026-09-26 真机反馈)", Object.values(reg).filter((f) => f.endsWith(".png")).length, 35);
+  eq("没有 webp 混进来", Object.values(reg).filter((f) => f.endsWith(".webp")).length, 0);
   eq("会动的 24 张是 gif", Object.values(reg).filter((f) => f.endsWith(".gif")).length, 24);
   eq("没有 webm 混进来(iMessage 不播)", Object.values(reg).filter((f) => f.endsWith(".webm")).length, 0);
 }
