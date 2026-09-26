@@ -218,8 +218,9 @@ async function deliver(space, target, rawText, gate) {
   if (unknown.length) log("[sticker] 不认识的标签:", unknown.join(","));
   const out = { sent: 0, failed: 0, wants: check.wants };
   if (!segments.length) {
-    // 只点了回应、一个字没说,是合法的一轮;真的什么都没有才提示
-    if (!reacted && !check.wants) await notify(space, "⚠️[bridge] 空回复,看下 shim 日志");
+    // 只点了回应、一个字没说,是合法的一轮;真的什么都没有才提示。
+    // **心跳(gate)不提示**:他心跳只写了个 [回应:❤️](心跳没有可贴的靶子)或不存在的贴纸,不该甩她一句报错(同 telegram-bridge 的 /push)
+    if (!reacted && !check.wants && !gate) await notify(space, "⚠️[bridge] 空回复,看下 shim 日志");
     return out;
   }
   // gate(心跳 /push 用):第一发的结果一出来就告诉调用方;第一发就失败 → 停下不再发(调用方会让 shim 改走 Telegram,防两边重复)
@@ -360,10 +361,11 @@ async function onMessage(space, message) {
       convo.hold(EARS_TIMEOUT_MS + MEDIA_TIMEOUT_MS);
       try {
         const line = formatEarsResult(await earsListen(c.read));
-        if (!line) { await notify(space, "⚠️[bridge] 语音没听清,再说一次?"); continue; }
+        if (!line) { convo.release(); await notify(space, "⚠️[bridge] 语音没听清,再说一次?"); continue; }
         convo.add({ text: line, images: [], target, space });
       } catch (e) {
         log("[ears-err]", errText(e)); noteErr("ears", e);
+        convo.release();                            // 别让她之前打的字被 hold 拖住
         await notify(space, `⚠️[bridge] 语音听不了(${errText(e)}),打字告诉他吧`);
       }
     }
