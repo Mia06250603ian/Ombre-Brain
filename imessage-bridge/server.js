@@ -171,6 +171,8 @@ function shimTurn(turn) {
       hostname: u.hostname, port: u.port || undefined, path: u.pathname, method: "POST",
       headers: {
         "Content-Type": "application/json", "x-api-key": SHIM_KEY, "Content-Length": Buffer.byteLength(body),
+        // 自报是哪扇门:shim 据此记住「她最后在 iMessage」,心跳就推回这边的 /push(shim 的 pushTargets)
+        "x-client": "imessage",
         // 查岗结果是系统送进去的,不是她说话:shim 见到这个头就不当「她出现了」(同 telegram-bridge)
         ...(turn.lookup ? { "x-system-turn": "1" } : {}),
       },
@@ -317,11 +319,13 @@ function firstTime(id) {
   return true;
 }
 
+let lastSpace = null;             // 她最近说话的那个对话:心跳(/push)往这儿发
 async function onMessage(space, message) {
   if (message.direction === "outbound") return;                 // 他自己发出去的回声
   if (message.platform && message.platform !== "imessage") return;
   if (!isOwner(message.sender?.id, OWNER)) { stat.dropped++; log("[drop] 陌生人"); return; }
   if (!firstTime(message.id)) return;
+  lastSpace = space;
   const pieces = message.content?.type === "group"
     ? (message.content.items || []).map((m) => m.content)
     : [message.content];
@@ -425,7 +429,30 @@ function memMiB() {
   try { const m = /MemAvailable:\s+(\d+)/.exec(fs.readFileSync("/proc/meminfo", "utf8")); if (m) avail = Math.round(+m[1] / 1024); } catch {}
   return { self: Math.round(process.memoryUsage.rss() / 1048576 * 10) / 10, avail };
 }
+// ---- POST /push {text}:shim 的心跳推到这里(她最后在 iMessage 里说话时)----
+// 鉴权同 telegram-bridge 的 /push:x-api-key = SHIM_KEY。
+// **一句都没发出去就回 502**,shim 会退回 Telegram 再推一遍(话不丢);发出去了哪怕一句就回 200(防两边重复)。
+// 还不知道往哪个对话发(本服务重启后她还没说过话)→ 503,同样退回 Telegram。
+async function handlePush(req, res) {
+  const send = (code, obj) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(obj)); };
+  if (!SHIM_KEY || req.headers["x-api-key"] !== SHIM_KEY) return send(401, { ok: false });
+  let body = "";
+  for await (const c of req) { body += c; if (body.length > 1e6) return send(413, { ok: false }); }
+  let text = "";
+  try { text = String(JSON.parse(body).text || "").trim(); } catch { return send(400, { ok: false, error: "bad json" }); }
+  if (!text) return send(400, { ok: false, error: "empty text" });
+  if (!lastSpace || !stat.connected) return send(503, { ok: false, error: "no space yet" });
+  log("[push] 他主动找她");
+  try {
+    const out = await deliver(lastSpace, undefined, text);   // 主动消息没有可贴回应的靶子
+    if (out.wants) queueLookup(lastSpace);                    // 心跳里也可能写 [查岗](同 telegram-bridge)
+    if (!out.sent && out.failed) return send(502, { ok: false, failed: out.failed });
+    send(200, { ok: true, sent: out.sent, failed: out.failed });
+  } catch (e) { log("[push-err]", errText(e)); noteErr("push", e); send(502, { ok: false, error: errText(e) }); }
+}
+
 const server = http.createServer((req, res) => {
+  if (req.method === "POST" && req.url === "/push") { handlePush(req, res).catch(() => { try { res.writeHead(500).end(); } catch {} }); return; }
   if (req.method === "GET" && (req.url === "/health" || req.url === "/")) {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({

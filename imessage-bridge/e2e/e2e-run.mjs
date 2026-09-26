@@ -272,6 +272,25 @@ await sleep(800);
 eq("15 只查一次、不打转", shimReqs.length, 2);
 eq("15 他选择不说,什么都不发", texts(), []);
 
+// 场景 16:请求里自报是 iMessage(shim 据此把心跳推回这边)
+ok("16 每轮都带 x-client: imessage", shimReqs.length === 0 || shimReqs.every((r) => r.headers["x-client"] === "imessage"));
+reset();
+shimReply = () => "嗯";
+say({ type: "text", text: "报个门" });
+await until(() => shimReqs.length >= 1);
+eq("16 x-client", shimReqs[0].headers["x-client"], "imessage");
+await until(() => texts().includes("嗯"));
+
+// 场景 17:心跳推进来(POST /push)
+reset();
+const pushHb = (body, key = "k-test") => realFetch(`http://127.0.0.1:${PORT}/push`, { method: "POST", headers: { "Content-Type": "application/json", "x-api-key": key }, body: JSON.stringify(body) });
+eq("17 钥匙不对 401", (await pushHb({ text: "想你" }, "bad")).status, 401);
+eq("17 空文字 400", (await pushHb({ text: "" })).status, 400);
+const pr = await pushHb({ text: "在干嘛呢\n[贴纸:贴贴]" });
+eq("17 推成功 200", [pr.status, (await pr.json()).sent], [200, 2]);
+eq("17 她收到文字和贴纸", sent.map((x) => typeof x === "string" ? x : `${x.type}:${path.basename(String(x.input))}`), ["在干嘛呢", "attachment:s04.png"]);
+eq("17 心跳不进 shim(是他已经说完的话)", shimReqs.length, 0);
+
 // 场景 12:/health
 const h = await (await realFetch(`http://127.0.0.1:${PORT}/health`)).json();
 eq("12 health 显示晏的号码", [h.line, h.enroll], ["+14155550123", "ok"]);

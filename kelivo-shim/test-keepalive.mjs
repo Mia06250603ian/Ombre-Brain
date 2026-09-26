@@ -1,6 +1,6 @@
 // test-keepalive.mjs — 保温+唤醒决策单测,部署前跑一遍:node test-keepalive.mjs
 // 全绿输出 "ALL PASS";不碰网络、不碰 claude 进程(踩坑 3 无关)。
-import { kaDecide, kaPrompt, kaSilent, isNightHour } from "./keepalive.mjs";
+import { kaDecide, kaPrompt, kaSilent, isNightHour, pushTargets } from "./keepalive.mjs";
 
 let n = 0, bad = 0;
 function ok(cond, name) {
@@ -108,6 +108,18 @@ eq(kaSilent("嗯,【沉默】吧"), true, "带沉默标记的句子也算沉默"
 eq(kaSilent(undefined), true, "undefined=沉默");
 eq(kaSilent("好想你,吃饭了吗"), false, "真消息不是沉默");
 eq(kaSilent("[贴纸:好想你]"), false, "纯贴纸也算真消息");
+
+// ================= 心跳往哪扇门推(2026-09-26)=================
+{
+  const T = "https://tg/push", I = "https://im/push";
+  const names = (o) => pushTargets(o).map((t) => t.name).join(",");
+  eq(names({ lastClient: "imessage", imessageUrl: I, bridgeUrl: T }), "imessage,telegram", "她最后在 iMessage:先推 iMessage,失败退回 Telegram");
+  eq(names({ lastClient: null, imessageUrl: I, bridgeUrl: T }), "telegram", "她最后在 Telegram/Kelivo/网页:只推 Telegram");
+  eq(names({ lastClient: "imessage", imessageUrl: "", bridgeUrl: T }), "telegram", "没配 IMESSAGE_PUSH_URL:和以前逐字相同");
+  eq(names({ lastClient: "somethingelse", imessageUrl: I, bridgeUrl: T }), "telegram", "不认识的门:走 Telegram");
+  eq(names({ lastClient: "imessage", imessageUrl: I, bridgeUrl: "" }), "imessage", "没有 Telegram 出口时只剩 iMessage");
+  eq(pushTargets({ lastClient: "imessage", imessageUrl: I, bridgeUrl: T })[0].url, I, "出口地址对");
+}
 
 console.log(bad ? `${bad}/${n} FAIL` : `${n} 项全绿 ALL PASS`);
 process.exit(bad ? 1 : 0);
