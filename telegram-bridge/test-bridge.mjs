@@ -10,6 +10,7 @@ import {
   describeErr, isRetriableNetErr, turnErrorText, describeLoss,
   letterDecide, letterPrompt, LETTER_HOUR, LETTER_MIN, LETTER_WINDOW_MIN,
   recordLoss, pendingNoticeText, bjClock,
+  routeViaImessage,
 } from "./bridge-lib.mjs";
 import fs from "fs";
 
@@ -856,6 +857,48 @@ const undiciErr = (causeName, causeMsg, code) => {
   // bjClock 走北京时区,和查岗/写信那套口径一致
   eq(bjClock(Date.parse("2026-08-19T09:29:00Z")), "17:29", "欠条-时刻按北京时间(UTC+8)");
   eq(bjClock(Date.parse("2026-08-19T16:00:00Z")), "00:00", "欠条-跨零点也对");
+}
+
+// ---- 夜里查岗/写信提醒交给 iMessage(2026-09-26):任何一步不顺都必须退回 Telegram ----
+{
+  const I = "https://im/push", S = "https://shim";
+  const mk = ({ debug = { presence: { lastClient: "imessage" } }, debugStatus = 200, debugThrow = false, push = 200, pushThrow = false } = {}) => {
+    const calls = [];
+    const fetchImpl = async (url, opts = {}) => {
+      calls.push({ url, opts });
+      if (url === `${S}/debug`) {
+        if (debugThrow) throw new Error("ECONNREFUSED");
+        return { ok: debugStatus === 200, status: debugStatus, json: async () => debug };
+      }
+      if (pushThrow) throw new Error("timeout");
+      return { ok: push === 200, status: push };
+    };
+    return { calls, fetchImpl };
+  };
+  const run = (o, text = "还不睡?") => { const m = mk(o); return routeViaImessage({ text, imessageUrl: I, shimUrl: S, shimKey: "k", fetchImpl: m.fetchImpl }).then((r) => ({ ...r, calls: m.calls })); };
+  let r = await run({});
+  eq(r.routed, true, "路由-她最后在 iMessage 且那边接住 → 交给 iMessage");
+  eq(r.calls[1].url, I, "路由-推的是 iMessage 的 /push");
+  eq(r.calls[1].opts.headers["x-api-key"], "k", "路由-带 SHIM_KEY");
+  eq(JSON.parse(r.calls[1].opts.body).text, "还不睡?", "路由-原文照交(含标记)");
+  r = await run({ debug: { presence: { lastClient: null } } });
+  eq([r.routed, r.calls.length], [false, 1], "路由-她最后不在 iMessage → 留 Telegram,不碰 iMessage");
+  r = await run({ debug: {} });
+  eq(r.routed, false, "路由-shim 没有 presence 字段(老版本)→ 留 Telegram");
+  r = await run({ debugThrow: true });
+  eq(r.routed, false, "路由-问 shim 失败 → 留 Telegram");
+  r = await run({ debugStatus: 500 });
+  eq(r.routed, false, "路由-shim /debug 非 200 → 留 Telegram");
+  r = await run({ push: 502 });
+  eq(r.routed, false, "路由-iMessage 第一句就没发出去(502)→ 留 Telegram");
+  r = await run({ push: 503 });
+  eq(r.routed, false, "路由-iMessage 不知道往哪发(503)→ 留 Telegram");
+  r = await run({ pushThrow: true });
+  eq(r.routed, false, "路由-iMessage 连不上 → 留 Telegram");
+  r = await routeViaImessage({ text: "x", imessageUrl: "", shimUrl: S, shimKey: "k", fetchImpl: async () => { throw new Error("不该被调"); } });
+  eq([r.routed, r.why], [false, "off"], "路由-没设 IMESSAGE_PUSH_URL:一个请求都不发(与改之前逐字相同)");
+  r = await run({}, "   ");
+  eq(r.routed, false, "路由-空话不交");
 }
 
 console.log(fail ? `\n${fail}/${n} FAILED` : `${n} 项全绿 ✓`);

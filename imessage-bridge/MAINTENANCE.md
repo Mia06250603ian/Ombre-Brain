@@ -201,7 +201,8 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
    ⚠️ **`REPORT_TOKEN` 从此有三处同值**:她 iPhone 的快捷指令、telegram-bridge、本服务。**要换就三处一起换**,
    漏了本服务 = iMessage 里查岗静默失效(日志 `[lookup-err] activity HTTP 401`,不打扰她)。
    ⚠️ **telegram-bridge 改 `/activity` 的返回格式,这边会跟着坏**(那边手册「接口一览」留了指路)。
-   **夜里系统自动查岗、每天的写信提醒仍只走 Telegram**(那是 telegram-bridge 里的定时器)。
+   **夜里系统自动查岗、每天的写信提醒**:定时器仍在 telegram-bridge 里,~~原来只走 Telegram~~ **2026-09-26 起她最后在 iMessage 时,
+   他那轮的话由 telegram-bridge 交给本服务 `/push` 发**(那边设计要点 21;任何一步不顺就退回 Telegram)。
 3. **只能她先开口**:Photon 共享号码不能主动给没发过消息的号码发信息(Hermes 那份 Photon 接入文档写的,2026-09-26 读)。
    另有**每天 5000 条**上限,一个人聊用不完。
 4. **心跳「跟着她走」**(2026-09-26 shim 第四十三次上线,所有者选的方案 C;~~原来是心跳只走 Telegram、本服务没有 `/push`~~):
@@ -284,7 +285,7 @@ node e2e/e2e-run.mjs        # 演练:真 server.js + 假 Photon/shim/ears/Eleven
 | 连着谁 | 连法 | 那边坏了,这边会怎样 | 这边坏了,那边会怎样 |
 |---|---|---|---|
 | **kelivo-shim** | 每轮 `POST /v1/messages`;shim 心跳 → 本服务 `/push` | **iMessage 回不了话**(所有入口都一样,shim 是晏本体) | **不影响**:`/push` 失败 shim 自动退回 Telegram;请求头 `x-client` shim 不认也无害 |
-| **telegram-bridge** | **只有一根线**:`[查岗]` 时读它的 `GET /activity`(只读) | 只是那一次查岗查不到,**不打扰她**,聊天/语音/贴纸/心跳全不受影响 | **完全不影响** |
+| **telegram-bridge** | 两根线:①本服务 `[查岗]` 时读它的 `GET /activity`(只读);②**它**的夜里查岗 / 写信提醒在她最后在 iMessage 时,把话 POST 到本服务 `/push`(2026-09-26 所有者要加的,那边设计要点 21) | ①只是那一次查岗查不到,**不打扰她**,聊天/语音/贴纸/心跳全不受影响 | ②那两种提醒**自动退回 Telegram 发**,不丢、不重复;除此之外完全不影响 |
 | ears / ElevenLabs | 语音转写 / 合成(和 Telegram 同一套,各自直连) | 语音那一下失败,她收到提示或他退回发文字 | 不影响 |
 | Photon | 收发 iMessage | **iMessage 整个断**;Telegram 仍是主线 | — |
 
