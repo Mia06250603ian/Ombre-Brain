@@ -254,18 +254,17 @@ async function deliver(space, target, rawText, gate) {
   return out;
 }
 
-// ---- 他的思考 → 盖着「隐形墨水」的气泡(抹一下才显示),iMessage 版的「折叠」 ----
+// ---- 他的思考 → 带 💭 的普通气泡,在正文之前 ----
 // 2026-09-26 所有者要的,「和 Telegram 那边保持一致」:**整段照发、不盖记忆原文、不设总长上限**,
 // 太长就拆成几个气泡(Telegram 那边是拆成几段折叠引用)。
+// ~~盖「隐形墨水」特效~~ **同日所有者要求去掉,别加回去**(她知情:锁屏通知会直接显示思考和记忆原文)。
 // ⚠️ 思考流里有工具可见化带出的**记忆原文**,发出来 = 经过 Photon 的服务器(所有者知情选的)。
 //    只想盖记忆正文:去 shim 设 TOOLVIS_REDACT=1(两扇门一起盖);整个不要:这里 THINKING=0。
 // **发失败不许连累正文**(同 telegram-bridge 的 sendThinking):正文才是她要看的。
-const INVISIBLE_INK = "com.apple.MobileSMS.expressivesend.invisibleink";
 async function sendThinking(space, thinking) {
   if (!THINKING || !(thinking || "").trim()) return;
-  const { effect } = await import("@spectrum-ts/imessage");
   for (const chunk of splitLong(thinking.trim(), 2000)) {
-    try { await space.send(effect(`💭 ${chunk}`, INVISIBLE_INK)); }
+    try { await space.send(`💭 ${chunk}`); }
     catch (e) { log("[thinking-err]", errText(e)); return; }
   }
 }

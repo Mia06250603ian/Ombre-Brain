@@ -110,7 +110,7 @@ npx zeabur deploy --create --name imessage-bridge --project-id <你的项目>
 | `SHIM_URL` | ✅ | 你的 shim 地址 |
 | `EARS_URL` / `EARS_TOKEN` | | 语音转写服务(我们用自建的 ears;没有就不填,她发语音会提示「打字吧」) |
 | `ELEVEN_API_KEY` / `ELEVEN_VOICE_ID` | | AI 发语音用的 ElevenLabs;不填 = 语音标记退回发文字 |
-| `THINKING` | | `1` = AI 的思考用「隐形墨水」气泡发(抹一下才显示)。**思考里若有记忆原文,也会经过 Photon** |
+| `THINKING` | | `1` = AI 的思考用带 💭 的普通气泡发,排在正文前。**思考里若有记忆原文,也会经过 Photon,而且会直接出现在锁屏通知里** |
 | `REPORT_TOKEN` / `ACTIVITY_URL` | | 「查岗」功能读手机活动记录用的,没有这功能就不填 |
 | `BRIDGE_ON` | | 总开关,`0` = 只留 `/health` |
 
@@ -179,8 +179,9 @@ function pushTargets({ lastClient, imessageUrl, bridgeUrl }) {
    **修法**:见第 6 节 `/push` 的回话规则。
 6. **语音转写失败时,你之前打的字被拖住 2 分钟**:收语音时为了等转写把合并计时器推远了,失败那条路没拨回来。失败时要把计时器拨回正常。
 7. **别往请求里带 system、别报 model**:前者会让 shim 杀进程丢窗口;后者可能把你在别的前端切好的模型拽回去。
-8. **思考的「折叠」**:iMessage 没有 Telegram 那种可折叠引用,最接近的是**隐形墨水**特效(整块盖住、抹一下显示)。
-   它能藏不能收,长思考会占一大块屏幕 —— 我们觉得可以接受,你不喜欢就 `THINKING=0`。
+8. **思考的「折叠」**:iMessage 没有 Telegram 那种可折叠引用。我们先用过**隐形墨水**特效(整块盖住、抹一下显示),
+   后来去掉了,改成普通气泡(带 💭)。你想遮住的话可以换回墨水:Photon SDK 的 `effect(文字, "com.apple.MobileSMS.expressivesend.invisibleink")`。
+   ⚠️ 用普通气泡的话,思考(包括其中的记忆原文)会直接显示在锁屏通知里;长思考会刷好几屏。不喜欢就设 `THINKING=0`。
 
 ---
 

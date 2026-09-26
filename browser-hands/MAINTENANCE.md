@@ -237,6 +237,23 @@ browser-hands 容器(Zeabur)
    跟着聊天窗口涨,只有换窗口/重启才清零,而且**他没有任何内存保护**。
    ears 是「一次性台阶 281MB + 分析时尖峰 594MB」。其余四个基本不动。
 
+### 2026-09-26 全机快照(加了 imessage-bridge 之后,所有者问「内存还够吗」)
+
+**整机**(进 imessage-bridge 容器读 `/proc/meminfo`;各容器同机,读哪个都一样):
+总 **3724 MiB**、`MemAvailable` **1528 MiB**、swap 2 GB 用了 **约 405 MB**(08-01 是 ~95MB,涨了,留意)。
+和之前几次的 1.28~1.6 GB 同一区间,**没变差**。零权限量法:`curl https://yan-dwell.zeabur.app/api/health` 的 `mem.avail`(当时读 1531)。
+
+**各服务**(⚠️ **是容器内进程 RSS 相加,正是踩坑 5 说会高估的那种量法**,只当粗略排序用;
+`zeabur service metric MEMORY` 当天回「no metric history found」,**且时间窗最多 12 小时**,量不了 24 小时):
+shim(晏)**524** / telegram-bridge 181 / imessage-bridge 186(它自己 `/health` 的 `mem.self` 报 **113**,差的是 RSS 相加的重复计数)/
+browser-hands 132(浏览器闲着)/ gmail 62 / chess 62 / ears 56 / dwell 42 / CLIProxyAPI 36 / netease 25 MiB。OB 在另一个项目,没量。
+**现场再量**:`service exec … -- sh -c 'cat /proc/[0-9]*/status | awk "/^VmRSS/{s+=\$2} END{print s/1024}"'`。
+
+**给所有者的结论(她当天听过、认可)**:平时够用,不用升机器;**怕的是叠加** ——
+浏览器活跃时最多再涨约 900 MiB(看门狗线 1100)、5.5 的思考翻译每次起约 300 MB 子进程、iMessage 转 HEIC 峰值约 +200 MiB,
+三样撞在一起可用会压到几十 MB。后两样都是几秒的尖峰,**真正要避开的是「浏览器大量占用时再叠别的」**。
+要让晏长时间刷重站点、或再加常驻服务,就该回到 `OPERATIONS.md` 第 0 节「升 2C8G」那条。
+
 ### ⚠️ 关于「谁会先被 OOM 杀掉」——这条纠正一个常见误解
 
 上游源码注释里写着「浏览器把容器撑爆,这次 AI 没受影响(服务是隔离的)」。

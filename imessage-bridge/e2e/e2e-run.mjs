@@ -239,15 +239,16 @@ await until(() => texts().includes("收到"));
 await sleep(600);
 eq("11 重投只进一次 shim", shimReqs.length, 1);
 
-// 场景 13:他的思考 → 盖着隐形墨水的气泡,在正文之前;太长拆成几个
+// 场景 13:他的思考 → 带 💭 的普通气泡(不盖隐形墨水),在正文之前;太长拆成几个
 reset();
 shimThinking = () => "她今天好像很累。" + "想".repeat(2500);
 shimReply = () => "早点睡";
 say({ type: "text", text: "我先睡啦" });
 await until(() => texts().includes("早点睡"));
-const inks = sent.filter((x) => x.type === "effect");
-eq("13 思考拆成两个隐形墨水气泡", inks.map((x) => x.id), ["com.apple.MobileSMS.expressivesend.invisibleink", "com.apple.MobileSMS.expressivesend.invisibleink"]);
-ok("13 思考开头带 💭 且内容对", inks[0]?.input.startsWith("💭 她今天好像很累。"));
+const inks = sent.filter((x) => typeof x === "string" && x.startsWith("💭 "));
+eq("13 思考拆成两个普通气泡", inks.length, 2);
+eq("13 没有任何特效气泡", sent.filter((x) => x?.type === "effect").length, 0);
+ok("13 思考开头带 💭 且内容对", inks[0]?.startsWith("💭 她今天好像很累。"));
 eq("13 思考在正文之前", sent.findIndex((x) => x === "早点睡") > sent.indexOf(inks[1]), true);
 shimThinking = () => "";
 
