@@ -109,9 +109,9 @@ export function makeSseAccumulator() {
 // 所以他照旧写 Telegram 那套标记:[贴纸:x] / [语音]…[/语音] / [回应:❤️] / [查岗]。
 // 这里把它们翻成 iMessage 能做的事;**任何一个标记都不许原样漏给她**。
 
-// ---- [查岗]:这边查不了,只剥掉 ----
-// 手机活动记录只在 telegram-bridge 的内存里,这个服务拿不到(也刻意不去拿:那要多一把钥匙)。
-// 所以他写了 [查岗] 这边只能当没写。已知边界,见 MAINTENANCE.md。
+// ---- [查岗]:这里只负责剥掉标记 ----
+// ~~这边查不了、只能当没写~~ 2026-09-26 起能查:配了 REPORT_TOKEN + ACTIVITY_URL 时,server.js 去读
+// telegram-bridge 的 /activity 再作为系统回合喂回去(MAINTENANCE.md 第 3 节第 4 条、第 7 节第 2 条)。
 const CHECK_RE = /[\[【]\s*查岗\s*[\]】]/g;
 export function takeCheckMarker(text) {
   const raw = text || "";
