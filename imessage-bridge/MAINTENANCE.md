@@ -203,8 +203,14 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
    **夜里系统自动查岗、每天的写信提醒仍只走 Telegram**(那是 telegram-bridge 里的定时器)。
 3. **只能她先开口**:Photon 共享号码不能主动给没发过消息的号码发信息(Hermes 那份 Photon 接入文档写的,2026-09-26 读)。
    另有**每天 5000 条**上限,一个人聊用不完。
-4. **晏主动找她(心跳)只走 Telegram**:shim 的 `BRIDGE_PUSH_URL` 指向 telegram-bridge 的 `/push`。
-   本服务**刻意没做** `/push`。要让心跳也能走 iMessage 得改 shim 的推送出口(碰 shim = 丢窗口),**所有者没点头**。
+4. **心跳「跟着她走」**(2026-09-26 shim 第四十三次上线,所有者选的方案 C;~~原来是心跳只走 Telegram、本服务没有 `/push`~~):
+   本服务每轮请求带 `x-client: imessage`,shim 记住**她最后一次亲自说话**是哪扇门(系统回合不算);
+   心跳时她最后在 iMessage → 推到本服务 `POST /push`,**推不出去自动退回 Telegram**。其余情况照旧只推 Telegram。
+   - `/push` 回 **503** = 本服务重启后她还没在 iMessage 说过话、不知道往哪个对话发;回 **502** = 一句都没发出去。两种 shim 都会退回 Telegram。
+   - 发出去哪怕一句就回 200(**防两边重复**:不再让 Telegram 补一遍)。
+   - ⚠️ **telegram-bridge 不知道他在 iMessage 里开过口**:它的「他刚说过话,查岗/写信提醒先让路」(`lastOutboundAt`)管不到这边。
+     心跳只在白天、查岗只在深夜,撞不上;写信提醒 22:30 可能紧跟在一条 iMessage 心跳后面,影响很小,所有者没要求处理。
+   - 关掉:删 shim 的 `IMESSAGE_PUSH_URL` + restart shim(**丢窗口**)。只想临时不让心跳进 iMessage:本服务 `BRIDGE_ON=0` 也行(那样 `/push` 回 503 → 退回 Telegram,但 iMessage 聊天也停)。
 5. **Photon 收到的附件能不能读到内容,真机前没法确认**。Hermes 的文档说「收到的附件只有元数据」,
    但那可能是它自己接得不全;Photon 教程的代码是能 `content.read()` 读到图的。**上线后第一张照片就是验证**,
    读不到的话晏会收到「(她发来一张图片,但这边没打开)」,日志有 `[image-err]`。
@@ -247,7 +253,7 @@ node e2e/e2e-run.mjs        # 演练:真 server.js + 假 Photon/shim/ears/Eleven
 |---|---|---|
 | `GET /health` | 无 | 开关、计数、内存、**`line`(晏的号码)/ `enroll`(登记成没成)**。**不含任何消息内容和钥匙,也不含她的号码**(演练场景 12 钉着;`line` 是共享池里的号码,公开了也只有登记过的人能用)。`connected` = 连着 Photon;`lastErr` = 最近一次出错在哪一步;`dropped` = 挡掉的陌生人条数 |
 
-刻意**没有** `/push`(第 7 节第 4 条)和任何带内容的口子。
+| `POST /push {text}` | `x-api-key` = `SHIM_KEY` | shim 的心跳入口(她最后在 iMessage 时)。200 = 发出去了;502/503 = 没发出去,shim 退回 Telegram(第 7 节第 4 条) |
 
 ## 11. 部署记录
 
