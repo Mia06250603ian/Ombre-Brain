@@ -308,7 +308,7 @@ node e2e/e2e-run.mjs        # 演练:真 server.js + 假 Photon/shim/ears/Eleven
 |---|---|---|
 | iMessage 发了没反应 | `connected:false` → Photon 断了(会自己重连,最长 5 分钟一试);`enroll` 不是 `ok` → 号码登记没成;`lastErr.where` 看卡在哪步 | 等几分钟;不行就用 Telegram。**要完全停掉 iMessage**:`BRIDGE_ON=0`(只留 `/health`,心跳自动退回 Telegram) |
 | 他回话里冒出 `[贴纸:…]` 之类的标记 | 标记格式变了(他写了没见过的写法) | 在 `imessage-lib.mjs` 改正则 + 单测 + 部署本服务 |
-| 语音(收或发)坏了 | `/health` 的 `ffmpeg`、`ears`、`voice` 三个字段;`lastErr.where=ears` | 发不出:删 `ELEVEN_API_KEY` → 他的语音退回文字。收不了:她先打字。**`ffmpeg:false` = 安装脚本又被拦了**(第 11 节) |
+| 语音(收或发)坏了 | `/health` 的 `ffmpeg`、`ears`、`voice` 三个字段;`lastErr.where=ears` | 发不出:删 `ELEVEN_API_KEY` → 他的语音退回文字。收不了:她先打字。**`ffmpeg:false` = 安装脚本又被拦了**(第 11 节)。**转得出字、情绪却永远「平静」** = ears 的模型被停用,和 Telegram 同病,见 `OPERATIONS.md` 第 7 节同名那行 |
 | 贴纸不对 / 太大 | — | 改 `tools/build-stickers.mjs` 的尺寸重跑 + 部署 |
 | 思考气泡太吵 / 不想记忆原文过 Photon | — | `THINKING=0` |
 | 她点回应害他话变多 | — | `TAPBACK_IN=0` |

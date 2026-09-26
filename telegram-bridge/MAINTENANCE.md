@@ -508,7 +508,7 @@ npx -y zeabur@latest deploy   # 首次部署后把 service id 记回本文档
    - ears 挂了/超时/没听清:回一条 ⚠️ 提示、不进窗口,文字聊天零影响。
    - 未配 EARS_URL/EARS_TOKEN 时语音条回「传不过去」,与视频/文件同待遇(这两类仍不支持)。
    - ears 服务本体(Groq 转写、个人化基线、持久卷)见 ears 仓库(Mia06250603ian/ears)及其部署指南;
-     **换 Groq key = 改 ears 服务的 GROQ_API_KEY + restart**,bridge 不用动。
+     **换 Groq key = 改 ears 服务的 GROQ_API_KEY + restart**,bridge 不用动。**情绪判断的模型 = ears 的 `LLM_MODEL`**(2026-09-26 起 `qwen/qwen3.8-27b`,原默认模型被 Groq 停用;症状与选法见 `OPERATIONS.md` 第 7 节「语音情绪永远是『平静』」)。
 4. **动态贴纸**(tgs/webm)降级为 emoji 文字描述;静态贴纸转成图片传入,晏能看见。
 5. ~~**心跳仍走 Bark**(shim 侧逻辑,本桥不碰)。要让晏的主动消息直接出现在 Telegram 对话里,
    需改 shim 的 heartbeatTick 出口 —— 那是第二阶段~~
