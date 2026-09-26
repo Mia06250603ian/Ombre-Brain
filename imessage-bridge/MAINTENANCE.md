@@ -3,7 +3,7 @@
 > iMessage(经 Photon)⇄ kelivo-shim 的桥。让所有者在 iPhone 的「信息」里和晏聊天。
 > **独立服务,shim 零改动,晏的窗口不动**:它和 Telegram 桥、Kelivo、dwell 网页是并列的第四扇门,
 > 停掉本服务 = 回到没有 iMessage 的现状。
-> 2026-09-26 由 Claude Code 会话编写。**代码写完、单测与演练全绿,尚未建服务、尚未部署**(第 6 节检查单:所有者只做完了 Photon 注册与建项目)。
+> 2026-09-26 由 Claude Code 会话编写。**2026-09-26 上线**(`6ab76ae4…` / `yan-imessage.zeabur.app`,晏的号码 **+1 628-264-9071**);部署记录见第 11 节。
 
 ## 怎么读这份手册
 
@@ -163,7 +163,7 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
 ⚠️ **telegram-bridge 加了新贴纸,这边要重跑一次**:`cd imessage-bridge && node tools/build-stickers.mjs`,
 然后跑单测(它会校验两边标签一致、png=35 / gif=24),再部署本服务。**不重跑的话,新标签在 iMessage 里只剥不发**(不会漏标记,只是少一张图)。
 
-## 6. 部署检查单(**尚未走过,第一次上线时照这个做**)
+## 6. 部署检查单(2026-09-26 第一次上线照这个走过;**再部署时照这个**)
 
 **前置(只有所有者能做)**:
 1. `app.photon.codes` 注册 → 新建项目 → 打开 iMessage → Settings 里记下 Project ID / Secret。
@@ -257,4 +257,14 @@ node e2e/e2e-run.mjs        # 演练:真 server.js + 假 Photon/shim/ears/Eleven
 
 ## 11. 部署记录
 
-(尚无。第一次上线后照 `OPERATIONS.md` 第 9 节写:例行一句话,例外展开。)
+- **2026-09-26 第一次上线(当天共部署 7 次,都只动本服务,晏的窗口不受影响)**。
+  建服务 `deploy --create`(PLANTYPE nodejs、Node 24);域名 `yan-imessage`;变量里带钥匙的五把由会话**从 Photon CLI / 另两个服务直接搬**,
+  全程只比 sha256 指纹、值不打印(所有者说「你填,我要解放双手」;Photon 那边她在手机上点了 CLI 的设备授权)。
+  **例外与新坑**:
+  - **Photon 控制台绑 +86 收不到验证码** → 改用项目凭证调 `POST /projects/{id}/users/` 登记(第 3 节第 11 条),当场成功,分到 +1 628-264-9071。
+  - **语音全坏**:Node 24 的新版 npm 默认拦截安装脚本,`ffmpeg-static` 的二进制没下 → `spawn …/ffmpeg ENOENT`;`/health` 的 `ffmpeg:true` 是假的。
+    修:`package.json` 加 `allowScripts`(放行 ffmpeg-static)+ 启动时检查文件真的在。**以后加带安装脚本的包,先想到这条。**
+  - **贴纸真机太大、像照片** → 静态改 300px 透明 png;螃蟹 gif 在 240 画布里缩到 150、贴左留白(第 5 节)。
+  - 所有者追加的三件:思考用隐形墨水发(`THINKING=1`)、`[查岗]`(读 telegram-bridge 的 `/activity`)、心跳 `/push`(配 shim 第四十三次)。
+  - 验收:容器 `md5sum` 与本地逐件一致(每次);`/health` 全绿;她真机验过文字 / 图片 / 语音双向 / 贴纸 / 思考 / 心跳去向切换。
+  - 线上内存 `mem.self` **113~129 MiB**(整机 `avail` 1283~1592 MiB,2026-09-26 `/health` 读)。
