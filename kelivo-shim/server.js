@@ -4,7 +4,7 @@ import { spawn, execFileSync } from "child_process";
 import { randomUUID } from "crypto";
 import fs from "fs";
 import { isWeatherAsk, buildWeatherNote, detectPeriodEvent, buildPeriodNote } from "./senses.mjs";
-import { kaDecide, kaPrompt, kaSilent } from "./keepalive.mjs";
+import { kaDecide, kaPrompt, kaSilent, pushTargets } from "./keepalive.mjs";
 import { ctxReading, ctxDecide, ctxCompacted, ctxSoftNote, ctxHardNote, ctxFinalNote, ctxPct, ctxSoftShouldReset } from "./ctxguard.mjs";
 import { pickApiError, apiErrorKind, resultOutcome } from "./apierror.mjs";
 import { buildPromptArgs, helpMentionsReplace, BASE_PROMPT_DEFAULT, ANCHOR_TAIL_REPLACE, SOUL_ANCHOR_DEFAULT } from "./sysprompt.mjs";
@@ -480,7 +480,8 @@ app.get("/debug", (_q, r) => r.json({
   lastApiError,
   // 2026-08-02:她本人上次说话的时间 / 保温是否歇火。查岗那类系统回合(x-system-turn:1)
   // **不会**动这两个值——排查「他的『她多久没来』准不准」时看这里。
-  presence: { lastUserAt: new Date(lastUserAt).toISOString(), idleMin: Math.round((Date.now() - lastUserAt) / 60000), windowCleared },
+  presence: { lastUserAt: new Date(lastUserAt).toISOString(), idleMin: Math.round((Date.now() - lastUserAt) / 60000), windowCleared,
+              lastClient, pushTo: pushTargets({ lastClient, imessageUrl: IMESSAGE_PUSH_URL, bridgeUrl: BRIDGE_PUSH_URL }).map((t) => t.name) },
   // 2026-08-23:系统提示词模式。configured = 环境变量要的,effective = **进程里真正生效的**。
   // effective 为 null 表示常驻进程还没起来过 —— 那时降级判定根本没跑过,别拿 configured 当结果读。
   sysPrompt: { configured: SYS_PROMPT_MODE, effective: sysPromptEffective, reason: sysPromptReason || null,
@@ -515,6 +516,9 @@ app.get("/models", listModels);
 // 连续闲置 KA_CAP_HOURS 小时封顶。KA_ON=0 全关(连带主动消息一起关)。
 const BARK_KEY = process.env.BARK_KEY || "";
 const BRIDGE_PUSH_URL = process.env.BRIDGE_PUSH_URL || "";
+// 2026-09-26:心跳「跟着她走」—— 她最后在 iMessage 里说话,心跳就推到 imessage-bridge 的 /push;
+// 推不出去自动退回 BRIDGE_PUSH_URL(Telegram)。**不设 = 和以前逐字相同**(只推 Telegram)。
+const IMESSAGE_PUSH_URL = process.env.IMESSAGE_PUSH_URL || "";
 const KA_ON = process.env.KA_ON !== "0";
 const KA_IDLE_MIN = +(process.env.KA_IDLE_MIN || 55);
 const KA_DEAD_MIN = +(process.env.KA_DEAD_MIN || 60);
@@ -525,6 +529,7 @@ const HB_COOLDOWN_MIN = +(process.env.HB_COOLDOWN_MIN || 120);
 const HB_NIGHT_START = +(process.env.HB_NIGHT_START || 23);
 const HB_NIGHT_END = +(process.env.HB_NIGHT_END || 8);
 let lastUserAt = Date.now(), lastProactiveAt = 0;
+let lastClient = null;     // 她最后一次亲自说话走的是哪扇门(前端自报 x-client;不报 = null = Telegram/Kelivo/网页)
 let lastTurnOkAt = 0;      // 上次成功回合=缓存链的存活锚点;0=还没有活缓存
 let kaFailedAt = 0;        // 上次保温 ping 失败时间;非 0 = 抢救节奏
 let windowCleared = true;  // 「换窗口」后 true:歇火等她在新窗口发第一条。开机也算(新进程无缓存可保)
@@ -534,8 +539,18 @@ async function barkPush(text) {
   log("[bark]", r.status);
 }
 async function bridgePush(text) {
-  const r = await fetch(BRIDGE_PUSH_URL, { method: "POST", headers: { "Content-Type": "application/json", "x-api-key": SHIM_KEY }, body: JSON.stringify({ text }) });
-  log("[bridge-push]", r.status);
+  // 按 pushTargets 给的顺序试:第一个成功就停;失败(非 2xx 或断线)试下一个。
+  // 日志沿用 `[bridge-push] <状态码>` 的老样子(Telegram 那条),iMessage 那条标 `[imessage-push]`。
+  let lastErr = null;
+  for (const t of pushTargets({ lastClient, imessageUrl: IMESSAGE_PUSH_URL, bridgeUrl: BRIDGE_PUSH_URL })) {
+    try {
+      const r = await fetch(t.url, { method: "POST", headers: { "Content-Type": "application/json", "x-api-key": SHIM_KEY }, body: JSON.stringify({ text }), signal: AbortSignal.timeout(60000) });
+      log(t.name === "telegram" ? "[bridge-push]" : `[${t.name}-push]`, r.status);
+      if (r.ok) return;
+      lastErr = new Error(`${t.name} HTTP ${r.status}`);
+    } catch (e) { log(`[${t.name}-push-err]`, e.message); lastErr = e; }
+  }
+  if (lastErr) throw lastErr;
 }
 const proactivePush = (text) => BRIDGE_PUSH_URL ? bridgePush(text) : barkPush(text);
 function keepaliveTick(force) {
@@ -800,6 +815,7 @@ function handleMessages(req, res) {
   if (hints.length) text = `${hints.join("\n")}\n\n${text}`;
   if (!systemTurn) {
     lastUserAt = Date.now();
+    lastClient = req.get("x-client") || null;   // 心跳跟着她走(pushTargets):哪扇门来的,心跳就回哪扇门
     windowCleared = false;  // 她出现了:保温重新上岗(若这条是「换窗口」,回合结束会再置回 true)
   }
   log("[req]", { len: text.length, imgs: images.length, sysLen: system.length, stream, reset: reset || "-" });

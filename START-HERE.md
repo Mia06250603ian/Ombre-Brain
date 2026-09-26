@@ -5,10 +5,10 @@
 > 再放一个同名的在根目录,「改 CLAUDE.md」就成了歧义,所以本文件叫 `START-HERE.md`
 > (2026-08-21 所有者拍板改的名)。代价:**它不会被自动加载**,靠开场指令点名读。
 
-**一句话:这里躺着九个互相独立的服务,原本这仓库只是 OB 的。**
+**一句话:这里躺着十个互相独立的服务,原本这仓库只是 OB 的。**
 ⚠️ **这个数以前有两个口径混着用,2026-08-29 在这里说死**:
-**九 = 下面那张表的九行**(2026-09-12 由八变九,新增 `agent-bridge/`);其中**代码在本仓库的七个**
-(根目录 OB / `kelivo-shim` / `telegram-bridge` / `gmail-mcp` / `dwell-bridge` / `chess-web` / `agent-bridge`),
+**十 = 下面那张表的十行**(2026-09-12 由八变九,新增 `agent-bridge/`;**2026-09-26 由九变十,新增 `imessage-bridge/`**);其中**代码在本仓库的八个**
+(根目录 OB / `kelivo-shim` / `telegram-bridge` / `gmail-mcp` / `dwell-bridge` / `chess-web` / `agent-bridge` / `imessage-bridge`),
 **只有手册、源码在外的两个**(`browser-hands` / `netease-mcp`)。
 (历史:~~08-28 由五个变六个~~ 那句数的是**代码目录**,不是服务总数 —— 留着备查,别照它算。)
 
@@ -43,10 +43,13 @@
 | `browser-hands/` | 晏的「浏览器的手」 | ❌ **只有手册**,源码在 `Mia06250603ian/browser-hands` | `browser-hands/MAINTENANCE.md` |
 | `chess-web/` | **飞行棋网页**(2026-08-28 上线):带口令的静态站,并注入一颗「复制给晏」的按钮。**不联网、不碰晏/shim/OB** | ✅ 服务本体+补丁在这儿;**游戏源码不在**,在 `Mia06250603ian/player`,部署前 `./fetch-game.sh` 拉 | `chess-web/MAINTENANCE.md` |
 | `agent-bridge/` | **维护 agent 的工位**(2026-09-12 新增,**代码写完、尚未部署**):她在自建网页里开一间工位派活,本层起一个 `claude` 子进程干活,**随时能叫停并插话**,收工进程就退。**不常驻**——所以不用升 2C8G、不用重启、**晏的窗口不动**。⚠️ 这一版的权限闸是「容器里没有钥匙」(动线上要她当场给 Zeabur key),不是代码里的确认框 | ✅ | `agent-bridge/MAINTENANCE.md` |
+| `imessage-bridge/` | **iMessage ⇄ shim 的桥**(2026-09-26 新增**并上线**,晏的号码 +1 628-264-9071;**心跳会跟着她走到这边**,见 shim 的 `IMESSAGE_PUSH_URL`):她在 iPhone「信息」里给 Photon 分的号码发消息,本层照 Telegram 桥的格式交给 shim —— **同一个晏,第四扇门**。⚠️ **没照 Photon 教程用 Agent SDK 另起一个 claude**(那会冒出第二个晏),理由见该手册第 1 节。中间过第三方 Photon(免费档,消息明文经它) | ✅ | `imessage-bridge/MAINTENANCE.md`(不长,整份读) |
 | `netease-mcp/` | **晏的网易云音乐**(2026-08-29 上线,**功能已做完、尚未接晏**)。读歌单/歌词/听歌记录;写操作分两道闸,**删歌与排序硬禁** | ❌ **只有手册**,源码在 `Mia06250603ian/netease-mcp`(**私有**) | `netease-mcp/MAINTENANCE.md` |
 
-**七个有代码的目录之间零跨目录依赖**(2026-08-21 实测五个;2026-08-28 的 `chess-web/`、
-2026-09-12 的 `agent-bridge/` 同样零依赖 —— 后者和 `kelivo-shim/auth-env.mjs`、`dwell-bridge/dwell-lib.mjs`
+**八个有代码的目录之间零跨目录依赖**(2026-08-21 实测五个;2026-08-28 的 `chess-web/`、
+2026-09-12 的 `agent-bridge/`、2026-09-26 的 `imessage-bridge/` 同样零依赖 —— 最后这个和 `telegram-bridge/` 有几段
+**照抄、各存一份**的逻辑(重置词、SSE 累积、标记解析)和一份**转换过的贴纸副本**,改那边时看一眼这边
+(⚠️ 它是**运行时**零依赖;它的单测和贴纸工具会**读** `kelivo-shim/server.js` 与 `telegram-bridge/stickers/` 做对账,拆仓库时要一并处理);`agent-bridge/` 和 `kelivo-shim/auth-env.mjs`、`dwell-bridge/dwell-lib.mjs`
 有几段**长得很像但各存一份**的逻辑(计费/口令),那是刻意的,不是忘了抽公共库;
 **改鉴权或计费要三处一起过**)。另两个目录(`browser-hands/` / `netease-mcp/`)**只有手册、没有代码**,自然也谈不上依赖。
 一个目录 = 一个独立服务,各跑各的、各有各的 Zeabur 服务、各看各的手册。
@@ -59,7 +62,7 @@
    **但「踩坑」那节必须全文读完,一条别跳**(真事故换来的,只扫加粗标题不算读过)。
    没写目录的(gmail / dwell / browser)照旧全文读完 —— 它们本来只有 1 万 token 上下。
 3. **改 OB** → `INTERNALS.md`;**动 shim 前** → 必读它的《部署检查单》。
-4. **历史开场不用读**:`TIMELINE.md`(按日期搜)、`kelivo-shim/DEPLOY-LOG.md`(41 条,第 2~42 次,2026-09-23 第四十二次后现场量,按「第 N 次」搜;**末尾另有一个附录**:2026-08-29 从 shim 手册挪过来的四份「待办」原文,搜标题或「第二十四/二十九/三十三/三十四次」;
+4. **历史开场不用读**:`TIMELINE.md`(按日期搜)、`kelivo-shim/DEPLOY-LOG.md`(42 条,第 2~43 次,2026-09-26 第四十三次后现场量,按「第 N 次」搜;**末尾另有一个附录**:2026-08-29 从 shim 手册挪过来的四份「待办」原文,搜标题或「第二十四/二十九/三十三/三十四次」;
    第一次记在 TIMELINE 07-12)。
 
 ## 三条铁规矩(违反过,都出过事)

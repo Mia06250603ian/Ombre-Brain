@@ -54,3 +54,15 @@ export function kaSilent(t) {
   if (!s || s.includes("【沉默】")) return true;
   return s.replace(/[。.\s]/g, "") === "";
 }
+
+// ---- 心跳往哪扇门推(2026-09-26,所有者要的「C:跟着她走」)----
+// 她最后一次**亲自说话**是从哪扇门来的,心跳就推到哪扇门。门由前端在请求头 `x-client` 里自报
+// (目前只有 imessage-bridge 报 `imessage`;Telegram 桥、Kelivo、dwell 网页都不报)。
+// 返回按顺序要试的出口列表:第一个失败就试下一个 —— **iMessage 推不出去就退回 Telegram,话不丢**。
+// 没配 IMESSAGE_PUSH_URL 或她最后不在 iMessage → 只有 Telegram 一个出口 = **和改之前逐字相同**。
+export function pushTargets({ lastClient, imessageUrl, bridgeUrl }) {
+  const out = [];
+  if (lastClient === "imessage" && imessageUrl) out.push({ name: "imessage", url: imessageUrl });
+  if (bridgeUrl) out.push({ name: "telegram", url: bridgeUrl });
+  return out;
+}

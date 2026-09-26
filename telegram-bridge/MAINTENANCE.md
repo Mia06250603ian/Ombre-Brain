@@ -20,7 +20,7 @@
 | B | 设计要点(为什么这么写) | 13.0k | **改功能前读,只读相关的那条**。二十条:1 去抖合并 / 2 重置词绝不合并 / 3 用 node:https 不用 fetch / 4 纯文本发不开 parse_mode / 5 4096 切分 / 6 白名单 / 7 单轮串行 / 8 手机活动上报+夜里查岗 / 9 他自己发起的查岗 / 10 发消息的容错 / 11 「她连着玩了多久」 / 12 玩久了没新动静也照戳 / 13 每天一次的写信提醒 / 14 每个 App 各用了多久 / 15 会动的贴纸(螃蟹) / 16 螃蟹的黑影子与撤掉 6 张特写 / 17 螃蟹重转 / 18 **Node 的 250ms 悬崖(fetch failed 的真正机制)** / 19 **欠条本:没送出去的话路通了自动补报** / 20 **表情回应 `[回应:❤️]`**(2026-08-28 新增) |
 | C | 环境变量(值不入库) | 3.2k | **要调任何旋钮之前读**(2026-08-28 补进 `BUBBLE_SPLIT` / `BUBBLE_MAX` 两行,此前它们不在表里) |
 | D | 部署 | 0.2k | 部署前读,很短 |
-| E | **已知边界 / 坑** | 3.2k | **⚠️ 唯一必须全文读的一节。** 9 条:1 单实例(起两个会互抢) / 2 offset 在内存(重启会重投) / 3 语音条走 ears 服务 / 4 动态贴纸降级为文字 / 5 ~~心跳走 Bark~~(已改走 Telegram) / 6 隐私:明文过 Telegram / 7 **看到 fetch failed 先按这个断案** / 8 ~~只报打开不报关闭~~(已作废) / 9 关闭事件其实会上报,报的是「她切去了哪」 |
+| E | **已知边界 / 坑** | 3.6k | **⚠️ 唯一必须全文读的一节。** 11 条(**2026-09-26 数;此前这里写 9 条,第 10 条 09-23 加的时候没跟着改**):1 单实例(起两个会互抢) / 2 offset 在内存(重启会重投) / 3 语音条走 ears 服务 / 4 动态贴纸降级为文字 / 5 ~~心跳走 Bark~~(已改走 Telegram) / 6 隐私:明文过 Telegram / 7 **看到 fetch failed 先按这个断案** / 8 ~~只报打开不报关闭~~(已作废) / 9 关闭事件其实会上报,报的是「她切去了哪」 / 10 汉字碎成 `���` / **11 标记正则不认全角冒号(未修)** |
 | F | Zeabur 位置 | 0.3k | 要跑 CLI 命令时来抄 id |
 | G | 表情包 | 1.0k | 动贴纸时读 |
 | H | 接口一览 | 0.6k | 想知道本桥有哪些 HTTP 口时读 |
@@ -55,7 +55,8 @@ kelivo-shim(yan-shim.zeabur.app)──→ 常驻 claude 进程(人设+记忆,见
 1. **去抖合并**:Telegram 习惯连发短句,DEBOUNCE_MS(默认 4s)内的消息合成一轮再发 shim,省轮次。
 2. **重置词绝不合并**:`detectReset` 逐字镜像 shim 的实现。「晚安/归档」若和别的消息拼在一起,
    shim 侧识别失败 → 归档指令变普通聊天。所以重置词消息强制单独成轮(之前攒的先 flush 走)。
-   **shim 的 detectReset 改词表时,bridge-lib.mjs 里的镜像要同步改。**
+   **shim 的 detectReset 改词表时,bridge-lib.mjs 里的镜像要同步改**(2026-09-26 起 `../imessage-bridge/imessage-lib.mjs` 里还有一份,
+   那份的单测会直接从 shim 源码抠词表对账)。
 3. **shim 请求用 node:https 不用 fetch**:undici 默认 headers/body 300s 超时,长回合(MCP 工具、
    搜索)会被掐。TURN_TIMEOUT_MS 默认 15 分钟。
 4. **回复纯文本发,不开 parse_mode**:晏的口语回复随便一个 `<` `_` 就能让 Markdown/HTML 解析 400。
@@ -580,6 +581,13 @@ npx -y zeabur@latest deploy   # 首次部署后把 service id 记回本文档
     ⚠️ **同款 bug 在 shim 读 CLI 输出那里也有一处**(`kelivo-shim/server.js` 的 `chunk.toString()`),
     代码已改、挂在 shim 的《搭顺风车的待办》里等下次部署。**网页桥(dwell)那边一直是对的**(`TextDecoder` + `stream:true`)。
 
+11. **标记正则其实不认全角冒号(2026-09-26 发现,未修,已报备所有者)**:`STICKER_RE` / `REACT_RE` 的字符类写的是
+    `[::]`(**两个半角**),而本手册「表情包」一节、设计要点 20 和代码注释都说「全角也认」;
+    test-bridge 里标题叫「全角冒号」的两个用例(`[贴纸: 委屈 ]`、`【回应:👍】`)喂的其实也是半角,所以一直是绿的。
+    **后果**:他写 `【贴纸：贴贴】` / `[回应：❤️]`(全角冒号)时标记会**原样漏给她**。
+    发现经过:抄这两个正则去 `../imessage-bridge/` 时,那边补的真全角用例红了。**那边已改成 `[:：]`**。
+    **要修这边**:两个字符类改成 `[:：]` + 把那两个用例换成真的全角 + 部署 telegram-bridge(**只部署本桥,不碰晏、不丢窗口**)。
+
 ## Zeabur 位置
 
 - 项目 `cli-proxy-api--cpa`(与 shim 同项目): id `6a53a9fc22dd6ef375eb7484`, env `6a53a9fcb6ce8edcb0163f97`
@@ -614,6 +622,9 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
   **所有者直接在对话里告诉晏新标签即可,当窗口有效**(2026-08-07 实测通了,他当场就会用)。
   这样能**零成本试**,觉得好再在下次 shim 部署时把标签表补进去——改 CLAUDE.md = 重启晏。
 - `POST /push {text}`(x-api-key=SHIM_KEY):shim 主动心跳走这里,直接落进对话,同样支持贴纸标记。
+- ⚠️ **`../imessage-bridge/stickers/` 是这里的转换副本**(2026-09-26 起;webm 螃蟹转成了 gif)。
+  **这边加了新贴纸,去那边跑一次 `node tools/build-stickers.mjs`** 再部署那边,否则新标签在 iMessage 里只剥不发。
+  那边的单测会校验两边标签一致。
 
 ## 接口一览
 
@@ -623,6 +634,10 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
 | `POST /push {text}` | `x-api-key` = SHIM_KEY | shim 的主动心跳入口 |
 | `POST /report {app_name}` | `Authorization: Bearer <REPORT_TOKEN>`(也认 `x-api-key` / `?key=`) | iOS 快捷指令上报「她打开了什么 App」 |
 | `GET /activity` | 同上 | 汇总:最后活跃时间 + 最近不重复的 App 名 + `streak` + **`durations`(每个 App 各用了多久,2026-08-06)** + **`lastRawReport`(最近一次上报的原始 body)** |
+
+⚠️ **要删 / 搬走本桥之前,先读 `../imessage-bridge/MAINTENANCE.md` 12.2**(2026-09-26 起 shim 心跳的兜底出口、iMessage 的查岗数据、iMessage 贴纸的原图都在本桥这儿;顺序错了心跳会哑)。
+⚠️ **`GET /activity` 从 2026-09-26 起还有一个调用方:`../imessage-bridge/`**(晏在 iMessage 里写 `[查岗]` 时来取)。
+**改这个接口的返回格式,那边会跟着坏**;`REPORT_TOKEN` 也从两处同值变成**三处**(快捷指令 / 本桥 / imessage-bridge),换就一起换。
 
 **`lastRawReport` 是给排障用的**:iOS 那条自动化里 `app_name` 的值是变量「快捷指令输入」,
 而「App 打开时」这类自动化到底会不会把 App 名喂给它,**在手机上验证不了**——

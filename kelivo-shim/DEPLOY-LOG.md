@@ -24,6 +24,20 @@
 
 ## 记录(新的在上)
 
+- 2026-09-26(第四十三次) **心跳「跟着她走」:她最后在 iMessage 说话,心跳就推 iMessage(失败退回 Telegram)**。所有者当天接上 iMessage 后问「心跳推到 iMessage 的话 TG 那边就没了吗」,给了 A 整个改道 / B 两边都发 / C 跟着她走,她选 **C**。
+  照检查单全套走完,无异常(九套单测 + 三套 e2e 全绿;全量 md5 对账只差本次改的三件代码 + 两份事后补写的手册;三份私密文件拷出指纹不变;四个 `/mcp` 各 3/3 200;目录无 `.gitignore`/`node_modules`)。**所有者本人先对晏说了「归档」。**
+  改动:`server.js` `c6616e9a…` → `ab97b50b…`、`keepalive.mjs` `fac04f05…` → `d0222ab6…`(新增纯函数 `pushTargets`)、`test-keepalive.mjs`(59 → 65 项);**人设五份文件一个字没动**(`ian.md` 仍 `8918742d…`,`profile-instructions.md` 仍 `7adb5c33…`,`mcp-servers.json` 仍 `b5a281bc…`)。
+  变量:新增 **`IMESSAGE_PUSH_URL=https://yan-imessage.zeabur.app/push`**(部署前设、不 restart)。**不设 = 与改前逐字相同。**
+  deployment `6ab77f10…`(PLANTYPE nodejs,08:15 上传 → 08:18:53 构建完 → **08:20 RUNNING**,约 5 分钟,没卡拉镜像)。
+  - **机制**:前端在请求头自报 `x-client`(目前只有 imessage-bridge 报 `imessage`);shim 在**非系统回合**记下 `lastClient`;心跳按 `pushTargets` 的顺序推,
+    iMessage 回非 2xx 或断线就推 Telegram(imessage-bridge 一句都没发出去回 502、不知道往哪个对话发回 503)。`lastClient` 只在内存,重启后回到 Telegram,直到她再在 iMessage 说一句。
+  - **部署后验**:`/debug` 的 `presence` 在她 iMessage 说话前是 `pushTo:["telegram"]`,说完变 `lastClient:"imessage", pushTo:["imessage","telegram"]` ✅;
+    `[claude] spawned … cli main`、`settings 文件不在` 0 条、开机占用 39063;**经期卷第一次跨部署验证通过**(`/period` 的 `runtime` 非空,第四十二次挂的卷真的保住了)。
+  - ⚠️ **telegram-bridge 管不到 iMessage 里的开口**:它的 `lastOutboundAt`(查岗/写信提醒给心跳让路)只看自己发出去的;心跳白天、查岗深夜撞不上,写信提醒 22:30 可能紧跟一条 iMessage 心跳,影响小,所有者没要求处理。
+  - **仍待验**:第一次真心跳落进 iMessage(自然等;或 `POST /hb` 手动触发 —— 会真给她发一条,先问她)。
+  - **回滚**:删 `IMESSAGE_PUSH_URL` + restart(丢窗口);或只停 iMessage 桥(`/push` 回 503 → 自动退回 Telegram,**不用动 shim**)。
+  - e2e 在本会话里要**只清 `CLAUDE*`/`ANTHROPIC*` 变量**跑(`env -u …`),`env -i` 会连代理一起清掉 → 下载 CLI 失败,看着像 e2e 坏了。
+
 - 2026-09-23(第四十二次) **顺风车(UTF-8 流式解码)+ 经期挂卷 + 镜像瘦身**。检查单部署前各项全过(九套单测 + 三套 e2e 全绿、全量 md5 对账只差 `server.js` 那一行、四个 `/mcp` 各 3/3 200)。
   改动:`server.js` **`a27a3408…` → `c6616e9a…`**(只多 `p.stdout.setEncoding("utf8")` 一行 + 两行注释);**其余代码与人设五份文件一个字没动**(`ian.md` 仍 `8918742d…`,`profile-instructions.md` 仍 `7adb5c33…`,`mcp-servers.json` 仍 `b5a281bc…`)。
   变量(都在部署前设、不 restart):新增 **`PERIOD_FILE=/data/period-state.json`**、新增 **`ZBPACK_INSTALL_COMMAND=yarn install && yarn cache clean`**(见下);`PERIOD_CONFIG` 早上已补全、这次没动。
