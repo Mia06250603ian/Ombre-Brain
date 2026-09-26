@@ -486,7 +486,7 @@ Telegram 原生语音条;任何一步失败退回发文字,话不丢。内容用
 
 ```bash
 cd telegram-bridge
-node test-bridge.mjs        # 必须全绿(2026-09-23 实测 306 项,~~08-28 是 302~~;**别照写死的数对**,项数会随功能长——
+node test-bridge.mjs        # 必须全绿(2026-09-26 实测 319 项,~~09-23 是 306、08-28 是 302~~;动了设计要点 21 还要跑 `node tools/e2e-route.mjs`(需 root + openssl);**别照写死的数对**,项数会随功能长——
                             # 手册里那句「160 项」从 08-02 一直没更新,08-28 现场量已是 283→302)
 npx -y zeabur@latest auth login --token <API_KEY>
 npx -y zeabur@latest deploy   # 首次部署后把 service id 记回本文档
