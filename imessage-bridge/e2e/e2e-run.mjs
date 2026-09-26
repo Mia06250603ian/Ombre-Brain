@@ -25,6 +25,7 @@ async function until(fn, ms = 8000) { const t0 = Date.now(); while (Date.now() -
 // ---- 假 shim:记下每个请求,按剧本回 SSE ----
 const shimReqs = [];
 let shimReply = () => "嗯";
+let shimThinking = () => "";
 let shimStatus = 200;
 const shim = http.createServer((req, res) => {
   let body = ""; req.on("data", (d) => (body += d)).on("end", () => {
@@ -33,8 +34,10 @@ const shim = http.createServer((req, res) => {
     if (shimStatus !== 200) { res.writeHead(shimStatus).end(); return; }
     res.writeHead(200, { "Content-Type": "text/event-stream" });
     const text = shimReply(j);
+    const think = shimThinking(j);
     // 故意按 5 字节切块发,顺带验汉字不碎
-    const sse = `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } })}\n\ndata: {"type":"message_stop"}\n\n`;
+    const sse = (think ? `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "thinking_delta", thinking: think } })}\n\n` : "")
+      + `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text } })}\n\ndata: {"type":"message_stop"}\n\n`;
     const buf = Buffer.from(sse);
     for (let i = 0; i < buf.length; i += 5) res.write(buf.subarray(i, i + 5));
     res.end();
@@ -82,7 +85,7 @@ Object.assign(process.env, {
   PORT: String(PORT), PHOTON_PROJECT_ID: "p", PHOTON_PROJECT_SECRET: "s",
   OWNER_HANDLES: "+8613800138000", SHIM_KEY: "k-test", SHIM_URL: `http://127.0.0.1:${shim.address().port}`,
   DEBOUNCE_MS: "300", EARS_URL: `http://127.0.0.1:${ears.address().port}`, EARS_TOKEN: "e-test",
-  ELEVEN_API_KEY: "x", ELEVEN_VOICE_ID: "v",
+  ELEVEN_API_KEY: "x", ELEVEN_VOICE_ID: "v", THINKING: "1",
 });
 await import("../server.js");
 await until(() => globalThis.__photon?.opened > 0);
@@ -219,6 +222,18 @@ push([space, dup]); push([space, dup]);
 await until(() => texts().includes("收到"));
 await sleep(600);
 eq("11 重投只进一次 shim", shimReqs.length, 1);
+
+// 场景 13:他的思考 → 盖着隐形墨水的气泡,在正文之前;太长拆成几个
+reset();
+shimThinking = () => "她今天好像很累。" + "想".repeat(2500);
+shimReply = () => "早点睡";
+say({ type: "text", text: "我先睡啦" });
+await until(() => texts().includes("早点睡"));
+const inks = sent.filter((x) => x.type === "effect");
+eq("13 思考拆成两个隐形墨水气泡", inks.map((x) => x.id), ["com.apple.MobileSMS.expressivesend.invisibleink", "com.apple.MobileSMS.expressivesend.invisibleink"]);
+ok("13 思考开头带 💭 且内容对", inks[0]?.input.startsWith("💭 她今天好像很累。"));
+eq("13 思考在正文之前", sent.findIndex((x) => x === "早点睡") > sent.indexOf(inks[1]), true);
+shimThinking = () => "";
 
 // 场景 12:/health
 const h = await (await realFetch(`http://127.0.0.1:${PORT}/health`)).json();

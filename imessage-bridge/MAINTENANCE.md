@@ -135,6 +135,7 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
 | `BUBBLE_SPLIT` | 默认开;设 `0` 整段一坨发(急救开关) |
 | `REACTION_ON` | 他点 tapback,默认开;设 `0` 关(标记照剥,正文照发) |
 | `TAPBACK_IN` | 她点的 tapback 要不要告诉他,默认开。**每点一次 = 晏多回一轮**,嫌他话多就设 `0` |
+| `THINKING` | 他的思考用**隐形墨水**气泡发(抹一下才显示,iMessage 版的「折叠」),**代码默认关 / 线上 `1`**(2026-09-26 所有者要的,「和 Telegram 保持一致」)。整段照发、不盖记忆原文,每 2000 字拆一个气泡;发失败不连累正文。**急救开关**:设 `0` + restart |
 | `EARS_URL` / `EARS_TOKEN` | 同 telegram-bridge(同值)。两个都配了语音输入才开 |
 | `ELEVEN_API_KEY` / `ELEVEN_VOICE_ID` | 同 telegram-bridge(同值)。不配 = 他的 `[语音]` 退回文字 |
 | `VOICE_MODEL` / `VOICE_SPEED` / `VOICE_STABILITY` / `VOICE_MAX_CHARS` | 同 telegram-bridge,默认值也一样(0.85 / 0.6 / 500) |
@@ -208,8 +209,9 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
    Telegram 那边会原样漏出标记。本服务这边已认全角(单测钉着)。**要修 Telegram 那边:改那两个字符类 + 补真的全角用例 + 部署 telegram-bridge(不碰晏)**。
 7. **失败不记欠条**:telegram-bridge 有「没送出去的话路通了自动补报」(它的设计要点 19),这边**没做**。
    发失败的话只在同一轮里提示一句「有 N 条没送到」,而且只有至少送出去一条时才提示(全断时提示本身也发不出去)。
-8. **隐私**:明文过 Photon(第 1 节)。**晏的思考流不发**到 iMessage(Telegram 那边 `TG_THINKING=1` 会发),
-   所以工具可见化里的记忆原文不会落进 iMessage。
+8. **隐私**:明文过 Photon(第 1 节)。**晏的思考流也发**(`THINKING=1`,隐形墨水气泡),**和 Telegram 一致:记忆原文照发**
+   —— 工具可见化带出的 `hold`/`breath` 读到的记忆正文会经过 Photon。所有者 2026-09-26 知情选的「和 TG 保持一致」。
+   ~~原来是不发思考~~。只想盖记忆正文:shim 设 `TOOLVIS_REDACT=1`(两扇门一起盖,改 shim 变量 = restart shim = **丢窗口**);整个不要:本服务 `THINKING=0`。
 
 ## 8. 测试
 

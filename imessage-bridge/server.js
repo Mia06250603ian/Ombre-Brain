@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import {
   parseHandles, isOwner, toE164, detectReset, buildShimBody, makeSseAccumulator,
   takeCheckMarker, takeReactionMarker, extractSegments, bubblesFor, bubbleGapMs,
-  formatEarsResult, classifyContent, createConversation,
+  formatEarsResult, classifyContent, createConversation, splitLong,
 } from "./imessage-lib.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -33,6 +33,7 @@ const MEDIA_TIMEOUT_MS = +(process.env.MEDIA_TIMEOUT_MS || 60000);
 const BUBBLE_SPLIT = process.env.BUBBLE_SPLIT !== "0";
 const REACTION_ON = process.env.REACTION_ON !== "0";       // 他点回应(出)
 const TAPBACK_IN = process.env.TAPBACK_IN !== "0";         // 她点回应要不要告诉他(进)
+const THINKING = process.env.THINKING === "1";             // 他的思考用「隐形墨水」发,默认关(同 telegram-bridge 的 TG_THINKING)
 
 const EARS_URL = (process.env.EARS_URL || "").replace(/\/$/, "");
 const EARS_TOKEN = process.env.EARS_TOKEN || "";
@@ -239,6 +240,22 @@ async function deliver(space, target, rawText) {
   return out;
 }
 
+// ---- 他的思考 → 盖着「隐形墨水」的气泡(抹一下才显示),iMessage 版的「折叠」 ----
+// 2026-09-26 所有者要的,「和 Telegram 那边保持一致」:**整段照发、不盖记忆原文、不设总长上限**,
+// 太长就拆成几个气泡(Telegram 那边是拆成几段折叠引用)。
+// ⚠️ 思考流里有工具可见化带出的**记忆原文**,发出来 = 经过 Photon 的服务器(所有者知情选的)。
+//    只想盖记忆正文:去 shim 设 TOOLVIS_REDACT=1(两扇门一起盖);整个不要:这里 THINKING=0。
+// **发失败不许连累正文**(同 telegram-bridge 的 sendThinking):正文才是她要看的。
+const INVISIBLE_INK = "com.apple.MobileSMS.expressivesend.invisibleink";
+async function sendThinking(space, thinking) {
+  if (!THINKING || !(thinking || "").trim()) return;
+  const { effect } = await import("@spectrum-ts/imessage");
+  for (const chunk of splitLong(thinking.trim(), 2000)) {
+    try { await space.send(effect(`💭 ${chunk}`, INVISIBLE_INK)); }
+    catch (e) { log("[thinking-err]", errText(e)); return; }
+  }
+}
+
 // ---- 一轮:叫 shim → 发回去 ----
 async function runTurn(t) {
   const space = t.space;
@@ -259,6 +276,7 @@ async function runTurn(t) {
     clearInterval(typing);
     space.stopTyping?.().catch(() => {});
   }
+  await sendThinking(space, r.thinking);
   await deliver(space, t.target, r.text);
 }
 
@@ -388,7 +406,7 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({
       ok: true, on: BRIDGE_ON, ...stat, ...convo.state(),
       owner: OWNER.length, stickers: stickerTags.length, ffmpeg: !!FFMPEG,
-      ears: EARS_ON, voice: VOICE_ON, reaction: REACTION_ON, tapbackIn: TAPBACK_IN,
+      ears: EARS_ON, voice: VOICE_ON, reaction: REACTION_ON, tapbackIn: TAPBACK_IN, thinking: THINKING,
       mem: memMiB(),
     }));
     return;
