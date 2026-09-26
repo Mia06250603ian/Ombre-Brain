@@ -385,6 +385,13 @@ export function createConversation({ debounceMs = 4000, runTurn, log = () => {},
       clearTimer(timer);
       timer = setTimer(flush, ms);
     },
+    // hold 之后那张图/那段语音**没进缓冲**(转写失败、没听清)时调:把计时器拨回正常的去抖,
+    // 否则她之前打的字会被 hold 的长计时器拖住(语音那条最长 2 分钟)。2026-09-26 自查发现。
+    release() {
+      if (!buffer.length) return;
+      clearTimer(timer);
+      timer = setTimer(flush, debounceMs);
+    },
     state() { return { buffered: buffer.length, queued: queue.length, inflight }; },
   };
 }

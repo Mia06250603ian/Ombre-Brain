@@ -234,8 +234,8 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
 ```bash
 cd imessage-bridge
 npm install
-node test-imessage.mjs      # 单测,纯逻辑(2026-09-26:120 项)
-node e2e/e2e-run.mjs        # 演练:真 server.js + 假 Photon/shim/ears/ElevenLabs(2026-09-26:59 项)
+node test-imessage.mjs      # 单测,纯逻辑(2026-09-26:121 项)
+node e2e/e2e-run.mjs        # 演练:真 server.js + 假 Photon/shim/ears/ElevenLabs(2026-09-26:63 项)
 ```
 项数会随功能长,**别照写死的数对,看有没有 ✗**。
 演练**不碰线上、不要钥匙**:`e2e/fake-hooks.mjs` 用 `module.register` 把 `spectrum-ts` 换成假货,
@@ -273,6 +273,9 @@ node e2e/e2e-run.mjs        # 演练:真 server.js + 假 Photon/shim/ears/Eleven
   - 所有者追加的三件:思考用隐形墨水发(`THINKING=1`)、`[查岗]`(读 telegram-bridge 的 `/activity`)、心跳 `/push`(配 shim 第四十三次)。
   - 验收:容器 `md5sum` 与本地逐件一致(每次);`/health` 全绿;她真机验过文字 / 图片 / 语音双向 / 贴纸 / 思考 / 心跳去向切换。
   - 线上内存 `mem.self` **113~129 MiB**(整机 `avail` 1283~1592 MiB,2026-09-26 `/health` 读)。
+  - **同日上线后自查又修三处(都只动本服务)**:①`/push` 改成第一句发出去就回(防心跳两边重复,第 7 节第 4 条);
+    ②语音转写失败 / 没听清时,她之前打的字被 hold 的长计时器拖住最长 2 分钟 → 加 `convo.release()`(演练场景 21,**撤掉修复会红**,验过);
+    ③心跳只写了 `[回应:…]` 或不存在的贴纸时甩她一句「⚠️空回复」→ 心跳不提示(场景 20)。
 
 ## 12. 后路(2026-09-26 所有者要求写的:「确定不要耦合太多互相牵制,把拆 TG 的后路和出 bug 的后路写好」)
 

@@ -45,10 +45,12 @@ const shim = http.createServer((req, res) => {
 });
 // ---- 假 ears ----
 const earsReqs = [];
+let earsFail = false;
 const ears = http.createServer((req, res) => {
   const chunks = []; req.on("data", (d) => chunks.push(d)).on("end", () => {
     const b = Buffer.concat(chunks);
     earsReqs.push({ token: req.headers["x-token"], hasOgg: b.includes(Buffer.from("OggS")) });
+    if (earsFail) { res.writeHead(500, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "boom" })); return; }
     res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ text: "想你了", emotion: "温柔" }));
   });
 });
@@ -313,6 +315,25 @@ failSend = false;
 eq("19 第一发失败回 502", fr.status, 502);
 await sleep(3000);
 eq("19 这边停发、一句都没出现", texts(), []);
+
+// 场景 20:心跳只写了个回应标记(没有可贴的靶子)→ 什么都不发,**不甩她「空回复」**
+reset();
+const er = await pushHb({ text: "[回应:❤️]" });
+eq("20 回 200(不退回 Telegram)", er.status, 200);
+await sleep(800);
+eq("20 一句都不发给她", texts(), []);
+
+// 场景 21:先打一句字,再发语音但 ears 挂了 → 那句字不被拖住,正常时间内就发给他
+reset();
+earsFail = true;
+shimReply = () => "收到啦";
+say({ type: "text", text: "我先说一句" });
+say({ type: "voice", mimeType: "audio/x-caf", name: "a.caf", read: async () => wav });
+const t21 = Date.now();
+await until(() => texts().includes("收到啦"), 30000);
+earsFail = false;
+ok(`21 字没被拖住(${Date.now() - t21} ms,门槛 15000)`, Date.now() - t21 < 15000);
+ok("21 告诉她语音听不了", texts().some((t) => t.includes("语音听不了")));
 
 // 场景 12:/health
 const h = await (await realFetch(`http://127.0.0.1:${PORT}/health`)).json();

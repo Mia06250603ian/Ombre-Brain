@@ -267,6 +267,8 @@ else {
   convo3.add({ text: "看这个" });
   convo3.hold(60000);
   eq("hold 把计时器推远", timers.filter((t) => !t.dead).map((t) => t.ms), [60000]);
+  convo3.release();
+  eq("语音没进缓冲时 release 把计时器拨回正常去抖", timers.filter((t) => !t.dead).map((t) => t.ms), [4000]);
 }
 
 // ---- 贴纸:registry 与文件一一对应,标签和 telegram-bridge 逐字相同 ----
