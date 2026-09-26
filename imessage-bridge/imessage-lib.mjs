@@ -28,6 +28,15 @@ export function isOwner(senderId, handles) {
   return false;
 }
 
+// ---- 她的手机号 → E.164(Photon 登记用户要这个格式:+ 国家码 + 号码,不带空格横杠)----
+// **不猜国家码**:没写 + 的一律不认(返回 null),免得把中国号当成美国号登记。邮箱返回 null。
+export function toE164(handle) {
+  const h = String(handle || "").trim();
+  if (!h || h.includes("@") || !h.startsWith("+")) return null;
+  const d = h.slice(1).replace(/[\s\-().]/g, "");
+  return /^[1-9]\d{6,14}$/.test(d) ? `+${d}` : null;
+}
+
 // ---- 重置词识别(逐字镜像 kelivo-shim/server.js 的 detectReset,含 2026-07-20 拆出来的 switch)----
 // 用途和 telegram-bridge 一样:重置词消息**不许和别的消息合并**,否则 shim 侧识别失败、归档丢失。
 // **shim 改词表时这里要同步改**(telegram-bridge/bridge-lib.mjs 里还有一份)。

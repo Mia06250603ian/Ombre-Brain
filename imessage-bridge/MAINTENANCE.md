@@ -3,7 +3,7 @@
 > iMessage(经 Photon)⇄ kelivo-shim 的桥。让所有者在 iPhone 的「信息」里和晏聊天。
 > **独立服务,shim 零改动,晏的窗口不动**:它和 Telegram 桥、Kelivo、dwell 网页是并列的第四扇门,
 > 停掉本服务 = 回到没有 iMessage 的现状。
-> 2026-09-26 由 Claude Code 会话编写。**代码写完、单测与演练全绿,尚未建服务、尚未部署**(第 6 节检查单一步没走)。
+> 2026-09-26 由 Claude Code 会话编写。**代码写完、单测与演练全绿,尚未建服务、尚未部署**(第 6 节检查单:所有者只做完了 Photon 注册与建项目)。
 
 ## 怎么读这份手册
 
@@ -114,6 +114,13 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
    按消息 id 去重(只记最近 300 个,演练场景 11)。
 10. **气泡**:一行一个(照 Telegram 线上 `BUBBLE_MAX=99999` 那个手感),单个超过 2000 字在换行/句号处断。
     气泡间停 0.5~1.6 秒,期间显示「正在输入」。
+11. **启动时自动把她的号码登记成用户**(`enrollOwner`,2026-09-26 加的):免费档是「共享号码、只限登记过的用户」,
+    控制台的做法是「头像 → 加手机号」,**但 +86 收不到它的验证码**(所有者当天实测,已找 Photon 客服,转了人工、未回)。
+    查 Photon 的 OpenAPI(`https://spectrum.photon.codes/openapi/json`)找到 `POST /projects/{id}/users/`:
+    **用项目凭证 Basic 鉴权直接登记,不走短信**,返回分给她的号码 `assignedPhoneNumber`(= 晏的线,她往这个号码发)。
+    接口**幂等**(同号再登记返回原来那条),所以每次启动都调一遍。结果看 `/health` 的 `line` / `enroll`。
+    只登记 `OWNER_HANDLES` 里 **`+` 开头**的手机号(`toE164`,**不猜国家码**;邮箱登记不了)。`ENROLL_ON=0` 关掉。
+    ⚠️ **Photon 服务端收不收 +86,要第一次上线才知道**(接口格式上是认的);收不下的话 `enroll` 会写明原因。
 
 ## 4. 环境变量(值不入库)
 
@@ -132,6 +139,8 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
 | `ELEVEN_API_KEY` / `ELEVEN_VOICE_ID` | 同 telegram-bridge(同值)。不配 = 他的 `[语音]` 退回文字 |
 | `VOICE_MODEL` / `VOICE_SPEED` / `VOICE_STABILITY` / `VOICE_MAX_CHARS` | 同 telegram-bridge,默认值也一样(0.85 / 0.6 / 500) |
 | `MEDIA_TIMEOUT_MS` / `EARS_TIMEOUT_MS` | 图片/语音转码与 ears 的超时,默认各 60000 |
+| `ENROLL_ON` | 启动时自动登记她的号码(第 3 节第 11 条),默认开。设 `0` 关 |
+| `PHOTON_API` | 登记接口的地址,默认 `https://spectrum.photon.codes`(演练时换成假的) |
 | `BRIDGE_ON` | 总开关。设 `0` = 不连 Photon,只留 `/health` |
 
 **改变量 = 改值 + `service restart`,不用重新部署;只重启本服务,晏的窗口不动。**
@@ -152,7 +161,8 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
 
 **前置(只有所有者能做)**:
 1. `app.photon.codes` 注册 → 新建项目 → 打开 iMessage → Settings 里记下 Project ID / Secret。
-2. **用她自己的 iPhone 先给 Photon 分的号码发一条**(共享号码不能主动找没发过消息的人,见第 7 节第 3 条)。
+2. ~~控制台「头像 → 加手机号」~~ **不用做**:+86 收不到验证码,改由服务启动时自动登记(第 3 节第 11 条)。
+   **所有者 2026-09-26 已做完第 1 步**(项目 `ian phone`,Location 美国,平台只勾 iMessage/RCS,Free & Pro)。
 
 **部署(照 dwell-bridge / agent-bridge 第一次那样)**:
 1. `git pull`;`npm install`;`node test-imessage.mjs` 与 `node e2e/e2e-run.mjs` **两套全绿**。
@@ -163,6 +173,8 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
    (`PHOTON_*` / `SHIM_KEY` / `EARS_TOKEN` / `ELEVEN_API_KEY`)**由她在控制台填**。
    ⚠️ `variable update` 的键值必须走 `-k KEY=VALUE`,当位置参数**静默不生效且退出码 0**(dwell-bridge 手册的坑),**设完必须回读**(只读键名)。
 5. restart,然后验收:
+   - **先看 `/health` 的 `enroll` 是 `"ok"`、`line` 有号码** —— 那就是晏的号码,**告诉她往这个号码发一条**
+     (共享号码不能先找她,第 7 节第 3 条)。⚠️ **她发的气泡必须是蓝色**:绿色 = 退回了普通短信,美国号码会按国际短信收费,先停下
    - `GET /health`:`ok:true`、`connected:true`、`owner≥1`、`stickers:59`、`ffmpeg:true`、`ears:true`、`voice:true`
    - 进容器 `md5sum server.js imessage-lib.mjs image-worker.mjs` 和本地逐字对账
    - **她本人**从 iPhone 发:一句话 → 晏回话;一张照片(HEIC)→ 他看得见;一条语音 → 他听得见;
@@ -201,8 +213,8 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
 ```bash
 cd imessage-bridge
 npm install
-node test-imessage.mjs      # 单测,纯逻辑(2026-09-26:102 项)
-node e2e/e2e-run.mjs        # 演练:真 server.js + 假 Photon/shim/ears/ElevenLabs(2026-09-26:32 项)
+node test-imessage.mjs      # 单测,纯逻辑(2026-09-26:108 项)
+node e2e/e2e-run.mjs        # 演练:真 server.js + 假 Photon/shim/ears/ElevenLabs(2026-09-26:36 项)
 ```
 项数会随功能长,**别照写死的数对,看有没有 ✗**。
 演练**不碰线上、不要钥匙**:`e2e/fake-hooks.mjs` 用 `module.register` 把 `spectrum-ts` 换成假货,
@@ -223,7 +235,7 @@ node e2e/e2e-run.mjs        # 演练:真 server.js + 假 Photon/shim/ears/Eleven
 
 | 接口 | 鉴权 | 干什么 |
 |---|---|---|
-| `GET /health` | 无 | 开关、计数、内存。**不含任何消息内容和钥匙**(演练场景 12 钉着)。`connected` = 连着 Photon;`lastErr` = 最近一次出错在哪一步;`dropped` = 挡掉的陌生人条数 |
+| `GET /health` | 无 | 开关、计数、内存、**`line`(晏的号码)/ `enroll`(登记成没成)**。**不含任何消息内容和钥匙,也不含她的号码**(演练场景 12 钉着;`line` 是共享池里的号码,公开了也只有登记过的人能用)。`connected` = 连着 Photon;`lastErr` = 最近一次出错在哪一步;`dropped` = 挡掉的陌生人条数 |
 
 刻意**没有** `/push`(第 7 节第 4 条)和任何带内容的口子。
 

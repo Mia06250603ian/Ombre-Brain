@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  parseHandles, isOwner, detectReset, mergeTurn, buildShimBody, makeSseAccumulator,
+  parseHandles, isOwner, toE164, detectReset, mergeTurn, buildShimBody, makeSseAccumulator,
   takeCheckMarker, takeReactionMarker, looksLikeEmoji, extractSegments, bubblesFor, splitLong, bubbleGapMs,
   formatEarsResult, classifyContent, createConversation,
 } from "./imessage-lib.mjs";
@@ -32,6 +32,16 @@ const ok = (name, cond) => eq(name, !!cond, true);
   ok("配错成很短的数字不会谁都匹配", !isOwner("+8613800138000", ["8000"]));
   ok("邮箱里的数字不会被当成手机号", !isOwner("13800138000@foo.com", ["+8613800138000"]));
   ok("美国号码(10 位)", isOwner("+1 (415) 555-0100", ["4155550100"]));
+}
+
+// ---- 登记用的手机号格式 ----
+{
+  eq("E.164 去空格横杠", toE164("+86 138-0013-8000"), "+8613800138000");
+  eq("E.164 美国括号", toE164("+1 (415) 555-0100"), "+14155550100");
+  eq("没写 + 不猜国家码", toE164("13800138000"), null);
+  eq("邮箱不能登记", toE164("her@icloud.com"), null);
+  eq("太短不认", toE164("+123"), null);
+  eq("空", toE164(""), null);
 }
 
 // ---- 重置词:必须和 shim 的 detectReset 逐字一致 ----

@@ -14,7 +14,7 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import {
-  parseHandles, isOwner, detectReset, buildShimBody, makeSseAccumulator,
+  parseHandles, isOwner, toE164, detectReset, buildShimBody, makeSseAccumulator,
   takeCheckMarker, takeReactionMarker, extractSegments, bubblesFor, bubbleGapMs,
   formatEarsResult, classifyContent, createConversation,
 } from "./imessage-lib.mjs";
@@ -53,7 +53,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const run = promisify(execFile);
 
 // 给 /health 看的计数(不含任何内容、不含密钥)
-const stat = { connected: false, lastInAt: null, lastOutAt: null, lastErr: null, turns: 0, sent: 0, failed: 0, dropped: 0 };
+const stat = { line: null, enroll: null, connected: false, lastInAt: null, lastOutAt: null, lastErr: null, turns: 0, sent: 0, failed: 0, dropped: 0 };
 const noteErr = (where, e) => { stat.lastErr = { where, msg: errText(e).slice(0, 200), at: new Date().toISOString() }; };
 
 // ---- 贴纸:stickers/registry.json 标签 → 文件(PNG 静态 / GIF 会动的) ----
@@ -315,6 +315,37 @@ async function onMessage(space, message) {
   }
 }
 
+// ---- 把她的手机号登记成这个项目的用户(免费档必须先登记,Photon 才会给她分一条线) ----
+// 2026-09-26:所有者在控制台「头像 → 加手机号」那一步收不到 +86 的验证码。
+// 查 Photon 的 OpenAPI(https://spectrum.photon.codes/openapi/json)找到 `POST /projects/{id}/users/`:
+// 用项目凭证(Basic base64(id:secret))直接登记,**不走短信验证**,返回分给她的号码 `assignedPhoneNumber`。
+// Hermes(另一个接 Photon 的项目)的 `photon setup --phone` 走的也是这条。
+// **幂等**:同一个号码再登记一次只会返回原来那条,所以每次启动都调一遍也没事。
+// 结果放进 /health 的 `line`(晏的号码,她要往这个号码发消息)和 `enroll`(成没成、没成的原因)。
+const ENROLL_ON = process.env.ENROLL_ON !== "0";
+const PHOTON_API = (process.env.PHOTON_API || "https://spectrum.photon.codes").replace(/\/$/, "");
+async function enrollOwner() {
+  const phones = OWNER.map(toE164).filter(Boolean);
+  if (!phones.length) { stat.enroll = "OWNER_HANDLES 里没有 + 开头的手机号,没法登记(邮箱不能登记)"; log("[enroll]", stat.enroll); return; }
+  const auth = "Basic " + Buffer.from(`${PHOTON_PROJECT_ID}:${PHOTON_PROJECT_SECRET}`).toString("base64");
+  for (const phoneNumber of phones) {
+    try {
+      const r = await fetch(`${PHOTON_API}/projects/${encodeURIComponent(PHOTON_PROJECT_ID)}/users/`, {
+        method: "POST", headers: { Authorization: auth, "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "shared", phoneNumber }), signal: AbortSignal.timeout(30000),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j?.data?.assignedPhoneNumber) {
+        stat.line = j.data.assignedPhoneNumber; stat.enroll = "ok";
+        log("[enroll] 登记好了,她往这个号码发消息:", stat.line);
+        return;
+      }
+      stat.enroll = `HTTP ${r.status}: ${String(j?.error?.message || j?.message || j?.error || "").slice(0, 200)}`;
+      log("[enroll] 没登记上", stat.enroll);
+    } catch (e) { stat.enroll = `出错: ${errText(e)}`; log("[enroll-err]", errText(e)); }
+  }
+}
+
 // ---- 连 Photon(断了自己重连,不靠容器重启) ----
 async function photonLoop() {
   const { Spectrum } = await import("spectrum-ts");
@@ -365,4 +396,4 @@ if (!BRIDGE_ON) log("[bridge] BRIDGE_ON=0,只留 /health");
 else if (!PHOTON_PROJECT_ID || !PHOTON_PROJECT_SECRET) log("[bridge] 没配 PHOTON_PROJECT_ID / PHOTON_PROJECT_SECRET,只留 /health");
 else if (!OWNER.length) log("[bridge] 没配 OWNER_HANDLES —— 不认任何人,只留 /health(防止配错时谁发都回)");
 else if (!SHIM_KEY) log("[bridge] 没配 SHIM_KEY,只留 /health");
-else photonLoop();
+else { if (ENROLL_ON) enrollOwner(); photonLoop(); }

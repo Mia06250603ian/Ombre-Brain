@@ -62,8 +62,13 @@ const mp3 = fs.readFileSync(path.join(tmp, "tts.mp3"));
 
 // ---- 假 ElevenLabs:只拦 api.elevenlabs.io,别的照常走 ----
 const ttsReqs = [];
+const enrollReqs = [];
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, opts) => {
+  if (String(url).startsWith("https://spectrum.photon.codes/")) {
+    enrollReqs.push({ url: String(url), auth: opts.headers.Authorization, body: JSON.parse(opts.body) });
+    return new Response(JSON.stringify({ succeed: true, data: { id: "u1", projectId: "p", type: "shared", phoneNumber: "+8613800138000", assignedPhoneNumber: "+14155550123" } }), { status: 200 });
+  }
   if (String(url).startsWith("https://api.elevenlabs.io/")) {
     ttsReqs.push(JSON.parse(opts.body));
     return new Response(mp3, { status: 200, headers: { "Content-Type": "audio/mpeg" } });
@@ -81,6 +86,12 @@ Object.assign(process.env, {
 });
 await import("../server.js");
 await until(() => globalThis.__photon?.opened > 0);
+
+// 场景 0:启动时自动把她的号码登记成用户(免费档的前提;不走短信验证码)
+await until(() => enrollReqs.length > 0);
+eq("0 登记接口", enrollReqs[0]?.url, "https://spectrum.photon.codes/projects/p/users/");
+eq("0 用项目凭证 Basic 鉴权", enrollReqs[0]?.auth, "Basic " + Buffer.from("p:s").toString("base64"));
+eq("0 登记的是她的号码、共享线", enrollReqs[0]?.body, { type: "shared", phoneNumber: "+8613800138000" });
 
 // ---- 假的会话与消息 ----
 const sent = [];
@@ -211,6 +222,7 @@ eq("11 重投只进一次 shim", shimReqs.length, 1);
 
 // 场景 12:/health
 const h = await (await realFetch(`http://127.0.0.1:${PORT}/health`)).json();
+eq("12 health 显示晏的号码", [h.line, h.enroll], ["+14155550123", "ok"]);
 eq("12 health", [h.ok, h.on, h.connected, h.owner, h.stickers, h.ffmpeg, h.ears, h.voice], [true, true, true, 1, 59, true, true, true]);
 ok("12 health 里没有内容和钥匙", !JSON.stringify(h).includes("k-test") && !JSON.stringify(h).includes("想你"));
 ok("12 health 有内存读数", typeof h.mem.self === "number");
