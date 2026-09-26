@@ -16,5 +16,9 @@
     "heic-convert": "^2.1.0",
     "sharp": "^0.35.4",
     "spectrum-ts": "^12.10.1"
+  },
+  "allowScripts": {
+    "ffmpeg-static": true,
+    "protobufjs": false
   }
 }

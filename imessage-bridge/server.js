@@ -66,8 +66,13 @@ catch { log("[sticker] 没有 registry.json,贴纸功能关"); }
 const stickerTags = Object.keys(stickerReg);
 
 // ---- ffmpeg:随 npm 包 ffmpeg-static 一起装进来(Zeabur 的 node 镜像里没有系统 ffmpeg) ----
+// ⚠️ 2026-09-26 第一次上线就栽在这:Zeabur 用 Node 24,它带的新版 npm **默认拦截安装脚本**,
+// 而 ffmpeg-static 的二进制是安装脚本下载的 —— 被拦之后包还在、路径也给得出来,**文件却不存在**,
+// 她发语音报 `spawn …/ffmpeg ENOENT`。修法在 package.json 的 `allowScripts`(放行 ffmpeg-static)。
+// 所以这里**必须检查文件真的在**,不能只看路径字符串(当时 /health 显示 ffmpeg:true,是假的)。
 let FFMPEG = process.env.FFMPEG_PATH || "";
 if (!FFMPEG) { try { FFMPEG = (await import("ffmpeg-static")).default || ""; } catch { FFMPEG = ""; } }
+if (FFMPEG && !fs.existsSync(FFMPEG)) { log("[ffmpeg] 路径有、文件没有(安装脚本被拦了?看 package.json 的 allowScripts):", FFMPEG); FFMPEG = ""; }
 
 // 图片/语音转码**一次只跑一个**:HEIC 解码一张十几兆像素的照片要吃两百 MB 上下,
 // 这台机器所有服务共用一池内存(见 browser-hands 手册的内存表),并发两张就可能挤到晏。
