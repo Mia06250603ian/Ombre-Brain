@@ -678,3 +678,33 @@ export function letterPrompt({ bjNow, userName = "佳佳" } = {}) {
     + `有就写(给${userName}的可以直接发出去,给别人的先存草稿);`
     + `没有就只回一个:。`;
 }
+
+// ============================================================
+// 夜里查岗 / 写信提醒:她最后在 iMessage,就把他这轮的话交给 imessage-bridge 发(2026-09-26)
+// ============================================================
+// 所有者要的「有的功能先加上,但不要做出 bug」。**只管这两种系统轮**(普通聊天、心跳、他自己写的 [查岗] 一律不动)。
+// 判断「她在哪」问 shim 的 `/debug` → `presence.lastClient`(shim 第四十三次起有;心跳「跟着她走」用的是同一个值)。
+// **任何一步不顺都返回 routed:false,调用方照旧在 Telegram 发** —— 这是这个功能唯一的失败方向,不存在「丢话」。
+// ⚠️ 防两边重复:imessage-bridge 的 /push **第一句发出去就回 200**、第一句失败就停发回 502,
+//    所以「200 = 已在 iMessage 出现,Telegram 不许再发」「非 200 = iMessage 一句都没出现,Telegram 照发」。
+//    唯一的灰区是**超时**(那边其实发了、这边没等到回话),所以超时给足 60 秒(和 shim 推心跳同一个数),
+//    而那边第一句通常几秒内就发出去了。
+// ⚠️ 这是一条「telegram-bridge → imessage-bridge」的反向依赖(见 ../imessage-bridge/MAINTENANCE.md 12.0),
+//    **不设 IMESSAGE_PUSH_URL = 与改之前逐字相同**。
+export async function routeViaImessage({ text, imessageUrl, shimUrl, shimKey, fetchImpl = fetch, presenceTimeoutMs = 5000, pushTimeoutMs = 60000 } = {}) {
+  if (!imessageUrl || !(text || "").trim()) return { routed: false, why: "off" };
+  let lastClient = null;
+  try {
+    const r = await fetchImpl(`${shimUrl}/debug`, { signal: AbortSignal.timeout(presenceTimeoutMs) });
+    if (!r.ok) return { routed: false, why: `shim /debug HTTP ${r.status}` };
+    lastClient = (await r.json())?.presence?.lastClient ?? null;
+  } catch (e) { return { routed: false, why: `shim /debug: ${e?.message || e}` }; }
+  if (lastClient !== "imessage") return { routed: false, why: "她最后不在 iMessage" };
+  try {
+    const r = await fetchImpl(imessageUrl, {
+      method: "POST", headers: { "Content-Type": "application/json", "x-api-key": shimKey },
+      body: JSON.stringify({ text }), signal: AbortSignal.timeout(pushTimeoutMs),
+    });
+    return r.ok ? { routed: true } : { routed: false, why: `imessage HTTP ${r.status}` };
+  } catch (e) { return { routed: false, why: `imessage: ${e?.message || e}` }; }
+}

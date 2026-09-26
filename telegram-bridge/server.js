@@ -12,7 +12,7 @@ import {
   takeCheckMarker, takeReactionMarker, lookupPrompt, computeStreak, appDurations, ACTIVITY_CAP, STREAK_GAP_MIN,
   letterDecide, letterPrompt, LETTER_HOUR, LETTER_MIN, LETTER_WINDOW_MIN, LETTER_QUIET_MIN,
   describeErr, isRetriableNetErr, turnErrorText,
-  recordLoss, pendingNoticeText,
+  recordLoss, pendingNoticeText, routeViaImessage,
 } from "./bridge-lib.mjs";
 
 const PORT = process.env.PORT || 8080;
@@ -20,7 +20,10 @@ const BOT = process.env.TELEGRAM_BOT_TOKEN || "";
 const ALLOW = (process.env.TELEGRAM_CHAT_ID || "").split(",").map((s) => s.trim()).filter(Boolean);
 const SHIM_URL = (process.env.SHIM_URL || "https://yan-shim.zeabur.app").replace(/\/$/, "");
 const SHIM_KEY = process.env.SHIM_KEY || "";
-const SYSTEM_TEXT = process.env.SYSTEM_TEXT || "";   // 如需与 Kelivo 世界书一致,整段放这里
+const SYSTEM_TEXT = process.env.SYSTEM_TEXT || "";
+// 2026-09-26:夜里查岗 / 写信提醒 他开口时,她最后在 iMessage 就交给 imessage-bridge 发(routeViaImessage)。
+// **不设 = 与改之前逐字相同**(只在 Telegram 发)。
+const IMESSAGE_PUSH_URL = process.env.IMESSAGE_PUSH_URL || "";   // 如需与 Kelivo 世界书一致,整段放这里
 const DEBOUNCE_MS = +(process.env.DEBOUNCE_MS || 4000);
 const TG_THINKING = process.env.TG_THINKING === "1";  // 思考折叠引用,默认关
 const BRIDGE_ON = process.env.BRIDGE_ON !== "0";      // 总开关:设 0 只留 /health
@@ -350,6 +353,7 @@ async function runQueue() {
   // 否则一次意外抛错就让 inflight 永远卡在 true —— 那是「他再也不回话」的死法。
   try {
     let r = null;
+    let routedIm = null;    // 夜里查岗/写信提醒这轮有没有交给 iMessage 发(routeViaImessage 的结果)
     try {
       r = await shimTurn(t);
     } catch (e) {
@@ -366,7 +370,13 @@ async function runQueue() {
       // (系统轮本来就没有她的消息可贴,replyToId 是空的,这里丢掉那个表情是对的。)
       if ((t.curfew || t.lookup || t.letter) && isSilentReply(takeReactionMarker(outText).text)) {
         log(t.letter ? "[letter] 今天没什么想写的" : "[curfew] 他选择不打扰");   // 回「。」= 不说话,这条不进对话
+      } else if ((t.curfew || t.letter) && IMESSAGE_PUSH_URL
+                 && (routedIm = await routeViaImessage({ text: r.text, imessageUrl: IMESSAGE_PUSH_URL, shimUrl: SHIM_URL, shimKey: SHIM_KEY })).routed) {
+        // 交给 iMessage 发了(原文带着 [查岗] 标记一起交过去,那边自己查)。算他开过口,查岗/写信的冷却照常。
+        lastOutboundAt = Date.now();
+        log(t.letter ? "[letter]" : "[curfew]", "她最后在 iMessage,这轮交给 imessage-bridge 发了");
       } else {
+        if (routedIm && routedIm.why !== "off") log("[route] 留在 Telegram 发:", routedIm.why);
         await sendThinking(t.chatId, r.thinking);
         const stat = await sendOutput(t.chatId, outText, { fallback: wants ? null : "⚠️[bridge] 空回复,看下 shim 日志", replyToId: t.replyToId });
         // 真有话没送到才吭声(查岗轮不吭声,她没问)
@@ -376,7 +386,7 @@ async function runQueue() {
           if (!told) queueLoss({ at: Date.now(), kinds: stat.kinds, source: "reply", chatId: t.chatId });
         }
       }
-      if (wants && !t.lookup) queueLookup(t.chatId);
+      if (wants && !t.lookup && !routedIm?.routed) queueLookup(t.chatId);   // 交给 iMessage 的那轮,[查岗] 由那边查,这边不重复
     }
   } catch (e) {
     log("[turn-err] 意外", describeErr(e));   // 兜底:走到这里说明有没预料到的抛错,别静默

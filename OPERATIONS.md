@@ -232,7 +232,8 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
    那会破掉这一页「零新增接口、零写操作」的性质。**她没定之前别做。**
    细节见 `INTERNALS.md` 1.12(详情卡那节末尾)、`TIMELINE.md` 09-03 第十五件。
 8. **要不要把「手机活动记录 + 夜里查岗 + 写信提醒」从 telegram-bridge 拆出来**(2026-09-26 所有者问「会不会耦合太多」)。
-   现状:iMessage 只在 `[查岗]` 时**只读**借 telegram-bridge 的 `/activity`,那边坏了只是查不到、不打扰她,**两边不会互相拖垮**(逐条核过,见
+   现状:iMessage 只在 `[查岗]` 时**只读**借 telegram-bridge 的 `/activity`;**同日她又要「有的功能先加上」**,于是 telegram-bridge 的夜里查岗 / 写信提醒
+   也会在她最后在 iMessage 时交给 iMessage 发(失败自动退回 Telegram,见 telegram-bridge 设计要点 21)。任何一边坏了都只是退回原样,**两边不会互相拖垮**(逐条核过,见
    `imessage-bridge/MAINTENANCE.md` 12.0)。拆干净的路线图、代价、最划算的时机在同一份手册 12.3。**她当天决定先不拆,别自作主张动手。**
    ⚠️ **哪天要删 Telegram 桥,先读 12.2**:不做第 1 步的话 shim 的心跳会哑(shim 那边挂了顺风车)。
 
