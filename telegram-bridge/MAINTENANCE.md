@@ -635,6 +635,9 @@ npx -y zeabur@latest deploy --service-id 6a5a4287f947b6cb34511f79 --environment-
 | `POST /report {app_name}` | `Authorization: Bearer <REPORT_TOKEN>`(也认 `x-api-key` / `?key=`) | iOS 快捷指令上报「她打开了什么 App」 |
 | `GET /activity` | 同上 | 汇总:最后活跃时间 + 最近不重复的 App 名 + `streak` + **`durations`(每个 App 各用了多久,2026-08-06)** + **`lastRawReport`(最近一次上报的原始 body)** |
 
+⚠️ **`GET /activity` 从 2026-09-26 起还有一个调用方:`../imessage-bridge/`**(晏在 iMessage 里写 `[查岗]` 时来取)。
+**改这个接口的返回格式,那边会跟着坏**;`REPORT_TOKEN` 也从两处同值变成**三处**(快捷指令 / 本桥 / imessage-bridge),换就一起换。
+
 **`lastRawReport` 是给排障用的**:iOS 那条自动化里 `app_name` 的值是变量「快捷指令输入」,
 而「App 打开时」这类自动化到底会不会把 App 名喂给它,**在手机上验证不了**——
 上线后让她开一次 App,查 `/activity` 看 `lastRawReport.body` 就一眼分明。

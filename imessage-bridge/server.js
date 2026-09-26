@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import {
   parseHandles, isOwner, toE164, detectReset, buildShimBody, makeSseAccumulator,
   takeCheckMarker, takeReactionMarker, extractSegments, bubblesFor, bubbleGapMs,
-  formatEarsResult, classifyContent, createConversation, splitLong,
+  formatEarsResult, classifyContent, createConversation, splitLong, lookupPrompt, isSilentReply,
 } from "./imessage-lib.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -33,7 +33,11 @@ const MEDIA_TIMEOUT_MS = +(process.env.MEDIA_TIMEOUT_MS || 60000);
 const BUBBLE_SPLIT = process.env.BUBBLE_SPLIT !== "0";
 const REACTION_ON = process.env.REACTION_ON !== "0";       // 他点回应(出)
 const TAPBACK_IN = process.env.TAPBACK_IN !== "0";         // 她点回应要不要告诉他(进)
-const THINKING = process.env.THINKING === "1";             // 他的思考用「隐形墨水」发,默认关(同 telegram-bridge 的 TG_THINKING)
+const THINKING = process.env.THINKING === "1";
+// [查岗]:去 telegram-bridge 的 /activity 取她的手机活动(那边的数据,这边只读)。两个都配了才开。
+const ACTIVITY_URL = process.env.ACTIVITY_URL || "https://yan-telegram-bridge.zeabur.app/activity";
+const REPORT_TOKEN = process.env.REPORT_TOKEN || "";
+const LOOKUP_ON = !!(ACTIVITY_URL && REPORT_TOKEN);             // 他的思考用「隐形墨水」发,默认关(同 telegram-bridge 的 TG_THINKING)
 
 const EARS_URL = (process.env.EARS_URL || "").replace(/\/$/, "");
 const EARS_TOKEN = process.env.EARS_TOKEN || "";
@@ -165,7 +169,11 @@ function shimTurn(turn) {
     const mod = u.protocol === "http:" ? http : https;
     const req = mod.request({
       hostname: u.hostname, port: u.port || undefined, path: u.pathname, method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": SHIM_KEY, "Content-Length": Buffer.byteLength(body) },
+      headers: {
+        "Content-Type": "application/json", "x-api-key": SHIM_KEY, "Content-Length": Buffer.byteLength(body),
+        // 查岗结果是系统送进去的,不是她说话:shim 见到这个头就不当「她出现了」(同 telegram-bridge)
+        ...(turn.lookup ? { "x-system-turn": "1" } : {}),
+      },
       timeout: TURN_TIMEOUT_MS,
     }, (res) => {
       if (res.statusCode !== 200) { res.resume(); return reject(new Error(`shim HTTP ${res.statusCode}`)); }
@@ -203,10 +211,10 @@ async function deliver(space, target, rawText) {
     catch (e) { log("[react-err]", errText(e)); }        // 回应不是「他说的话」,失败不告诉她
   }
   const check = takeCheckMarker(react.text);
-  if (check.wants) log("[check] 他写了 [查岗],这边查不了,已剥掉");
+  if (check.wants) log("[check] 他写了 [查岗]");
   const { segments, unknown } = extractSegments(check.text, stickerTags);
   if (unknown.length) log("[sticker] 不认识的标签:", unknown.join(","));
-  const out = { sent: 0, failed: 0 };
+  const out = { sent: 0, failed: 0, wants: check.wants };
   if (!segments.length) {
     // 只点了回应、一个字没说,是合法的一轮;真的什么都没有才提示
     if (!reacted && !check.wants) await notify(space, "⚠️[bridge] 空回复,看下 shim 日志");
@@ -276,8 +284,25 @@ async function runTurn(t) {
     clearInterval(typing);
     space.stopTyping?.().catch(() => {});
   }
+  // 查岗结果那一轮他回「。」= 选择不打扰,什么都不发(同 telegram-bridge)。静音要在剥掉回应标记之后判
+  if (t.lookup && isSilentReply(takeReactionMarker(takeCheckMarker(r.text).text).text)) { log("[lookup] 他选择不说"); return; }
   await sendThinking(space, r.thinking);
-  await deliver(space, t.target, r.text);
+  const out = await deliver(space, t.target, r.text);
+  // 他写了 [查岗]:去取她的手机活动,作为新一轮喂回去。查岗那一轮里再写 [查岗] 不响应(防打转)
+  if (out.wants && !t.lookup) queueLookup(space);
+}
+
+// ---- [查岗]:取 telegram-bridge 的 /activity → 用和 Telegram 一模一样的话术喂给他 ----
+const bjNowStr = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16);
+async function queueLookup(space) {
+  if (!LOOKUP_ON) { log("[lookup] 没配 REPORT_TOKEN,查不了"); return; }
+  try {
+    const r = await fetch(ACTIVITY_URL, { headers: { Authorization: `Bearer ${REPORT_TOKEN}` }, signal: AbortSignal.timeout(15000) });
+    if (!r.ok) throw new Error(`activity HTTP ${r.status}`);
+    const a = await r.json();
+    log("[lookup] 他要查");
+    convo.addAlone({ text: lookupPrompt(a, { bjNow: bjNowStr(), streak: a.streak, durations: a.durations }), images: [], space, lookup: true });
+  } catch (e) { log("[lookup-err]", errText(e)); noteErr("lookup", e); }   // 查不到不打扰她(她没问)
 }
 
 const convo = createConversation({ debounceMs: DEBOUNCE_MS, runTurn, log });
@@ -406,7 +431,7 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({
       ok: true, on: BRIDGE_ON, ...stat, ...convo.state(),
       owner: OWNER.length, stickers: stickerTags.length, ffmpeg: !!FFMPEG,
-      ears: EARS_ON, voice: VOICE_ON, reaction: REACTION_ON, tapbackIn: TAPBACK_IN, thinking: THINKING,
+      ears: EARS_ON, voice: VOICE_ON, reaction: REACTION_ON, tapbackIn: TAPBACK_IN, thinking: THINKING, lookup: LOOKUP_ON,
       mem: memMiB(),
     }));
     return;

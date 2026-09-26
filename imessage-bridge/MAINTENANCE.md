@@ -95,7 +95,7 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
    | `[回应:❤️]` | 贴 Telegram 回应(官方白名单约 70 个) | 给她**这一轮最后一条**点 tapback。iOS 18 起任意 emoji 都行;只挡「明显不是表情」的(带字母/汉字/数字)。失败只落日志,不告诉她 |
    | `[贴纸:x]` | sendSticker | 发图片附件(静态透明 png / 会动的 gif,见第 5 节) |
    | `[语音]英文[/语音]` | ElevenLabs → Ogg 语音条 | ElevenLabs → mp3 → **m4a** → iMessage 语音。没配/超长/失败 → 退回发文字 |
-   | `[查岗]` | 查手机活动记录再喂回去 | **只剥掉,查不了**(见第 7 节第 2 条) |
+   | `[查岗]` | 查手机活动记录再喂回去 | **同样查**(2026-09-26 加):带 `REPORT_TOKEN` 去 telegram-bridge 的 `GET /activity` 取,**用和 Telegram 逐字相同的话术**作为系统回合(`x-system-turn:1`)喂回去;他回「。」就什么都不发;查岗那轮里再写 `[查岗]` 不响应(防打转)。话术是抄的,**单测拿两边对同一组数据逐字比对** |
    - 冒号**全角半角都认**。⚠️ telegram-bridge 那份正则其实只认半角(见第 7 节第 6 条)。
 5. **她发来的东西**(`classifyContent`):文字 / 链接(当文字)/ 引用回复(取里面的字)/ 图片 / 语音 /
    她点的 tapback(告诉他「她给你的『…』点了 ❤️」,`TAPBACK_IN=0` 可关)。
@@ -136,6 +136,8 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
 | `REACTION_ON` | 他点 tapback,默认开;设 `0` 关(标记照剥,正文照发) |
 | `TAPBACK_IN` | 她点的 tapback 要不要告诉他,默认开。**每点一次 = 晏多回一轮**,嫌他话多就设 `0` |
 | `THINKING` | 他的思考用**隐形墨水**气泡发(抹一下才显示,iMessage 版的「折叠」),**代码默认关 / 线上 `1`**(2026-09-26 所有者要的,「和 Telegram 保持一致」)。整段照发、不盖记忆原文,每 2000 字拆一个气泡;发失败不连累正文。**急救开关**:设 `0` + restart |
+| `REPORT_TOKEN` | 和 telegram-bridge 同值(她快捷指令里那把)。配了 `[查岗]` 才能查(第 3 节第 4 条)。**三处同值,见第 7 节第 2 条** |
+| `ACTIVITY_URL` | 默认 `https://yan-telegram-bridge.zeabur.app/activity` |
 | `EARS_URL` / `EARS_TOKEN` | 同 telegram-bridge(同值)。两个都配了语音输入才开 |
 | `ELEVEN_API_KEY` / `ELEVEN_VOICE_ID` | 同 telegram-bridge(同值)。不配 = 他的 `[语音]` 退回文字 |
 | `VOICE_MODEL` / `VOICE_SPEED` / `VOICE_STABILITY` / `VOICE_MAX_CHARS` | 同 telegram-bridge,默认值也一样(0.85 / 0.6 / 500) |
@@ -193,9 +195,12 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
 1. **晏不知道她在 iMessage 里**。所以他可能提到「Telegram」、或用 iMessage 不支持的格式。目前没问题;
    真要让他知道,只能写进晏的 `CLAUDE.md` —— **那是改人设 = 所有者逐字批准 + 部署 shim + 丢一个窗口**,
    等下次 shim 因别的事部署时搭顺风车,**别为这个单独动**。**千万别改成往 system 里加一句**(第 1 节)。
-2. **`[查岗]` 在这边查不了**:手机活动记录只在 telegram-bridge 的**内存**里,本服务拿不到
-   (也刻意不去拿:那要多一把 `REPORT_TOKEN`)。他在 iMessage 里写 `[查岗]` 只会被剥掉、日志记一笔 `[check]`。
-   夜里的系统查岗、写信提醒照旧只走 Telegram。
+2. **`[查岗]` 靠 telegram-bridge 的 `/activity`**(2026-09-26 所有者要的,~~原来是查不了、只剥掉~~):
+   数据仍只在 telegram-bridge 的**内存**里,那边重启 = 记录清零,这边查到的就是「近两天没有记录」。
+   ⚠️ **`REPORT_TOKEN` 从此有三处同值**:她 iPhone 的快捷指令、telegram-bridge、本服务。**要换就三处一起换**,
+   漏了本服务 = iMessage 里查岗静默失效(日志 `[lookup-err] activity HTTP 401`,不打扰她)。
+   ⚠️ **telegram-bridge 改 `/activity` 的返回格式,这边会跟着坏**(那边手册「接口一览」留了指路)。
+   **夜里系统自动查岗、每天的写信提醒仍只走 Telegram**(那是 telegram-bridge 里的定时器)。
 3. **只能她先开口**:Photon 共享号码不能主动给没发过消息的号码发信息(Hermes 那份 Photon 接入文档写的,2026-09-26 读)。
    另有**每天 5000 条**上限,一个人聊用不完。
 4. **晏主动找她(心跳)只走 Telegram**:shim 的 `BRIDGE_PUSH_URL` 指向 telegram-bridge 的 `/push`。
@@ -218,8 +223,8 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
 ```bash
 cd imessage-bridge
 npm install
-node test-imessage.mjs      # 单测,纯逻辑(2026-09-26:108 项)
-node e2e/e2e-run.mjs        # 演练:真 server.js + 假 Photon/shim/ears/ElevenLabs(2026-09-26:36 项)
+node test-imessage.mjs      # 单测,纯逻辑(2026-09-26:120 项)
+node e2e/e2e-run.mjs        # 演练:真 server.js + 假 Photon/shim/ears/ElevenLabs(2026-09-26:46 项)
 ```
 项数会随功能长,**别照写死的数对,看有没有 ✗**。
 演练**不碰线上、不要钥匙**:`e2e/fake-hooks.mjs` 用 `module.register` 把 `spectrum-ts` 换成假货,

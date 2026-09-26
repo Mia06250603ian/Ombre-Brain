@@ -227,6 +227,68 @@ export function formatEarsResult(d) {
 }
 
 // ============================================================
+// [查岗]:他想看一眼她在干嘛(2026-09-26 所有者要的)
+// ============================================================
+// 数据在 telegram-bridge 的内存里(她 iPhone 快捷指令上报到那边),本服务带 REPORT_TOKEN 去它的
+// `GET /activity` 取(那个接口本来就有、带锁,**telegram-bridge 一行没改**)。
+// 下面这几段**逐字抄自 telegram-bridge/bridge-lib.mjs**(lookupPrompt 及其帮手),好让晏在两扇门里
+// 读到的查岗结果一模一样。**单测会拿两边对同一组输入跑一遍比对**,那边改了话术这边会红。
+export function fmtDur(min) {
+  const m = Math.max(0, Math.round(min || 0));
+  if (m < 60) return `${m} 分钟`;
+  const h = Math.floor(m / 60), r = m % 60;
+  return r ? `${h} 小时 ${r} 分` : `${h} 小时`;
+}
+const APP_LIST_TOP = 5;
+const APP_MIN_WORTH = 2;
+function breakdownClause(durs) {
+  if (!durs || !durs.length) return "";
+  const ongoing = durs.find((d) => d.ongoing);
+  let shown = durs.filter((d) => d.min >= APP_MIN_WORTH).slice(0, APP_LIST_TOP);
+  if (ongoing && !shown.includes(ongoing)) shown = [...shown.slice(0, APP_LIST_TOP - 1), ongoing];
+  if (!shown.length) return "";
+  const rest = durs.reduce((a, d) => a + d.min, 0) - shown.reduce((a, d) => a + d.min, 0);
+  const parts = shown.map((d) => `${d.app} ${fmtDur(d.min)}${d.ongoing ? "(还开着)" : ""}`);
+  if (rest >= APP_MIN_WORTH) parts.push(`其他 ${fmtDur(rest)}`);
+  return parts.join("、");
+}
+const STREAK_WORTH_MIN = 20;
+const STREAK_QUIET_MIN = 20;
+function streakClause(streak, durs) {
+  if (!streak || streak.minutes < STREAK_WORTH_MIN) return "";
+  const bd = breakdownClause(durs);
+  const apps = streak.apps.slice(0, 4).join("、");
+  const tail = streak.apps.length > 4 ? "等" : "";
+  let s = bd
+    ? `这一段她已经连着玩了 ${fmtDur(streak.minutes)}:${bd}。`
+    : `这一段她已经连着玩了 ${fmtDur(streak.minutes)}(${apps}${tail})。`;
+  if (streak.quietMin >= STREAK_QUIET_MIN) {
+    const who = durs?.find((d) => d.ongoing)?.app;
+    s += `不过最后一次动静在 ${streak.quietMin} 分钟前,${who ? `${who}那一截` : "之后"}是一直开着还是已经放下了,看不出来。`;
+  }
+  return s;
+}
+export function lookupPrompt(summary, { bjNow, streak, durations, userName = "佳佳" } = {}) {
+  const s = summary || {};
+  if (!s.count) {
+    return `【系统·查岗】现在北京时间 ${bjNow},${userName}的手机最近没有动静(近两天没有记录)。`;
+  }
+  const head = s.minutesAgo >= 1 ? `${s.minutesAgo} 分钟前` : "刚刚";
+  const more = (s.recent || []).slice(1, 4)
+    .map((r) => `${r.app}(${r.minutesAgo} 分钟前)`).join("、");
+  return `【系统·查岗】现在北京时间 ${bjNow},${userName}${head}打开了${s.lastApp}。`
+    + streakClause(streak, durations)
+    + (more ? `再往前:${more}。` : "")
+    + `知道就好,说不说、说什么都由你。`;
+}
+// 他回「。」= 选择不说话,这一轮什么都不发(逐字抄自 telegram-bridge 的 isSilentReply)
+export function isSilentReply(t) {
+  const s = (t || "").trim();
+  if (!s || s.includes("【沉默】")) return true;
+  return s.replace(/[。.\s]/g, "") === "";
+}
+
+// ============================================================
 // 她发来的东西 → 进晏窗口的一条(或者直接回她一句「传不过去」)
 // ============================================================
 // 返回 { kind, ... }:
@@ -314,7 +376,7 @@ export function createConversation({ debounceMs = 4000, runTurn, log = () => {},
     // 重置词:之前攒的先作为一轮发走,它自己单独一轮
     addAlone(item) {
       flush();
-      queue.push(mergeTurn([item]));
+      queue.push({ ...mergeTurn([item]), lookup: !!item.lookup });   // lookup = 查岗结果那一轮(系统送进去的)
       pump();
     },
     // 图片/语音还在下载转码时先把计时器推远,别把它和前面的字拆成两轮

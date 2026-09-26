@@ -5,8 +5,9 @@ import { fileURLToPath } from "node:url";
 import {
   parseHandles, isOwner, toE164, detectReset, mergeTurn, buildShimBody, makeSseAccumulator,
   takeCheckMarker, takeReactionMarker, looksLikeEmoji, extractSegments, bubblesFor, splitLong, bubbleGapMs,
-  formatEarsResult, classifyContent, createConversation,
+  formatEarsResult, classifyContent, createConversation, lookupPrompt, isSilentReply, fmtDur,
 } from "./imessage-lib.mjs";
+import * as TG from "../telegram-bridge/bridge-lib.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 let pass = 0, fail = 0;
@@ -178,6 +179,28 @@ const ok = (name, cond) => eq(name, !!cond, true);
   ok("点回应的提示远超重置词窗口", detectReset(classifyContent({ type: "reaction", emoji: "❤️" }).text) === null);
 }
 
+// ---- 查岗话术:必须和 telegram-bridge 逐字一致(晏在两扇门读到的一样)----
+{
+  const now = Date.parse("2026-09-26T15:00:00Z");
+  const m = (min) => now - min * 60000;
+  const cases = {
+    "没记录": [],
+    "刚打开": [{ app: "小红书", at: m(0) }],
+    "连玩一小时": [{ app: "小红书", at: m(70) }, { app: "淘宝", at: m(40) }, { app: "小红书", at: m(30) }, { app: "抖音", at: m(25) }],
+    "很久没动静": [{ app: "小红书", at: m(90) }, { app: "抖音", at: m(60) }],
+  };
+  for (const [name, list] of Object.entries(cases)) {
+    const summary = TG.summarizeActivity(list, { now });
+    const streak = TG.computeStreak(list, { now }), durations = TG.appDurations(list, { now });
+    const want = TG.lookupPrompt(summary, { bjNow: "23:00", streak, durations });
+    // 这边拿到的是 /activity 的 JSON(summary 平铺 + streak + durations),模拟一遍再比
+    const a = JSON.parse(JSON.stringify({ ...summary, streak, durations }));
+    eq(`查岗话术与 telegram-bridge 一致:${name}`, lookupPrompt(a, { bjNow: "23:00", streak: a.streak, durations: a.durations }), want);
+  }
+  for (const t of ["。", "", "【沉默】", "嗯", "。[回应:❤️]"]) eq(`静音判定与 telegram-bridge 一致:${JSON.stringify(t)}`, isSilentReply(t), TG.isSilentReply(t));
+  eq("fmtDur 一致", [5, 60, 80].map(fmtDur), [5, 60, 80].map(TG.fmtDur));
+}
+
 // ---- 对话引擎:用假计时器跑时序 ----
 {
   const timers = [];
@@ -222,6 +245,11 @@ const ok = (name, cond) => eq(name, !!cond, true);
   convo2.addAlone({ text: "炸" }); await tick();
   convo2.addAlone({ text: "还在吗" }); await tick();
   eq("抛错之后照样能说话", ran2, ["炸", "还在吗"]);
+  const got = [];
+  const convo4 = createConversation({ debounceMs: 1, setTimer, clearTimer, runTurn: async (t) => { got.push([t.text, t.lookup]); } });
+  convo4.addAlone({ text: "【系统·查岗】…", lookup: true }); await tick();
+  convo4.addAlone({ text: "归档" }); await tick();
+  eq("查岗那一轮带着 lookup 标记,普通的不带", got, [["【系统·查岗】…", true], ["归档", false]]);
   eq("inflight 复位", convo2.state().inflight, false);
 
   // hold:图还在转码时推迟发车

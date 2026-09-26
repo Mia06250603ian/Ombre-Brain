@@ -52,6 +52,18 @@ const ears = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ text: "想你了", emotion: "温柔" }));
   });
 });
+// ---- 假 telegram-bridge 的 /activity(带锁)----
+const actReqs = [];
+const act = http.createServer((req, res) => {
+  actReqs.push(req.headers.authorization);
+  if (req.headers.authorization !== "Bearer r-test") { res.writeHead(401).end(); return; }
+  res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({
+    count: 3, lastApp: "小红书", minutesAgo: 2, recent: [{ app: "小红书", minutesAgo: 2 }, { app: "淘宝", minutesAgo: 30 }],
+    streak: { minutes: 45, spanMin: 43, quietMin: 2, apps: ["淘宝", "小红书"] },
+    durations: [{ app: "小红书", min: 30, ongoing: true }, { app: "淘宝", min: 15, ongoing: false }],
+  }));
+});
+await new Promise((r) => act.listen(0, "127.0.0.1", r));
 await new Promise((r) => shim.listen(0, "127.0.0.1", r));
 await new Promise((r) => ears.listen(0, "127.0.0.1", r));
 
@@ -85,7 +97,7 @@ Object.assign(process.env, {
   PORT: String(PORT), PHOTON_PROJECT_ID: "p", PHOTON_PROJECT_SECRET: "s",
   OWNER_HANDLES: "+8613800138000", SHIM_KEY: "k-test", SHIM_URL: `http://127.0.0.1:${shim.address().port}`,
   DEBOUNCE_MS: "300", EARS_URL: `http://127.0.0.1:${ears.address().port}`, EARS_TOKEN: "e-test",
-  ELEVEN_API_KEY: "x", ELEVEN_VOICE_ID: "v", THINKING: "1",
+  ELEVEN_API_KEY: "x", ELEVEN_VOICE_ID: "v", THINKING: "1", REPORT_TOKEN: "r-test", ACTIVITY_URL: `http://127.0.0.1:${act.address().port}/activity`,
 });
 await import("../server.js");
 await until(() => globalThis.__photon?.opened > 0);
@@ -111,11 +123,11 @@ const texts = () => sent.filter((x) => typeof x === "string");
 const reset = () => { sent.length = 0; reacted.length = 0; shimReqs.length = 0; };
 
 // 场景 1:连发两句 → 合成一轮;回话里的标记全部变成动作,一个都不漏
-shimReply = () => "[回应:❤️]\n嗯嗯\n[贴纸:贴贴]\n想你\n[查岗]";
+shimReply = (j) => (j.messages[0].content.startsWith("【系统·查岗】") ? "。" : "[回应:❤️]\n嗯嗯\n[贴纸:贴贴]\n想你\n[查岗]");
 say({ type: "text", text: "在吗" });
 const last = say({ type: "text", text: "想你了" });
 await until(() => texts().includes("想你"));
-eq("1 合成一轮", shimReqs.length, 1);
+eq("1 合成一轮", shimReqs.filter((r) => !r.headers["x-system-turn"]).length, 1);
 eq("1 shim 收到合并后的话", shimReqs[0].body.messages[0].content, "在吗\n想你了");
 eq("1 带 SHIM_KEY", shimReqs[0].headers["x-api-key"], "k-test");
 ok("1 不带 system", !("system" in shimReqs[0].body));
@@ -125,6 +137,7 @@ eq("1 回应贴在最后一条上", reacted, [{ id: last.id, e: "❤️" }]);
 eq("1 发出去的顺序", sent.map((x) => typeof x === "string" ? x : `${x.type}:${path.basename(String(x.input))}`),
   ["嗯嗯", "attachment:s04.png", "想你"]);
 ok("1 没有标记漏给她", !texts().some((t) => /[\[【]/.test(t)));
+await until(() => shimReqs.length >= 2); await sleep(300);   // 他写了 [查岗]:等那轮查岗(他回「。」)跑完再往下
 
 // 场景 2:陌生人 → 不理,shim 一次都不叫
 reset();
@@ -234,6 +247,30 @@ eq("13 思考拆成两个隐形墨水气泡", inks.map((x) => x.id), ["com.apple
 ok("13 思考开头带 💭 且内容对", inks[0]?.input.startsWith("💭 她今天好像很累。"));
 eq("13 思考在正文之前", sent.findIndex((x) => x === "早点睡") > sent.indexOf(inks[1]), true);
 shimThinking = () => "";
+
+// 场景 14:他写 [查岗] → 取她的手机活动 → 作为系统回合喂回去 → 他说话
+reset();
+shimReply = (j) => {
+  const c = j.messages[0].content;
+  if (c.startsWith("【系统·查岗】")) return "还在刷小红书?都半小时了";
+  return "嗯…让我看看[查岗]";
+};
+say({ type: "text", text: "我在干嘛你猜" });
+await until(() => texts().includes("还在刷小红书?都半小时了"));
+eq("14 带着钥匙去取", actReqs.at(-1), "Bearer r-test");
+eq("14 两轮:她的话 + 查岗结果", shimReqs.length, 2);
+ok("14 查岗结果那轮是系统回合(不当她出现)", shimReqs[1]?.headers["x-system-turn"] === "1" && !shimReqs[0]?.headers["x-system-turn"]);
+ok("14 喂回去的话术对", shimReqs[1]?.body.messages[0].content.includes("小红书 30 分钟(还开着)"));
+eq("14 标记不漏给她、两句都发出去", texts(), ["嗯…让我看看", "还在刷小红书?都半小时了"]);
+
+// 场景 15:查岗那轮他回「。」= 不说话;那轮里再写 [查岗] 也不会打转
+reset();
+shimReply = (j) => (j.messages[0].content.startsWith("【系统·查岗】") ? "。[查岗]" : "[查岗]");
+say({ type: "text", text: "在吗" });
+await until(() => shimReqs.length >= 2);
+await sleep(800);
+eq("15 只查一次、不打转", shimReqs.length, 2);
+eq("15 他选择不说,什么都不发", texts(), []);
 
 // 场景 12:/health
 const h = await (await realFetch(`http://127.0.0.1:${PORT}/health`)).json();
