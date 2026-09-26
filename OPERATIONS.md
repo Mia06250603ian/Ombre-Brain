@@ -132,7 +132,7 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
 
 1. **升 2C8G 还是买第二台 Zeabur 独服** —— 建议升级。但升级会重启机器、**晏的窗口会丢**,
    必须她先自己对晏说「归档」。
-2. **Zeabur API key:用完就该作废** —— 她在会话里贴过明文,已进聊天记录。**累计十六次**(最近一次 09-26;逐次流水与下面几条的来历原文在 `TIMELINE.md` 末尾「附二」)。**几条规矩**:
+2. **Zeabur API key:用完就该作废** —— 她在会话里贴过明文,已进聊天记录。**累计十七次**(最近一次 09-26 第十七次:她贴来让我修 ears 语音情绪,只改了 ears 一个变量 + restart ears,见 `TIMELINE.md` 09-26 第六十件;逐次流水与下面几条的来历原文在 `TIMELINE.md` 末尾「附二」)。**几条规矩**:
    - ✅ **2026-08-28 所有者拍板:每把用完她自己去控制台删掉重生成**(不必等谁来做)。换它对系统零影响(不重启、不部署、晏的窗口不动)。
      ⚠️ **这把才是真要紧的那把**:它能读所有服务的环境变量 = 一把捞走下面所有钥匙。
    - **她要我部署时,先提醒「转一把新的、或者你自己在 Zeabur 控制台点部署」**;她仍坚持贴来就照办,但**那串值永远别写进任何文件、提交或文档**。
@@ -230,7 +230,7 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
 | 〃 | telegram-bridge | `6a5a4287f947b6cb34511f79` | yan-telegram-bridge.zeabur.app | Telegram 桥 |
 | 〃 | CLIProxyAPI | `6a53a9fd22dd6ef375eb7485` | miaianhome.zeabur.app | ~~订阅 OAuth 出口~~ **2026-09-12 第四十次起已不在链路上**(晏改走直连)。**服务还留着,别删** —— 它是那条三十秒退路(删掉 shim 的 `CLAUDE_CODE_OAUTH_TOKEN` + restart 就退回来)。⚠️ 没有流量之后**它的凭证不再刷新**,所以它自己的 OAuth 迟早会过期;真要退回代理,得先给它重新授权(第 7 节《订阅 OAuth 过期》+《重新授权前先对版本》)。⚠️ 重启它仍然会吃当天最新版(没有版本锁) |
 | ~~〃~~ | ~~fishing-mcp~~ | ~~`6a5a17159ae692d1d8d98d10`~~ | ~~yan-fishing-mcp.zeabur.app~~ | ~~钓鱼游戏 MCP~~ **2026-08-02 已整个删除**(所有者说不玩了;存档按她的决定未备份,源码目录 `fishing-mcp/` 一并从仓库删除。省下约 51~62MB 内存,见 browser-hands 手册的内存表) |
-| 〃 | ears(显示名 ears-thor) | `6a646ea27bcbc56e70a105b5` | yan-ears-listen.zeabur.app | 语音转写+语气分析(源码在 Mia06250603ian/ears 仓库,镜像走 GitHub Actions→ghcr,持久卷 /app/data)。**该服务不支持 `service redeploy`,要拉新镜像用 `service restart`**(见 `TIMELINE.md` 08-02) |
+| 〃 | ears(显示名 ears-thor) | `6a646ea27bcbc56e70a105b5` | yan-ears-listen.zeabur.app | 语音转写+语气分析(源码在 Mia06250603ian/ears 仓库,镜像走 GitHub Actions→ghcr,持久卷 /app/data)。**该服务不支持 `service redeploy`,要拉新镜像用 `service restart`**(见 `TIMELINE.md` 08-02)。**情绪判断的模型由变量 `LLM_MODEL` 定,线上 = `qwen/qwen3.8-27b`**(2026-09-26 起;代码默认的 `llama-3.3-70b-versatile` 已被 Groq 停用,见第 7 节「语音情绪永远是『平静』」那行) |
 | 〃 | browser-hands | `6a6e2078fefeb46a883402c9` | yan-browser.zeabur.app | **晏的「浏览器的手」**:真实 Chrome + 持久登录态 + noVNC(源码在 Mia06250603ian/browser-hands 仓库,镜像走 GitHub Actions→ghcr,持久卷 /data)。2026-08-01 部署并接入晏(shim 第二十二次),详见 `browser-hands/MAINTENANCE.md` |
 | 〃 | dwell-bridge | `6a81a118bdeaa87e2c52bec3` | yan-dwell.zeabur.app | **她自建网页接晏的转接层**(2026-08-16 上线):网页 → 这一层 → shim 的 `/v1/messages`。**不碰晏、不改 shim**,地位同手机上的 Kelivo。源码在本仓库 `dwell-bridge/`,前端从 `Mia06250603ian/dwell-on-something` 拉(刻意不入库)。**2026-09-14 起挂了卷**(`iandata` → `/data`,`DATA_DIR=/data`),聊天记录能活过重启和部署,观察口 `curl https://yan-dwell.zeabur.app/api/health` 的 `persisted`(要 `true`)。详见 `dwell-bridge/MAINTENANCE.md`(本行原文在 `TIMELINE.md`「附二」) |
 | 〃 | gmail-mcp | `6a74a107e4a69d66638c4650` | yan-gmail.zeabur.app | **晏的邮箱**:读信/搜信/写草稿,**发送是白名单制**(只能发给所有者指定的地址,其余只能存草稿;白名单空=全拒)。走 IMAP + 应用专用密码;验证码/密码重置类邮件整封屏蔽。源码在本仓库 `gmail-mcp/`,镜像走 GitHub Actions→ghcr,无持久卷。**2026-08-06 上线并接入晏**(shim 第二十八次),详见 `gmail-mcp/MAINTENANCE.md` |
@@ -512,6 +512,7 @@ npx -y zeabur@latest deployment log --service-id 6a3aa061e41f9f1d19301e42 --env-
 | **重新授权「每一步都成功」,打一枪却 401 `Invalid bearer token`**(凭证也落盘了、modtime 也前进了) | **代理版本落后**,发的 Claude Code 版本指纹已被上游淘汰(2026-09-09 实测:我们发 2.1.220,上游要 2.1.258)。⚠️ **和「账号没订阅」长得一模一样,但订阅是好的** —— 先让所有者在 claude.ai 上验一眼订阅,再看版本 | 本节下方《重新授权前先对版本》 |
 | 他一整天没主动找我(保温/心跳都不来),但问他又像没事 | 同上一行:链路断了。**2026-08-11 之前这个方向是彻底静默的**——保温 ping 失败时 `kaSilent("")` 判 true,日志写的是 `[ka] silent`(长得跟「他不想说话」一样),断链检测不醒。修好后这类轮子会置位 `kaFailedAt`、`lastTurnOkAt` 不再续期 | shim 手册改动清单 9 |
 | 语音条发过去回「语音听不了/没听清」 | ears 挂了或 Groq key 失效(曲线:curl ears /health、看 asr 字段;文字聊天不受影响) | bridge 已知边界 3 |
+| **语音能转成字,但情绪永远是「平静」**,hint 写着「情绪判断失败: 404 … chat/completions」 | **Groq 把 ears 用的对话模型停用了**(2026-09-26 实锤:默认 `llama-3.3-70b-versatile` 免费档 08-16 下线,之后每条语音都静默落成「平静」,**全线不报警**)。**不是 key、不是地址**:地址对、key 错会是 401;停用的模型才回 404 `model_not_found`。⚠️ 转写(`whisper-large-v3`)不受影响,所以 `/health` 的 `asr:true` 照样绿 | 改 ears 的 **`LLM_MODEL`** + `service restart` ears(**不碰晏**)。**选模型前先用那把 Groq key 调 `GET https://api.groq.com/openai/v1/models` 看还剩哪些**,再照 ears `judge()` 原样(`max_tokens:200`)试十几句:⚠️ **带思考的 `openai/gpt-oss-*` 别选** —— 09-26 实测思考把 200 token 吃光、三句里一两句返回空。现值 `qwen/qwen3.8-27b`(16/16 成功、≤49 token、<1 秒)。停用公告:`console.groq.com/docs/deprecations` |
 | 晏的回复变冷淡/像客服 | 锚点被覆盖或人设没带上 | shim 改动清单 3 |
 | 额度掉得比平时快 / 保温看着一直在跑却一点没省 | **1 小时缓存没生效,保温每一枪都在全价重写前缀**(2026-08-12 实锤)。查法:`curl -s https://yan-shim.zeabur.app/debug` 看 `lastUsage.cache_creation`——**`ephemeral_1h_input_tokens` 是 0 而 `ephemeral_5m_input_tokens` 有数 = 中招**(正常应当反过来)。八成是 CLIProxyAPI 被重启后漂到了某个抢走缓存所有权的版本。⚠️ **这个故障全线不报警**:`/health` ok、`lastApiError` null、`cache_read` 照样有数、晏也一切正常,**唯一症状就是额度掉得快** | 本节下方「CLIProxyAPI 版本漂移」 |
 | 保温/主动消息不来了 | 「换窗口」后歇火(设计如此;07-20 起晚安/归档不歇火)/额度耗尽断链 | shim 改动清单 6 |
