@@ -207,8 +207,12 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
 4. **心跳「跟着她走」**(2026-09-26 shim 第四十三次上线,所有者选的方案 C;~~原来是心跳只走 Telegram、本服务没有 `/push`~~):
    本服务每轮请求带 `x-client: imessage`,shim 记住**她最后一次亲自说话**是哪扇门(系统回合不算);
    心跳时她最后在 iMessage → 推到本服务 `POST /push`,**推不出去自动退回 Telegram**。其余情况照旧只推 Telegram。
-   - `/push` 回 **503** = 本服务重启后她还没在 iMessage 说过话、不知道往哪个对话发;回 **502** = 一句都没发出去。两种 shim 都会退回 Telegram。
-   - 发出去哪怕一句就回 200(**防两边重复**:不再让 Telegram 补一遍)。
+   - `/push` 回 **503** = 本服务重启后她还没在 iMessage 说过话、不知道往哪个对话发;回 **502** = 第一句就没发出去(**这边随即停发**)。两种 shim 都会退回 Telegram。
+   - **第一句发出去就立刻回 200,剩下的在后台接着发**(2026-09-26 自查改的,**别改回「全发完再回」**):shim 只等 60 秒,
+     长心跳(十几个气泡 + 语音)全发完会超时 → shim 以为失败、再推 Telegram → **两边各收一遍**。后面哪句失败只落日志、不再退回 —— 宁可少一句,不两边重复。
+     演练场景 18(12 句 ≈17 秒,回话 <3 秒)、19(第一句失败 → 502 且一句都不出现)钉着。
+   - 顺带:shim 推 **Telegram** 也从「一直等」变成了最多等 60 秒。Telegram 的心跳要是超过 60 秒才发完,shim 会记一行 `[telegram-push-err] …aborted`,
+     **但话照样全送到**(telegram-bridge 不会因为 shim 不等了就停),也不会重复 —— **看到这行别当成丢话**。
    - ⚠️ **telegram-bridge 不知道他在 iMessage 里开过口**:它的「他刚说过话,查岗/写信提醒先让路」(`lastOutboundAt`)管不到这边。
      心跳只在白天、查岗只在深夜,撞不上;写信提醒 22:30 可能紧跟在一条 iMessage 心跳后面,影响很小,所有者没要求处理。
    - 关掉:删 shim 的 `IMESSAGE_PUSH_URL` + restart shim(**丢窗口**)。只想临时不让心跳进 iMessage:本服务 `BRIDGE_ON=0` 也行(那样 `/push` 回 503 → 退回 Telegram,但 iMessage 聊天也停)。
@@ -231,7 +235,7 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
 cd imessage-bridge
 npm install
 node test-imessage.mjs      # 单测,纯逻辑(2026-09-26:120 项)
-node e2e/e2e-run.mjs        # 演练:真 server.js + 假 Photon/shim/ears/ElevenLabs(2026-09-26:46 项)
+node e2e/e2e-run.mjs        # 演练:真 server.js + 假 Photon/shim/ears/ElevenLabs(2026-09-26:59 项)
 ```
 项数会随功能长,**别照写死的数对,看有没有 ✗**。
 演练**不碰线上、不要钥匙**:`e2e/fake-hooks.mjs` 用 `module.register` 把 `spectrum-ts` 换成假货,
@@ -254,7 +258,7 @@ node e2e/e2e-run.mjs        # 演练:真 server.js + 假 Photon/shim/ears/Eleven
 |---|---|---|
 | `GET /health` | 无 | 开关、计数、内存、**`line`(晏的号码)/ `enroll`(登记成没成)**。**不含任何消息内容和钥匙,也不含她的号码**(演练场景 12 钉着;`line` 是共享池里的号码,公开了也只有登记过的人能用)。`connected` = 连着 Photon;`lastErr` = 最近一次出错在哪一步;`dropped` = 挡掉的陌生人条数 |
 
-| `POST /push {text}` | `x-api-key` = `SHIM_KEY` | shim 的心跳入口(她最后在 iMessage 时)。200 = 发出去了;502/503 = 没发出去,shim 退回 Telegram(第 7 节第 4 条) |
+| `POST /push {text}` | `x-api-key` = `SHIM_KEY` | shim 的心跳入口(她最后在 iMessage 时)。**第一句的结果一出来就回**:200 = 第一句发出去了(其余后台接着发);502/503 = 没发出去,shim 退回 Telegram(第 7 节第 4 条) |
 
 ## 11. 部署记录
 

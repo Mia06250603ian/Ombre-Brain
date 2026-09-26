@@ -204,7 +204,7 @@ async function notify(space, text) {
 
 // 把晏的一段回话按原样顺序发出去:先点回应,再按段落流发文字/贴纸/语音。
 // 一句发失败只丢那一句,后面照发(同 telegram-bridge 设计要点 10)。
-async function deliver(space, target, rawText) {
+async function deliver(space, target, rawText, gate) {
   const react = takeReactionMarker(rawText || "");
   if (react.rejected) log("[react] 不像表情,当没写:", react.rejected);
   let reacted = false;
@@ -222,10 +222,12 @@ async function deliver(space, target, rawText) {
     if (!reacted && !check.wants) await notify(space, "⚠️[bridge] 空回复,看下 shim 日志");
     return out;
   }
-  const ok = () => { out.sent++; stat.sent++; stat.lastOutAt = new Date().toISOString(); };
-  const bad = (what, e) => { out.failed++; stat.failed++; log(`[send-err] ${what}`, errText(e)); noteErr(`send-${what}`, e); };
+  // gate(心跳 /push 用):第一发的结果一出来就告诉调用方;第一发就失败 → 停下不再发(调用方会让 shim 改走 Telegram,防两边重复)
+  const ok = () => { out.sent++; stat.sent++; stat.lastOutAt = new Date().toISOString(); gate?.first(true); };
+  const bad = (what, e) => { out.failed++; stat.failed++; log(`[send-err] ${what}`, errText(e)); noteErr(`send-${what}`, e); if (!out.sent) gate?.first(false); };
   let first = true;
   for (const seg of segments) {
+    if (gate?.stopped) break;
     if (seg.type === "sticker") {
       if (!first) await sleep(400);
       try { if (await sendSticker(space, seg.tag)) ok(); } catch (e) { bad("sticker", e); }
@@ -238,6 +240,7 @@ async function deliver(space, target, rawText) {
       catch (e) { log("[voice-err] 退回文字:", errText(e)); }
     }
     for (const b of bubblesFor(seg.text, { split: BUBBLE_SPLIT })) {
+      if (gate?.stopped) break;
       if (!first) { space.startTyping?.().catch(() => {}); await sleep(bubbleGapMs(b)); }
       try { await space.send(b); ok(); } catch (e) { bad("text", e); }
       first = false;
@@ -431,10 +434,14 @@ function memMiB() {
 }
 // ---- POST /push {text}:shim 的心跳推到这里(她最后在 iMessage 里说话时)----
 // 鉴权同 telegram-bridge 的 /push:x-api-key = SHIM_KEY。
-// **一句都没发出去就回 502**,shim 会退回 Telegram 再推一遍(话不丢);发出去了哪怕一句就回 200(防两边重复)。
-// 还不知道往哪个对话发(本服务重启后她还没说过话)→ 503,同样退回 Telegram。
+// ⚠️ **第一发的结果一出来就回话,剩下的在后台接着发**(2026-09-26 自查改的,别改回「全发完再回」):
+// shim 那边只等 60 秒,长心跳(好几个气泡 + 语音)全发完可能超时 → shim 以为失败、再推 Telegram → **两边各收一遍**。
+//   第一发成功 → 200(之后哪句失败只落日志,**不再让 shim 退回**,宁可少一句也不两边重复)
+//   第一发就失败 → 502,**这边立刻停发**,shim 改推 Telegram(一句都没在 iMessage 出现,不会重复)
+//   不知道往哪个对话发(本服务重启后她还没说过话)/ 没连上 Photon → 503,shim 同样改推 Telegram
+//   他只写了 [查岗]、没有要发的字 → 200(去查,不需要退回)
 async function handlePush(req, res) {
-  const send = (code, obj) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(obj)); };
+  const send = (code, obj) => { if (!res.headersSent) { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(obj)); } };
   if (!SHIM_KEY || req.headers["x-api-key"] !== SHIM_KEY) return send(401, { ok: false });
   let body = "";
   for await (const c of req) { body += c; if (body.length > 1e6) return send(413, { ok: false }); }
@@ -443,12 +450,22 @@ async function handlePush(req, res) {
   if (!text) return send(400, { ok: false, error: "empty text" });
   if (!lastSpace || !stat.connected) return send(503, { ok: false, error: "no space yet" });
   log("[push] 他主动找她");
-  try {
-    const out = await deliver(lastSpace, undefined, text);   // 主动消息没有可贴回应的靶子
-    if (out.wants) queueLookup(lastSpace);                    // 心跳里也可能写 [查岗](同 telegram-bridge)
-    if (!out.sent && out.failed) return send(502, { ok: false, failed: out.failed });
-    send(200, { ok: true, sent: out.sent, failed: out.failed });
-  } catch (e) { log("[push-err]", errText(e)); noteErr("push", e); send(502, { ok: false, error: errText(e) }); }
+  const space = lastSpace;
+  let answered = false;
+  const gate = {
+    stopped: false,
+    first(okay) {
+      if (answered) return;
+      answered = true;
+      if (okay) send(200, { ok: true });
+      else { gate.stopped = true; send(502, { ok: false, error: "first send failed" }); }
+    },
+  };
+  deliver(space, undefined, text, gate).then((out) => {
+    if (out.wants) queueLookup(space);                 // 心跳里也可能写 [查岗](同 telegram-bridge)
+    if (!answered) { answered = true; send(200, { ok: true, sent: out.sent }); }   // 什么都不用发(比如只有 [查岗])
+    if (out.failed) log("[push] 后台发送有", out.failed, "条没送到(不再退回 Telegram,防重复)");
+  }).catch((e) => { log("[push-err]", errText(e)); noteErr("push", e); gate.first(false); });
 }
 
 const server = http.createServer((req, res) => {
