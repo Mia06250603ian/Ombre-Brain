@@ -111,7 +111,8 @@ eq("0 登记的是她的号码、共享线", enrollReqs[0]?.body, { type: "share
 // ---- 假的会话与消息 ----
 const sent = [];
 const reacted = [];
-const space = { id: "any;-;+8613800138000", send: async (x) => { sent.push(x); }, startTyping: async () => {}, stopTyping: async () => {} };
+let failSend = false;
+const space = { id: "any;-;+8613800138000", send: async (x) => { if (failSend) throw new Error("photon down"); sent.push(x); }, startTyping: async () => {}, stopTyping: async () => {} };
 let n = 0;
 function msg(content, { from = "+8613800138000", direction = "inbound" } = {}) {
   const m = { id: `m${++n}`, direction, platform: "imessage", sender: { id: from }, content, space,
@@ -287,9 +288,31 @@ const pushHb = (body, key = "k-test") => realFetch(`http://127.0.0.1:${PORT}/pus
 eq("17 钥匙不对 401", (await pushHb({ text: "想你" }, "bad")).status, 401);
 eq("17 空文字 400", (await pushHb({ text: "" })).status, 400);
 const pr = await pushHb({ text: "在干嘛呢\n[贴纸:贴贴]" });
-eq("17 推成功 200", [pr.status, (await pr.json()).sent], [200, 2]);
+eq("17 推成功 200", pr.status, 200);
+await until(() => sent.length >= 2);
 eq("17 她收到文字和贴纸", sent.map((x) => typeof x === "string" ? x : `${x.type}:${path.basename(String(x.input))}`), ["在干嘛呢", "attachment:s04.png"]);
 eq("17 心跳不进 shim(是他已经说完的话)", shimReqs.length, 0);
+
+// 场景 18:长心跳 → 第一句发出去就马上回 200,剩下的后台接着发(shim 只等 60 秒,全发完再回会超时 → 两边各收一遍)
+reset();
+const many = Array.from({ length: 12 }, (_, i) => `第${i + 1}句` + "字".repeat(40)).join("\n");   // 12 句 × 每句间隔约 1.5 秒 ≈ 17 秒
+const t0 = Date.now();
+const lr = await pushHb({ text: many });
+const took = Date.now() - t0;
+eq("18 回的是 200", lr.status, 200);
+ok(`18 没等全发完就回了(用了 ${took} ms,门槛 3000)`, took < 3000);
+ok("18 回话时只发了开头", texts().length < 12);
+await until(() => texts().length === 12, 40000);
+eq("18 后台把 12 句都发完了", texts().length, 12);
+
+// 场景 19:第一句就发不出去 → 502(shim 改推 Telegram),这边一句都不再发(防两边重复)
+reset();
+failSend = true;
+const fr = await pushHb({ text: "一\n二\n三" });
+failSend = false;
+eq("19 第一发失败回 502", fr.status, 502);
+await sleep(3000);
+eq("19 这边停发、一句都没出现", texts(), []);
 
 // 场景 12:/health
 const h = await (await realFetch(`http://127.0.0.1:${PORT}/health`)).json();
