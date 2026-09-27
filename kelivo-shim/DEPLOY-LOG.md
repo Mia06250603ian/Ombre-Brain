@@ -28,7 +28,7 @@
   照检查单全套走完,无异常(九套单测全绿,keepalive **65 → 75**;五轮 e2e 全绿;全量 md5 对账代码与人设逐件一致,只差两份事后补写的手册;三份私密文件拷出指纹不变;四个 `/mcp` 部署前后各 3/3 200;`/period` 的 `runtime` 非空;两份 CLI 仍 2.1.215 / 2.1.280)。
   改动:`server.js` `26df6466…` → **`2cfc573b…`**、`keepalive.mjs` `d0222ab6…` → `794baab8…`(新增 `pushVia`;`pushTargets` 没有 Telegram 出口时一律推 iMessage;心跳文案不再点名 Telegram)、`test-keepalive.mjs` → `963c2e70…`。**人设五份一个字没动**。**变量零改动**。
   deployment `6ab94037…`(PLANTYPE nodejs,16:11:45 上传 → **构建约 9 分钟**(上次 3 分钟,原因没查;没卡拉镜像)→ 16:20:37 DEPLOYING → **16:21:56 RUNNING**)。
-  - **部署后验**:容器里 `grep -c pushVia server.js` = 4、`grep -c "Telegram 对话里" keepalive.mjs` = 0 ✅。
+  - **部署后验**:容器里 `grep -c pushVia server.js` = 4、`grep -c "Telegram 对话里" keepalive.mjs` = 0 ✅。她 16:24 用 Kelivo(5.5)叫醒:`spawned claude-opus-5-5 sysLen 0 … cli next`、Kelivo 那 418 字照样被忽略、`settings 文件不在` 0 条、无 `exited` ✅。
   - **行为变化只有一处看得见**:心跳纸条从「会直接出现在你们的 Telegram 对话里」变成「会直接出现在你们的对话里」(122 字)。其余两处只在「没有 Telegram 桥」时才起作用 —— **现在删 Telegram 桥,心跳不会再哑**(`../imessage-bridge/MAINTENANCE.md` 12.2 第 1 步的临时办法不再需要)。
   - **回滚**:回滚代码到 `26df6466…`(丢窗口)。没有变量开关 —— 改动是纯逻辑、有 Telegram 桥时行为和改前只差那一句文案。
 
