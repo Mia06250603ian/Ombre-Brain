@@ -7,7 +7,7 @@ import { isWeatherAsk, buildWeatherNote, detectPeriodEvent, buildPeriodNote } fr
 import { kaDecide, kaPrompt, kaSilent, pushTargets } from "./keepalive.mjs";
 import { ctxReading, ctxDecide, ctxCompacted, ctxSoftNote, ctxHardNote, ctxFinalNote, ctxPct, ctxSoftShouldReset } from "./ctxguard.mjs";
 import { pickApiError, apiErrorKind, resultOutcome } from "./apierror.mjs";
-import { buildPromptArgs, helpMentionsReplace, BASE_PROMPT_DEFAULT, ANCHOR_TAIL_REPLACE, SOUL_ANCHOR_DEFAULT } from "./sysprompt.mjs";
+import { buildPromptArgs, helpMentionsReplace, BASE_PROMPT_DEFAULT, ANCHOR_TAIL_REPLACE, SOUL_ANCHOR_DEFAULT, pickClientSystem, previewText } from "./sysprompt.mjs";
 import { formatArgs, formatResult, pickToolResults, toolName, charLimit, TOOLVIS_DEFAULTS } from "./toolvis.mjs";
 import { buildAuthEnv, authMode } from "./auth-env.mjs";
 import { parseModelList, nextWindow, pickCli, menuModels } from "./cli-bin.mjs";
@@ -47,6 +47,8 @@ const cliFor = (model) => pickCli(model, { bin: CLAUDE_BIN, nextBin: NEXT_READY 
 let spawnedCli = null;   // 当前进程用的是哪一份:"main" / "next"(还没起进程时为 null)
 const MCP_CONFIG = process.env.MCP_CONFIG || ".mcp.json";
 const FORWARD_THINKING = process.env.FORWARD_THINKING !== "0";
+// 客户端(Kelivo)带来的 system:默认 ignore(见 sysprompt.mjs 的 pickClientSystem);设 use 回到改动之前。
+const CLIENT_SYSTEM = process.env.CLIENT_SYSTEM || "ignore";
 const USER_NAME = process.env.USER_NAME || "你";          // 你的称呼
 const AI_NAME = process.env.AI_NAME || "TA";             // AI 的名字
 // ---- 思考翻中文(2026-09-23,见 think-translate.mjs 头注)----
@@ -749,7 +751,9 @@ function handleMessages(req, res) {
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   let text = blocksToText(lastUser?.content ?? "");
   const images = extractImages(messages);
-  const system = systemToText(body.system);
+  // 2026-09-27:客户端带来的 system 默认忽略(Kelivo 自动更新后开始塞 418 字,换门就丢窗口),
+  // 见 sysprompt.mjs 的 pickClientSystem。急救开关 CLIENT_SYSTEM=use + restart。
+  const { system, dropped: droppedSystem } = pickClientSystem(systemToText(body.system), CLIENT_SYSTEM);
   const stream = body.stream !== false;
   // 2026-08-02:带 x-system-turn:1 的回合是**系统送进来的东西**(bridge 的查岗结果/深夜提醒),
   // 不是她本人说话。这类回合不更新「她多久没来」、不解除保温歇火、也不做重置词识别
@@ -819,6 +823,7 @@ function handleMessages(req, res) {
     windowCleared = false;  // 她出现了:保温重新上岗(若这条是「换窗口」,回合结束会再置回 true)
   }
   log("[req]", { len: text.length, imgs: images.length, sysLen: system.length, stream, reset: reset || "-" });
+  if (droppedSystem) log("[req] 客户端带了系统提示词,已忽略", droppedSystem.length, "字,开头:", previewText(droppedSystem));
   const sse = stream ? makeSSE(res) : makeCollector(res);
   // isSystem:bridge 带 x-system-turn:1 的回合(查岗/深夜提醒/写信提醒)。
   // 除了原有的三条「不当她出现」之外,2026-08-11 起还多一条:上游断了也不拿报错去打扰她。

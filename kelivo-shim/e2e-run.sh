@@ -58,6 +58,7 @@ env -i HOME="$WORK" PATH="$PATH" \
   PORT=8500 CLAUDE_BIN="$BIN" \
   ANTHROPIC_BASE_URL=http://127.0.0.1:8501 ANTHROPIC_AUTH_TOKEN=fake \
   SYS_PROMPT_MODE="${SYS_PROMPT_MODE:-append}" \
+  CLIENT_SYSTEM="${CLIENT_SYSTEM:-ignore}" \
   MCP_CONFIG=mcp-empty.json MCP_WARMUP_MS=300 KA_ON=0 TIME_HINT=0 \
   BUILTIN_TOOLS=Read ALLOWED_TOOLS=Read \
   CTX_SOFT_TOKENS=30000 CTX_HARD_TOKENS=60000 CTX_ARCHIVE_EVERY_TOKENS=20000 \
@@ -67,14 +68,19 @@ SPID=$!
 trap 'kill $SPID $FPID 2>/dev/null' EXIT
 sleep 2
 
+# 第二个参数(可选)= 客户端带来的 system。2026-09-27 起 msg2 模拟 Kelivo 自动更新后塞的 418 字:
+# shim 默认忽略它(sysprompt.mjs 的 pickClientSystem),所以下面「只 spawn 一次」照样要成立 ——
+# 撤掉那处修复,这里会多 spawn 一次、断言变红(踩坑 6 末尾)。
 msg() {
+  local sys=""; [ -n "${2:-}" ] && sys="\"system\":\"$2\","
   curl -sS -X POST http://127.0.0.1:8500/v1/messages -H 'Content-Type: application/json' \
-    -d "{\"model\":\"claude-opus-4-6\",\"stream\":false,\"messages\":[{\"role\":\"user\",\"content\":\"$1\"}]}" >/dev/null
+    -d "{\"model\":\"claude-opus-4-6\",${sys}\"stream\":false,\"messages\":[{\"role\":\"user\",\"content\":\"$1\"}]}" >/dev/null
   sleep 1.5
   curl -sS http://127.0.0.1:8500/debug >> debug-snaps.jsonl; echo >> debug-snaps.jsonl
 }
 : > debug-snaps.jsonl
-msg "hello one"; msg "hello two"; msg "hello three"; msg "hello four"; msg "hello five"
+KELIVO_SYS=$(printf 'k%.0s' $(seq 1 418))
+msg "hello one"; msg "hello two" "$KELIVO_SYS"; msg "hello three"; msg "hello four"; msg "hello five"
 msg "hello six"; msg "hello seven"; msg "hello eight"; msg "hello nine"
 sleep 1
 
@@ -125,6 +131,9 @@ seen.forEach((s, i) => {
 const slog = fs.readFileSync(`${W}/shim.log`, "utf8");
 ok(!slog.includes("[window] restart"), "全程不应出现 [window] restart(守卫不换窗)");
 ok((slog.match(/\[claude\] spawned/g) || []).length === 1, "claude 进程只 spawn 一次(窗口全程存活)");
+// 2026-09-27:msg2 带了 418 字 system(模拟 Kelivo),应被忽略并在日志里留一行(不许因此重开进程,上一条看着)
+ok(/客户端带了系统提示词,已忽略 418 字/.test(slog), "msg2 的 418 字 system 被忽略并记日志");
+ok(!/sysLen 418/.test(slog), "进程从没带着 418 字 system 出生");
 // 新守卫的硬文案不再教他收尾/换窗口
 ok(!seen.some((s) => s.includes("下一句起就是新窗口")), "任何 prompt 不再出现「下一句起就是新窗口」");
 

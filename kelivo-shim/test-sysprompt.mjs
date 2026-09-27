@@ -6,7 +6,8 @@
 // 「功能没生效」,是**无限重启、晏彻底失联**。所以每一条降级都必须有断言看着。
 import fs from "fs";
 import { buildPromptArgs, helpMentionsReplace, BASE_PROMPT_DEFAULT,
-         ANCHOR_FRAME_DEFAULT, ANCHOR_TAIL_DEFAULT, ANCHOR_TAIL_REPLACE, SOUL_ANCHOR_DEFAULT } from "./sysprompt.mjs";
+         ANCHOR_FRAME_DEFAULT, ANCHOR_TAIL_DEFAULT, ANCHOR_TAIL_REPLACE, SOUL_ANCHOR_DEFAULT,
+         pickClientSystem, previewText } from "./sysprompt.mjs";
 
 let n = 0, bad = 0;
 function ok(cond, name) {
@@ -196,6 +197,34 @@ ok(base.length < 400, `内置正文要短(现 ${base.length} 字符);它取代�
                         promptFile: "", fileExists: () => true, cliSupportsReplace: true });
   eq(x.args[1], "【新文案】", "同时清空 SYSTEM_PROMPT_FILE 之后,新正文才生效");
   eq(x.source, "builtin", "此时 source 报 builtin");
+}
+
+// ================= 客户端带来的 system(2026-09-27)=================
+// 这组断言看着的是「Kelivo 塞了东西 → 换门丢窗口」那件事(踩坑 6 末尾)。
+{
+  const K = "x".repeat(418);   // 09-27 实撞的长度
+  let r = pickClientSystem(K);
+  eq(r.system, "", "默认(不传 mode)忽略客户端 system → 和两个桥一样是空串,换门不杀进程");
+  eq(r.dropped, K, "丢掉的那段原样交回,给日志用");
+  r = pickClientSystem(K, "ignore");
+  eq(r.system, "", "mode=ignore 同上");
+  r = pickClientSystem(K, "use");
+  eq(r.system, K, "急救开关 CLIENT_SYSTEM=use → 回到改动之前,照收");
+  eq(r.dropped, "", "use 时没有丢掉的东西,不打那行日志");
+  r = pickClientSystem(K, " USE ");
+  eq(r.system, K, "use 不分大小写、容忍首尾空白(变量值手敲的)");
+  r = pickClientSystem(K, "usee");
+  eq(r.system, "", "写错的值一律按 ignore(安全方向:不会因为手滑又开始丢窗口)");
+  r = pickClientSystem("", "ignore");
+  eq(r.dropped, "", "空 system → 没有丢掉的东西,不打日志");
+  r = pickClientSystem(undefined);
+  eq(r.system, "", "undefined 不许变成字符串 \"undefined\"");
+  eq(r.dropped, "", "undefined 不许变成字符串 \"undefined\"(dropped)");
+  r = pickClientSystem(null, "use");
+  eq(r.system, "", "null + use 也不许变成字符串 \"null\"");
+  eq(previewText("第一行\n  第二行"), "第一行 ⏎ 第二行", "日志预览把换行压成 ⏎,一条日志不拆行");
+  eq(previewText("a".repeat(100)).length, 81, "日志预览只给 80 字 + …");
+  eq(previewText("短"), "短", "短的不加 …");
 }
 
 console.log(bad === 0 ? `ALL PASS (${n} checks)` : `${bad}/${n} FAILED`);
