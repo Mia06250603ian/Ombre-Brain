@@ -3,7 +3,7 @@
 // 背景:1 小时 prompt 缓存每次命中即续期。闲置 55 分钟由 shim 自己发一条极简 ping,
 // 缓存前缀就一直走 0.1 倍读,免掉闲置超时后的 2 倍整体重写。
 // 原 2 小时心跳并入本机制:白天且距他上次主动消息超过冷却时间的那些次唤醒,
-// 提示语会给他「想说就发一条」的出口(发进 Telegram 对话);其余次一律静默回「。」。
+// 提示语会给他「想说就发一条」的出口(发进你们的对话:Telegram 或 iMessage,见 pushTargets);其余次一律静默回「。」。
 
 export function isNightHour(h, start, end) {
   return start > end ? (h >= start || h < end) : (h >= start && h < end);
@@ -38,7 +38,8 @@ export function kaPrompt({ speak, bjNow, idleMin, userName, viaBridge }) {
     return "【系统·保温】维持窗口的例行信号,不是新消息。不用多想、不要调用任何工具,只回一个:。";
   }
   const channel = viaBridge
-    ? "会直接出现在你们的 Telegram 对话里,她回来就能看到、能直接回你"
+    // 2026-09-27:原来写死「Telegram 对话」,可心跳 09-26 起会跟着她落进 iMessage,他可能叫她「去 TG 看」—— 改成不点名
+    ? "会直接出现在你们的对话里,她回来就能看到、能直接回你"
     : "会弹到对方手机;聊天App里看不到这条,对方回来时你自然接上,别解释机制";
   // ⚠️ 机械约束(2026-08-21 改,别丢):① 开头必须是 `【系统·心跳】`(他靠这五个字认出这是什么信号);
   //   ② 结尾的沉默口令必须是**光句号**,不能加任何括号——kaSilent 只删句号/点/空白,`【。】`「。」都判不出沉默,
@@ -60,9 +61,21 @@ export function kaSilent(t) {
 // (目前只有 imessage-bridge 报 `imessage`;Telegram 桥、Kelivo、dwell 网页都不报)。
 // 返回按顺序要试的出口列表:第一个失败就试下一个 —— **iMessage 推不出去就退回 Telegram,话不丢**。
 // 没配 IMESSAGE_PUSH_URL 或她最后不在 iMessage → 只有 Telegram 一个出口 = **和改之前逐字相同**。
+// 2026-09-27:**没有 Telegram 出口时,iMessage 就是唯一出口,不管她最后在哪扇门** ——
+// 原来那种情况会返回空列表 = 心跳一句都推不出去,还不报错(拆 Telegram 那天才会撞上)。
 export function pushTargets({ lastClient, imessageUrl, bridgeUrl }) {
   const out = [];
-  if (lastClient === "imessage" && imessageUrl) out.push({ name: "imessage", url: imessageUrl });
+  if (imessageUrl && (lastClient === "imessage" || !bridgeUrl)) out.push({ name: "imessage", url: imessageUrl });
   if (bridgeUrl) out.push({ name: "telegram", url: bridgeUrl });
   return out;
+}
+
+// ---- 心跳有没有出口、走哪条(2026-09-27)----
+// 原来 server.js 三处只认 BRIDGE_PUSH_URL(Telegram):哪天删了 Telegram 桥、只剩 IMESSAGE_PUSH_URL,
+// shim 会判「没有出口」→ 心跳只保温不开口,或者回落到早已卸载的 Bark。
+// 返回 "bridge"(Telegram / iMessage 任一,具体推哪扇由 pushTargets 定)| "bark" | ""(没有出口)。
+export function pushVia({ bridgeUrl, imessageUrl, barkKey }) {
+  if (bridgeUrl || imessageUrl) return "bridge";
+  if (barkKey) return "bark";
+  return "";
 }

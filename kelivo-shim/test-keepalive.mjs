@@ -1,6 +1,6 @@
 // test-keepalive.mjs — 保温+唤醒决策单测,部署前跑一遍:node test-keepalive.mjs
 // 全绿输出 "ALL PASS";不碰网络、不碰 claude 进程(踩坑 3 无关)。
-import { kaDecide, kaPrompt, kaSilent, isNightHour, pushTargets } from "./keepalive.mjs";
+import { kaDecide, kaPrompt, kaSilent, isNightHour, pushTargets, pushVia } from "./keepalive.mjs";
 
 let n = 0, bad = 0;
 function ok(cond, name) {
@@ -82,7 +82,8 @@ ok(silent.includes("不要调用任何工具"), "静默提示语禁工具");
 ok(!silent.includes("Telegram"), "静默提示语不提开口通道");
 const wake = kaPrompt({ speak: true, bjNow: "2026-07-18 14:00", idleMin: 56, userName: "佳佳", viaBridge: true });
 ok(wake.includes("【系统·心跳】"), "开口提示语带心跳标记");
-ok(wake.includes("Telegram"), "开口提示语说明 Telegram 通道");
+ok(wake.includes("你们的对话里"), "开口提示语说明消息会落进你们的对话");
+ok(!wake.includes("Telegram"), "开口提示语不点名 Telegram(2026-09-27:心跳会跟着她落进 iMessage,点名会让他叫她去 TG 看)");
 ok(wake.includes("佳佳"), "开口提示语用她的称呼");
 ok(wake.includes("56 分钟"), "开口提示语带闲置时长");
 const wakeBark = kaPrompt({ speak: true, bjNow: "x", idleMin: 5, userName: "佳佳", viaBridge: false });
@@ -119,7 +120,19 @@ eq(kaSilent("[贴纸:好想你]"), false, "纯贴纸也算真消息");
   eq(names({ lastClient: "somethingelse", imessageUrl: I, bridgeUrl: T }), "telegram", "不认识的门:走 Telegram");
   eq(names({ lastClient: "imessage", imessageUrl: I, bridgeUrl: "" }), "imessage", "没有 Telegram 出口时只剩 iMessage");
   eq(pushTargets({ lastClient: "imessage", imessageUrl: I, bridgeUrl: T })[0].url, I, "出口地址对");
+  // 2026-09-27:拆掉 Telegram 那天,iMessage 是唯一出口,不管她最后在哪扇门(原来这里返回空 = 心跳推不出去还不报错)
+  eq(names({ lastClient: null, imessageUrl: I, bridgeUrl: "" }), "imessage", "没有 Telegram、她最后不在 iMessage:仍推 iMessage");
+  eq(names({ lastClient: "somethingelse", imessageUrl: I, bridgeUrl: "" }), "imessage", "没有 Telegram、不认识的门:仍推 iMessage");
+  eq(names({ lastClient: null, imessageUrl: "", bridgeUrl: "" }), "", "两个都没配:没有出口");
 }
+
+// ================= 心跳有没有出口(2026-09-27)=================
+eq(pushVia({ bridgeUrl: "https://tg/push", imessageUrl: "", barkKey: "" }), "bridge", "只有 Telegram:走桥(= 改之前)");
+eq(pushVia({ bridgeUrl: "https://tg/push", imessageUrl: "https://im/push", barkKey: "k" }), "bridge", "两个桥都有:走桥,Bark 不参与");
+eq(pushVia({ bridgeUrl: "", imessageUrl: "https://im/push", barkKey: "" }), "bridge", "只剩 iMessage:仍算有出口(原来这里判「没有出口」,心跳只保温不开口)");
+eq(pushVia({ bridgeUrl: "", imessageUrl: "https://im/push", barkKey: "k" }), "bridge", "只剩 iMessage + 老 Bark 变量:走 iMessage,不回落到已卸载的 Bark");
+eq(pushVia({ bridgeUrl: "", imessageUrl: "", barkKey: "k" }), "bark", "只有 Bark:走 Bark(= 改之前)");
+eq(pushVia({ bridgeUrl: "", imessageUrl: "", barkKey: "" }), "", "什么都没有:没有出口");
 
 console.log(bad ? `${bad}/${n} FAIL` : `${n} 项全绿 ALL PASS`);
 process.exit(bad ? 1 : 0);

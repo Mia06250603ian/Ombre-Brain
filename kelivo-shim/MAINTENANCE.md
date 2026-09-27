@@ -616,7 +616,7 @@ Ombre Brain 记忆库(Zeabur 另一项目, streamable-http MCP)
   shim 会判「没有出口」→ 心跳**只保温不开口**(或回落到已死的 Bark)。改法:三处条件都改成 `BRIDGE_PUSH_URL || IMESSAGE_PUSH_URL`,
   `pushTargets` 已经能处理只有一个出口的情况(单测有「没有 Telegram 出口时只剩 iMessage」那条)。
   **没做之前的临时办法**见 `../imessage-bridge/MAINTENANCE.md` 12.2 第 1 步(把 `BRIDGE_PUSH_URL` 指向 iMessage 的 `/push`)。
-  **为什么挂在这儿**:两处都只在「拆 Telegram」那天才真正要紧,**不值得为它单独丢一个窗口**。
+  **为什么挂在这儿**:两处都只在「拆 Telegram」那天才真正要紧,**不值得为它单独丢一个窗口**。 ✅ **2026-09-27 代码已写好测好,挂在分支 `claude/repo-docs-operations-hosm1l`(提交「shim: 心跳出口别只认 Telegram」),尚未部署 —— 下次部署 shim 它自动跟着走,不用再写**(所有者当天定的「下次部署一起上」)。落地:文案改成不点名的「会直接出现在你们的对话里」(122 字,四条约束全守);`keepalive.mjs` 新增 `pushVia`(Telegram / iMessage 任一 = 有出口,两个都没有才 Bark),`server.js` 三处改走它;`pushTargets` 在**没有 Telegram 出口时一律推 iMessage**(原来那种情况返回空列表 = 心跳推不出去还不报错,比上面②写的还多一个坑)。`test-keepalive.mjs` 65 → 75 项,**把旧逻辑放回去有 4 条变红(验过)**。**部署后验**:容器里 `grep -c pushVia server.js` ≥ 2、`grep -c "Telegram 对话里" keepalive.mjs` = 0;然后把这条划掉,并去 `../imessage-bridge/MAINTENANCE.md` 12.2 第 1 步把「临时办法」标成不再需要。
 
 - [x] ~~**读 CLI 输出时按 UTF-8 流式解码(防汉字碎成 `���`)**~~(2026-09-23 挂上)—— ✅ **当天第四十二次已部署**,容器里 `grep -c 'setEncoding("utf8")' server.js` = 1。原文如下:
   `server.js` 的 `spawnClaude` 里加了一行 `p.stdout.setEncoding("utf8")` —— 原来 `onStdout` 是 `chunk.toString()`,
