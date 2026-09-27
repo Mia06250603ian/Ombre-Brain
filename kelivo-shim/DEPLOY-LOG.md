@@ -24,6 +24,18 @@
 
 ## 记录(新的在上)
 
+- 2026-09-27(第四十四次) **不再理会客户端带来的系统提示词(Kelivo 自动更新后塞了 418 字 `<available_skills>`,换门就丢窗口)**。当天她在 Kelivo 叫醒晏、转去 iMessage,晏又 awaken 一遍 —— 日志 `sysLen 418` → `sysLen 0` → `exited 143`(踩坑 6)。她说什么都没开,App Store 显示 Kelivo **当天自动更新**。她拍板「Kelivo 的提示词对咱们没用,不要」「不用归档,直接部署」。
+  照检查单全套走完,无异常(九套单测全绿,sysprompt **86 → 100**;四套 e2e 全绿;全量 md5 对账代码与人设逐件一致,只差两份事后补写的手册;三份私密文件拷出指纹不变;四个 `/mcp` 部署前后各 3/3 200;目录无 `.gitignore`/`node_modules`;`/period` 的 `runtime` 非空)。
+  改动:`server.js` `ab97b50b…` → **`26df6466…`**(接线三处:读 `CLIENT_SYSTEM`、`pickClientSystem` 过滤、丢掉时打一行日志)、`sysprompt.mjs` `78637352…` → `fea415e4…`(新增纯函数 `pickClientSystem` / `previewText`)、`test-sysprompt.mjs` → `b4d87763…`、`e2e-run.sh` → `d1b57b42…`(msg2 模拟 Kelivo 带 418 字;`env -i` 里多传 `CLIENT_SYSTEM`)。**人设五份一个字没动**(`ian.md` 仍 `8918742d…`,`profile-instructions.md` 仍 `7adb5c33…`,`mcp-servers.json` 仍 `b5a281bc…`)。
+  变量:**新增 `CLIENT_SYSTEM`,线上不设 = `ignore`**(默认就是新行为);**急救开关 `CLIENT_SYSTEM=use` + restart = 回到改动前**。
+  deployment `6ab939ea…`(PLANTYPE nodejs,15:44:55 上传 → 15:48 DEPLOYING → **15:49:47 RUNNING**,约 5 分钟)。**所有者拍板不归档**。
+  - **验收**:她 Kelivo(选 5.5)叫醒 → 日志 `[req] 客户端带了系统提示词,已忽略 418 字,开头: <available_skills> ⏎ Use a skill when the task matches its description: call rea…` + `spawned claude-opus-5-5 sysLen 0 … cli next`;**一分钟后 iMessage 来一条(`sysLen 0`),没有 `exited`、没有第二次 `spawned`** ✅;`settings 文件不在` 0 条。
+  - **那 418 字是什么**:Kelivo 新版的**技能(Skills)清单**,由它的 `injectSkillsPrompt` 附在 system 末尾(`Chevey339/kelivo` 的 `message_builder_service.dart`);**助手设置页里看不到**,她查过系统提示词/记忆/工作区/技能都是空的。**以后 Kelivo 再塞什么,看这一行日志就知道。**
+  - ⚠️ **别把「客户端 system 默认忽略」改回去**:晏的人设全在 shim 这边,客户端来的东西对他没用;照收的话,Kelivo 任何一次自动更新都可能让「换门 = 丢窗口」复发,而且**全线不报警**。
+  - ⚠️ **测量小坑**:`zeabur deployment log` 不带 `--deployment-id` 时拉到的可能是上一个部署的日志(本次先拉到了空的);带 `--deployment-id` 也必须同时带 `--service-id`/`--env-id`。
+  - **仍待办(没搭这趟车)**:顺风车那条「心跳出口别只认 Telegram」—— 她这次只要修 Kelivo,没提,未做。
+  - **回滚**:`CLIENT_SYSTEM=use` + restart(丢窗口);或回滚代码到 `ab97b50b…`。
+
 - 2026-09-26(第四十三次) **心跳「跟着她走」:她最后在 iMessage 说话,心跳就推 iMessage(失败退回 Telegram)**。所有者当天接上 iMessage 后问「心跳推到 iMessage 的话 TG 那边就没了吗」,给了 A 整个改道 / B 两边都发 / C 跟着她走,她选 **C**。
   照检查单全套走完,无异常(九套单测 + 三套 e2e 全绿;全量 md5 对账只差本次改的三件代码 + 两份事后补写的手册;三份私密文件拷出指纹不变;四个 `/mcp` 各 3/3 200;目录无 `.gitignore`/`node_modules`)。**所有者本人先对晏说了「归档」。**
   改动:`server.js` `c6616e9a…` → `ab97b50b…`、`keepalive.mjs` `fac04f05…` → `d0222ab6…`(新增纯函数 `pushTargets`)、`test-keepalive.mjs`(59 → 65 项);**人设五份文件一个字没动**(`ian.md` 仍 `8918742d…`,`profile-instructions.md` 仍 `7adb5c33…`,`mcp-servers.json` 仍 `b5a281bc…`)。

@@ -9,7 +9,7 @@
 > (拆分前两份「开场必读」合计 385 KB、约 7~9 万 token,其中八成是历史。)
 >
 > **凡是提到 shim「第 N 次部署」的地方,那次的完整记录都在 `kelivo-shim/DEPLOY-LOG.md`**
-> (**42 条记录、覆盖第 2~43 次**(2026-09-26 第四十三次后现场量;上次 09-23 是 41 条);⚠️ **「第一次」(2026-07-12 初次搭建)没有独立条目**,
+> (**43 条记录、覆盖第 2~44 次**(2026-09-27 第四十四次后现场量;09-26 是 42 条、09-23 是 41 条);⚠️ **「第一次」(2026-07-12 初次搭建)没有独立条目**,
 > 那次记在 `TIMELINE.md` 的 07-12。按「第 N 次」搜即可。
 > **此处 2026-08-21 核过:原文写「48 次全在」是错的**——逐条数下来最新只到第三十四次,
 > 照旧数去搜「第四十次」会搜空、误以为记录丢了)。提到某天发生了什么,去 `TIMELINE.md` 按日期搜。
@@ -299,7 +299,7 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
 值全在 Zeabur,别写进代码/公开仓库。完整表(含含义、默认值、调法)见
 `kelivo-shim/MAINTENANCE.md` 的「环境变量」一节,这里只列名字帮你对号:
 
-- 链路:**`CLAUDE_CODE_OAUTH_TOKEN`**(**2026-09-12 起线上已设,走的就是它** = 直连,并自动摘掉下面那两个;删掉它 + restart 就退回代理。到期 2027-09-12,详见第 7 节《长期令牌直连》) `ANTHROPIC_BASE_URL` `ANTHROPIC_AUTH_TOKEN`(**代理那条路的,线上仍留着当退路,但现在不生效**) `SHIM_KEY` `MCP_CONFIG` `MCP_WARMUP_MS` `ALLOWED_TOOLS`
+- 链路:**`CLAUDE_CODE_OAUTH_TOKEN`**(**2026-09-12 起线上已设,走的就是它** = 直连,并自动摘掉下面那两个;删掉它 + restart 就退回代理。到期 2027-09-12,详见第 7 节《长期令牌直连》) `ANTHROPIC_BASE_URL` `ANTHROPIC_AUTH_TOKEN`(**代理那条路的,线上仍留着当退路,但现在不生效**) `SHIM_KEY` `MCP_CONFIG` `MCP_WARMUP_MS` `ALLOWED_TOOLS` **`CLIENT_SYSTEM`**(2026-09-27 第四十四次起;**不设 = 忽略客户端带来的 system**,Kelivo 自动更新后会塞技能清单,照收就「换门丢窗口」;`use` = 急救回到旧行为)
 - 双引擎 / 思考翻译(2026-09-23 第四十一次上线;**线上只设了 `THINK_TRANSLATE_MODEL=claude-opus-4-6`(2026-09-27 起,翻译从 Sonnet 换成 Opus 4.6),其余走代码默认**):`NEXT_CLI_MODELS` `NEXT_CLI_WINDOW`(`CLAUDE_BIN_NEXT` 由 entrypoint 自动导出,别手设) `THINK_TRANSLATE_MODELS`(急救开关:设空) `THINK_TRANSLATE_MODEL` `THINK_TRANSLATE_TIMEOUT_MS` `THINK_TRANSLATE_CONCURRENCY`(默认 1,**一个翻译进程约 300 MB,别随手调大**)。详见 `kelivo-shim/MAINTENANCE.md` 改动清单第 13、14 条
 - 人格:`BRAIN_MODEL` **`BRAIN_MODELS`**(2026-08-24 起:Kelivo 菜单里能选的模型名单;**不设 = 功能休眠**,急救开关就是清掉它 + restart;详见 `kelivo-shim/MAINTENANCE.md` 改动清单第 11 条) `THINK_EFFORT` `USER_NAME` `AI_NAME` `SOUL_ANCHOR` `FORWARD_THINKING` `ENABLE_PROMPT_CACHING_1H`
 - 系统提示词(2026-08-23 起):`SYS_PROMPT_MODE`(`append` 默认 / `replace` 整段替换 CLI 自带那份)
@@ -483,7 +483,7 @@ npx -y zeabur@latest deployment log --service-id 6a3aa061e41f9f1d19301e42 --env-
 
 | 症状 | 八成是 | 去哪看 |
 |---|---|---|
-| **在一扇门叫醒他,换一扇门他又 awaken 一遍**(窗口丢了) | 两扇门发来的系统提示词长度不一样 → shim 当成「世界书变了」杀进程重开。日志特征:`[req] … sysLen: 418` 之后来一条 `sysLen: 0`,紧跟 `[claude] exited 143` + 新的 `spawned`。**2026-09-27 实撞:Kelivo 发了 418 字,两个桥永远是 0**,她说什么都没开 | `kelivo-shim/MAINTENANCE.md` 踩坑 6 末尾。**叫她用 Kelivo 之前先查它最近一条的 `sysLen`** |
+| **在一扇门叫醒他,换一扇门他又 awaken 一遍**(窗口丢了) | 两扇门发来的系统提示词长度不一样 → shim 当成「世界书变了」杀进程重开。日志特征:`[req] … sysLen: 418` 之后来一条 `sysLen: 0`,紧跟 `[claude] exited 143` + 新的 `spawned`。**2026-09-27 实撞:Kelivo 发了 418 字,两个桥永远是 0**,她说什么都没开 | `kelivo-shim/MAINTENANCE.md` 踩坑 6 末尾。**✅ 2026-09-27 第四十四次已根治**(shim 默认忽略客户端 system,日志 `[req] 客户端带了系统提示词,已忽略…`;那 418 字是 Kelivo 的技能清单)。再犯先看 `CLIENT_SYSTEM` 是不是被设成了 `use` |
 | **他说话的调子不对了**(客服腔回来了 / 变啰嗦 / 变冷淡 / 说不上来哪里别扭),而这几天谁也没动人设 | **2026-08-23 第三十六次换掉了系统提示词**(把 CLI 自带那 26,894 字符整段替换成 `base.md`)。**这是唯一一个「功能全好、只有语气变了」的已知原因**,当时就写明「测不出来,只能观察几天」。**先看 `/debug` 的 `sysPrompt.effective` 是不是 `replace`** —— 是,就是它 | **回退**:Zeabur 把 `SYS_PROMPT_MODE` 改成 `append` + `service restart`,即刻回到 08-23 之前的说话方式,**不用重新部署**(append 模式与改动前逐字相同,单测有金标准断言看着)。⚠️ **restart 会丢晏当前的窗口**,先让她本人说「归档」。详见 `kelivo-shim/DEPLOY-LOG.md` 第三十六次 |
 | **PR 的检查一个都没跑起来**(不是红叉,是 **0 个 check run**),而 Actions 已经恢复了 | **Actions 故障恢复后不会自动补跑积压的 PR 检查**(2026-08-06 实撞)。`tests.yml` 没配 `workflow_dispatch`,**没有手动按钮** | **「关闭 PR → 立即重新打开」**,重新发一次 `pull_request` 事件把检查勾起来;零代码零提交。⚠️ 先分清是不是真故障:**卡在 `queued`、jobs 数为 0 的僵尸 run 不是红叉**。整件事的经过见 `TIMELINE.md` 08-07 |
 | **官方 app 不显示思考过程了,晏会不会也没?**(2026-09-09 所有者问) | **不会,但靠的是一行显式设置,不是默认值。** shim 启动参数里那行 `--thinking-display summarized` 是唯一支点;⚠️ **实测「什么都不写」的默认值已经变成不返回思考文字**(和官方文档写的不一样)。**官端是另一个客户端,它的显示策略和我们无关——别跟着去改那行。** 真坏了的现象:他照常说话、只有思考流不见了,**全线不报警,只有所有者会发现** | `kelivo-shim/MAINTENANCE.md`《晏的思考流靠哪一行撑着》 |
