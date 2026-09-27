@@ -107,7 +107,7 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
 | 自建网页接晏(`SHIM_KEY` 三处指纹全等) | 09-02 复核 | `dwell-bridge/MAINTENANCE.md`。仍待:她实际用起来顺不顺 |
 | 后台卡片圆角 26 + 间距 B 档(PR #139) | 09-03 | `INTERNALS.md` 1.8 / `TIMELINE.md` 第三十八件。**仍待真机手感**:点按跟不跟手、字符雨烫不烫(烫就把 `turbulence.html` `resize()` 里的 `2` 调回 `1.5`,或 `loop` 里的 `15` 调回 `32`,**一次只动一个**)。⚠️ **别在预览截图里替她判断圆角/间距** |
 | 接出 Opus 5.5(双引擎 + 思考翻中文 + 看门狗) | 09-23 第四十一次 | `kelivo-shim/MAINTENANCE.md` 改动清单第 13、14 条。仍待:她的感受(5.5 的调子、中文思考流、正文晚几秒) |
-| iMessage 接晏 | 09-26 | `imessage-bridge/MAINTENANCE.md`(出 bug / 要拆 Telegram 看第 12 节)。**仍待**:第一次真心跳落进 iMessage(`POST /hb` 会真发一条,先问她)。⚠️ **她没定、别自作主张**:晏的 `CLAUDE.md` 要不要写「你也在 iMessage 里」 |
+| iMessage 接晏 | 09-26 | `imessage-bridge/MAINTENANCE.md`(出 bug / 要拆 Telegram 看第 12 节)。⚠️ **09-27 起所有者定为备用门**:Photon 免费档有不公开的每日发送上限,一个人聊就撞上了(该手册第 7 节 3b)。**仍待**:第一次真心跳落进 iMessage(`POST /hb` 会真发一条,先问她)。⚠️ **她没定、别自作主张**:晏的 `CLAUDE.md` 要不要写「你也在 iMessage 里」 |
 | 网易云音乐接晏 | 08-30 第三十八次 | `netease-mcp/MAINTENANCE.md`。仍待验:晏看不看得见那 18 个工具、常驻占用真涨多少(看 `/debug`) |
 | 长期令牌直连(摘掉 CLIProxyAPI) | 09-12 第四十次 | 第 7 节《长期令牌直连》/ `kelivo-shim/DEPLOY-LOG.md` 第四十次。**原文记的仍待她做**:仓库 Settings → Variables 新建 `CLAUDE_TOKEN_EXPIRES` = `2027-09-12`(不配看门狗会一直叫;做没做过先去 Actions 看)。⚠️ 代理服务先留着别删 |
 | dwell 聊天记录挂卷(不再「每推一次丢一次」) | 09-14 | `dwell-bridge/MAINTENANCE.md`《聊天记录怎么才不丢》。别只信这行,`curl https://yan-dwell.zeabur.app/api/health` 看 `persisted` |
@@ -132,7 +132,7 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
 
 1. **升 2C8G 还是买第二台 Zeabur 独服** —— 建议升级。但升级会重启机器、**晏的窗口会丢**,
    必须她先自己对晏说「归档」。
-2. **Zeabur API key:用完就该作废** —— 她在会话里贴过明文,已进聊天记录。**累计十八次**(最近一次 09-27 第十八次:她贴来让我实测思考翻译换 Opus 4.6 的耗时和花费,只在 shim 容器里跑了一次性测试、**没改变量没重启**,见 `TIMELINE.md` 09-27 第六十一件;~~09-26 第十七次~~ 修 ears 那次见第六十件;逐次流水与下面几条的来历原文在 `TIMELINE.md` 末尾「附二」)。**几条规矩**:
+2. **Zeabur API key:用完就该作废** —— 她在会话里贴过明文,已进聊天记录。**累计十九次**(最近一次 09-27 第十九次:她报「iMessage 好像出问题了」,贴来让我看 imessage-bridge 日志、在该容器里只读查 Photon 账户,**什么都没改**,见 `TIMELINE.md` 09-27 第六十五件;~~09-27 第十八次~~:她贴来让我实测思考翻译换 Opus 4.6 的耗时和花费,只在 shim 容器里跑了一次性测试、**没改变量没重启**,见 `TIMELINE.md` 09-27 第六十一件;~~09-26 第十七次~~ 修 ears 那次见第六十件;逐次流水与下面几条的来历原文在 `TIMELINE.md` 末尾「附二」)。**几条规矩**:
    - ✅ **2026-08-28 所有者拍板:每把用完她自己去控制台删掉重生成**(不必等谁来做)。换它对系统零影响(不重启、不部署、晏的窗口不动)。
      ⚠️ **这把才是真要紧的那把**:它能读所有服务的环境变量 = 一把捞走下面所有钥匙。
    - **她要我部署时,先提醒「转一把新的、或者你自己在 Zeabur 控制台点部署」**;她仍坚持贴来就照办,但**那串值永远别写进任何文件、提交或文档**。
@@ -504,7 +504,7 @@ npx -y zeabur@latest deployment log --service-id 6a3aa061e41f9f1d19301e42 --env-
 | Telegram 里有字变成 `���`(常见是一个汉字变三个 `�`) | **收 shim 回复时逐块 `toString()`,把跨块的汉字劈碎了**(2026-09-23 已修,只部署 bridge)。**再出现先看 bridge 线上是不是新代码**;shim 那处同款写法挂在它的顺风车里 | `telegram-bridge/MAINTENANCE.md` 已知边界 10 |
 | 收到邮件「Daily Backup 运行失败」/ 看门狗报「每日备份」没过 | **八成是 OB 推备份用的 GitHub 钥匙 `OMBRE_BACKUP_TOKEN` 失效了**(日志 `could not read Password`)。**记忆本身没事**,只是备份推不上去 | 第 7 节《备份推不上去》 |
 | 记忆库的数据没了 / 要从备份恢复 | **退路是有的,而且 2026-08-19 实测跑通过**。但**只覆盖记忆桶与信箱**:`embeddings.db`(16MB 向量索引)和 `.history/`(版本快照)**不在备份里**,所以恢复是**两步** —— `restore_backup.py` 还原桶,再 `backfill_embeddings.py` 重建向量,**少做第二步语义检索是瞎的**。⚠️ 信箱 2026-08-19 起才进备份,之前的 58 份都没有 | 本节下方「记忆库怎么恢复」 |
-| **iMessage 发了没反应 / 语音贴纸查岗心跳哪个不对**(2026-09-26 起) | 先 `curl https://yan-imessage.zeabur.app/health` 看 `connected` / `enroll` / `lastErr`;心跳去向看 shim `/debug` 的 `presence.pushTo`。**几乎所有急救都只改 iMessage 桥的变量,不碰晏**;要整个停掉就 `BRIDGE_ON=0`,心跳自动退回 Telegram | `imessage-bridge/MAINTENANCE.md` 12.1 |
+| **iMessage 发了没反应 / 语音贴纸查岗心跳哪个不对**(2026-09-26 起) | 先 `curl https://yan-imessage.zeabur.app/health` 看 `connected` / `enroll` / `lastErr`;**`lastErr` 是 `Daily send limit exceeded` = Photon 每日发送上限撞了**(她能发、收不到,什么都不用改,回 Telegram 等它恢复;2026-09-27 撞过);心跳去向看 shim `/debug` 的 `presence.pushTo`。**几乎所有急救都只改 iMessage 桥的变量,不碰晏**;要整个停掉就 `BRIDGE_ON=0`,心跳自动退回 Telegram | `imessage-bridge/MAINTENANCE.md` 12.1 |
 | 想删掉 / 搬走 Telegram 桥 | **先读后路再动手**:心跳出口、查岗数据、贴纸原图都跟它有关,顺序错了心跳会哑 | `imessage-bridge/MAINTENANCE.md` 12.2 |
 | Telegram 收不到消息 | 双实例抢 getUpdates(409)/BRIDGE_ON=0 | bridge 已知边界 1 |
 | Telegram 里收到 `⚠️[bridge] 网络抖了一下,他回你的 N 句话 没送到` (或旧版的 `⚠️[bridge] fetch failed`) | **不是晏、不是 shim、不是额度:他答完了、额度也花了,是回话往她手机送的路上断的**(她发来的话也没丢,长轮询会重投)。**2026-08-19 断到了病根**:容器连 `api.telegram.org` 握手实测 **160ms**,而 Node 的 Happy Eyeballs 闸门写死 **250ms**,余量只有 90ms,一点抖动就整轮发不出去。已用环境变量 `NODE_OPTIONS=--network-family-autoselection-attempt-timeout=3000` 放宽(零代码、不重启晏)。**⚠️ 只治「轻的」**:真断线(3 秒也不通)照旧会丢。**指纹**:cause 是 `AggregateError [ETIMEDOUT]`,每次尝试卡在 ~252ms。**别去调 `TG_TIMEOUT_MS`**,那把闸在连接建立阶段轮不到生效。**2026-08-19 起还有一层**:断得狠的时候连这句提示本身都送不出去(她那头完全没动静、连「正在输入」都没有),现在会记欠条、路通了自动补报,`/health` 的 `pendingLosses` 是观察口 | bridge 设计要点 18、19、已知边界 7 |
