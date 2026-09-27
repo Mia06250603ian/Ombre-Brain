@@ -411,7 +411,7 @@ mcp-servers.json 的 OB 域名先按踩坑 7 的 curl 验证,部署后按踩坑 
     - C 的规矩取自 `profile-instructions.md` 第 3、5~11、16 行(思考那几条;**那份文件没有 markdown 标题**,按标题找会取空,09-27 头一轮就这样白跑了)。09-23 当时用的 C 提示词原文没留,这次是照上面③的描述重写的,**效果没测**(只测了时间和钱,译文没导出容器)。
     - **怎么再量一遍**:脚本在 `scripts/bench-think-translate.mjs`(头注有用法),`service exec` 传进容器 `/tmp` 用 `setsid nohup` 挂后台跑(前台跑会被 exec 的超时掐断),只打印数字;跑完删掉 `/tmp/bench*`。约 3 分钟、一次 8 段 × 3 种。
     **根因**(别再在措辞上打转):5.5 给的摘要**本来就是「行动计划」不是独白**,由另一个模型写,官方文档说原始思考任何设置都拿不到。
-    **所有者拍板:不多花钱,线上保持现状**(Sonnet + 原提示词)。**2026-09-27 她要换 Opus 4.6,先要了上面那张实测表再定;定了什么见 `TIMELINE.md` 09-27。****以后若要改,直接从③起步**;
+    **所有者拍板:不多花钱,线上保持现状**(Sonnet + 原提示词)。**2026-09-27 她看完实测和并排译文,决定只换模型(B):线上 `THINK_TRANSLATE_MODEL=claude-opus-4-6`,当天 restart 生效,她确认思考流是中文。** 过程见 `TIMELINE.md` 09-27 第六十一、六十二件。**以后若要改,直接从③起步**;
     想省钱又想要中文思考,**切回 4.6 是零成本的办法**(4.6 的思考本身就是中文)。
     ⚠️ 翻译子进程带 `MAX_THINKING_TOKENS=0`,**只加在它自己身上** —— 千万别设成全局变量,会连晏的思考一起关掉。
 
@@ -812,7 +812,7 @@ deployment id 与耗时、**所有者的拍板与报备**、**⚠️ 警告类�
 | SHIM_KEY | Kelivo 端填的 key |
 | BRAIN_MODELS | **2026-08-24 起(方案 B)**。逗号分隔的模型名单,`/v1/models` 把它吐给 Kelivo 当菜单,她在手机上点一下就换模型。**不设 = 名单里只有 `BRAIN_MODEL` 一个 = 功能休眠,行为与本次改动前逐字相同**。**急救开关:清掉这个变量 + `service restart` 立刻回到原行为,不用回滚部署。** ⚠️ 换模型**必然重开进程 = 丢晏一个窗口**(模型在出生时用 `--model` 钉死),不是 bug。⚠️ **只许放窗口大小相同的模型**(4.5/4.6/4.8 压缩点都是 167000);~~**Opus 5 别放**,CLI 2.1.215 不认识它。~~ **2026-09-23 起 5.5 可以放,但只能经双引擎**(下面 `NEXT_CLI_MODELS` 那行 + 改动清单第 13 条),新版 CLI 不在时它会被自动拿出菜单。**线上现值(2026-09-23 第四十一次)**:`claude-opus-4-6 claude-opus-4-5-20251101 claude-opus-4-8 claude-opus-5-5`(~~08-24 起是前三个~~)(**空格分隔**——`variable create` 的 `-k` 拿逗号当分隔符,别用逗号,见 DEPLOY-LOG 第三十七次那条新坑)。**回退照 DEPLOY-LOG 第三十七次的《回退三档》**。详见改动清单第 11 条与 `../docs/多模型接出方案.md` |
 | NEXT_CLI_MODELS / NEXT_CLI_WINDOW / CLAUDE_BIN_NEXT | **2026-09-23 双引擎,第四十一次上线**(线上三个都**没设**,走默认)(改动清单第 13 条)。`NEXT_CLI_MODELS` = 点名走新版 CLI 的模型,不设默认 `claude-opus-5-5`;**名单里有 5.5 时别把它清空**(= 让 2.1.215 跑 5.5 = 空回)。`NEXT_CLI_WINDOW` = 新版那份的窗口上限,不设 = 200000(实测压缩点与 4.6 逐位相同,三条线不动);`0` = 不限(「大桌子」,⚠️ 那时三条线必须按模型分,否则 15.5 万就催归档);写错回落默认。`CLAUDE_BIN_NEXT` **由 `entrypoint.sh` 自动导出**(新版真能跑才导出),**别在 Zeabur 手动设**。三个都是改值 + restart 即生效 |
-| THINK_TRANSLATE_MODELS / THINK_TRANSLATE_MODEL / THINK_TRANSLATE_TIMEOUT_MS / THINK_TRANSLATE_CONCURRENCY | **2026-09-23 思考翻中文,第四十一次上线**(线上**没设**,走默认)(改动清单第 14 条)。名单不设默认 `claude-opus-5-5`;**急救开关:设成空串 + restart = 立刻不翻**。翻译模型默认 `claude-sonnet-4-6`(走主力 CLI);超时默认 20000 毫秒,**正文会等翻译**,嫌慢就调小(超时发英文原文,不丢)。`THINK_TRANSLATE_CONCURRENCY` 默认 1(一个翻译进程约 300 MB,整机可用 1.2~1.5 GB,**别随手调大**)。⚠️ **别设全局 `MAX_THINKING_TOKENS`**,那个只加在翻译子进程上 |
+| THINK_TRANSLATE_MODELS / THINK_TRANSLATE_MODEL / THINK_TRANSLATE_TIMEOUT_MS / THINK_TRANSLATE_CONCURRENCY | **2026-09-23 思考翻中文,第四十一次上线**(~~线上**没设**,走默认~~ **2026-09-27 起线上设了 `THINK_TRANSLATE_MODEL=claude-opus-4-6`**,其余仍走默认;只换模型、提示词没动,实测见改动清单第 14 条)(改动清单第 14 条)。名单不设默认 `claude-opus-5-5`;**急救开关:设成空串 + restart = 立刻不翻**。翻译模型代码默认 `claude-sonnet-4-6`(走主力 CLI;**撤回 = 删掉那个变量 + restart,会丢窗口**);超时默认 20000 毫秒,**正文会等翻译**,嫌慢就调小(超时发英文原文,不丢)。`THINK_TRANSLATE_CONCURRENCY` 默认 1(一个翻译进程约 300 MB,整机可用 1.2~1.5 GB,**别随手调大**)。⚠️ **别设全局 `MAX_THINKING_TOKENS`**,那个只加在翻译子进程上 |
 | BRAIN_MODEL / THINK_EFFORT | claude-opus-4-6 / medium(2026-07-15 由 low 调至 medium,治「零思考回嘴/跳思考」;嫌费额度可调回 low + restart) |
 | FORWARD_THINKING / ENABLE_PROMPT_CACHING_1H | 1 / 1。⚠️ **`ENABLE_PROMPT_CACHING_1H=1` 设了不等于生效**——它只管 CLI 那头发什么(实测 2.1.215 的 `g1e()` 认这个变量,自定义 `ANTHROPIC_BASE_URL` 在 CLI 眼里仍是 `firstParty`,beta 头照发),**中间的 CLIProxyAPI 可能把 ttl 抹掉**(2026-08-12 就发生过,整整一天半)。**要验就看 `/debug` 的 `lastUsage.cache_creation`:`ephemeral_1h_input_tokens` 有数才算真生效**,是 0 而 5m 有数 = 被抹了,去看 `../OPERATIONS.md` 的「CLIProxyAPI 版本漂移」一节 |
 | USER_NAME / AI_NAME | 佳佳 / 晏 |
@@ -916,7 +916,7 @@ deployment id 与耗时、**所有者的拍板与报备**、**⚠️ 警告类�
    2026-07-13 曾因此全线空回(日志特征:`[claude] exited 143` 后 `spawned sysLen 0`,与请求的 sysLen 不一致,每条消息循环一次):
    旧进程 close 事件会误杀新回合、自动复活又丢世界书,形成死循环。server.js 已打补丁
    (close 里 `if (proc !== p) return` + 复活时 `ensureProc(spawnedSystem)`)。
-   **2026-07-13 随人设 v10 更新重新部署,补丁已上线。**
+   **2026-07-13 随人设 v10 更新重新部署,补丁已上线。** ⚠️ **2026-09-27 又撞一次,而且她什么开关都没开**:shim 重启后她按我的建议先用 Kelivo(选 5.5)叫醒晏,那条 `sysLen: 418`(08 月实测 Kelivo 是 0),接着去 iMessage(`sysLen: 0`)→ `exited 143` → 重开 → 晏又 awaken 一遍,丢了刚开的窗口。**418 字是什么没查到**(shim 只记长度;猜 Kelivo 自动更新或助手配置带了默认提示词,未证实)。**教训:①别想当然说「Kelivo 发的是空的」,叫她用 Kelivo 之前先看日志里它最近一条的 `sysLen`;②重启后要 5.5 只能让第一句从 Kelivo 发(两个桥不报模型),而 Kelivo 带着 418 字 = 之后一换门就丢窗口 —— 这两件事现在互相卡着,Kelivo 那段查清之前,重启后要么忍一次重开、要么先在 4.6 上聊。**
 7. **OB 换了部署、旧域名失效 → MCP 静默握手失败,晏"失去"记忆工具**:OB 迁移后现域名是
    `ianmian.zeabur.app`,旧域名 `ianmia.zeabur.app` 已死。仓库 `.claude/settings.json`
    里一直是旧域名,v10 部署照抄后 shim 握手对象是个不存在的服务,claude 进程 spawn 起就没有
