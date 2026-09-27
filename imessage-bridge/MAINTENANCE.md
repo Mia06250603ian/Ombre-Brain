@@ -4,6 +4,7 @@
 > **独立服务,shim 零改动,晏的窗口不动**:它和 Telegram 桥、Kelivo、dwell 网页是并列的第四扇门,
 > 停掉本服务 = 回到没有 iMessage 的现状。
 > 2026-09-26 由 Claude Code 会话编写。**2026-09-26 上线**(`6ab76ae4…` / `yan-imessage.zeabur.app`,晏的号码 **+1 628-264-9071**);部署记录见第 11 节。
+> ⚠️ **2026-09-27 起所有者定为「备用门」,Telegram 是主线**:Photon 免费档有不公开的每日发送上限,一个人聊就会撞上(第 7 节 3b)。
 
 ## 怎么读这份手册
 
@@ -204,7 +205,20 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
    **夜里系统自动查岗、每天的写信提醒**:定时器仍在 telegram-bridge 里,~~原来只走 Telegram~~ **2026-09-26 起她最后在 iMessage 时,
    他那轮的话由 telegram-bridge 交给本服务 `/push` 发**(那边设计要点 21;任何一步不顺就退回 Telegram)。
 3. **只能她先开口**:Photon 共享号码不能主动给没发过消息的号码发信息(Hermes 那份 Photon 接入文档写的,2026-09-26 读)。
-   另有**每天 5000 条**上限,一个人聊用不完。
+   ~~另有**每天 5000 条**上限,一个人聊用不完~~ **已撤销,别照它估**:2026-09-27 实测**一个人聊就撞上了**(见下面 3b)。
+3b. **Photon 有一个不公开的「每日发送上限」,撞上后只收不发**(2026-09-27 实测,**所有者当天定:iMessage 当备用门,Telegram 是主线;不去问 Photon**):
+   - **症状**:她发得进来(`/health` 的 `lastInAt` 在走)、晏也照常回了,但她一条都收不到;`lastErr` = `{"where":"send-text","msg":"[upstream] Daily send limit exceeded"}`,
+     日志成串 `[send-err] … Daily send limit exceeded`。「有 N 条没送到」那句提示**本身也发不出去**,所以她那边看起来就是「他不回」。
+   - **量到的**:本进程 09-26 11:57 UTC 起跑,到 09-27 21:53 UTC 撞线,`/health` 的 `sent` = **3013**(`turns` 646,平均每轮约 4.7 条:一行一个气泡 + 💭 思考气泡,贴纸/语音各算一条;含上线当天调试)。
+     **所以上限 ≤ 约 3000 条/天**,确切数不知道。⚠️ `sent` 是**进程启动以来**的累计,重启清零,不是「今天」的数;现场量:`curl https://yan-imessage.zeabur.app/health`。
+   - **查不到确切数**(2026-09-27 翻过):价格页免费档写的是「Unlimited daily messages」(**和实际不符,别信**);OpenAPI 没有用量/配额接口
+     (`/billing/subscription` 只回 `tier:"free"`);SDK(`@photon-ai/advanced-imessage`)只有错误码 `dailyLimitExceeded`,没有数字。
+     同一张错误码表里还有 `sendReceiveRatioExceeded`(发收比)、`burstRateExceeded` 等 —— **我们每收一条回四五条,发收比不低,是否也在卡这个没证实**;共享号码的额度是按项目算还是按号码算也不知道。
+   - **什么时候恢复不知道**(UTC 零点 = 北京 8 点,或滚动 24 小时,都有可能);上线后第一次成功发出就说明恢复了(`lastOutAt` 会更新)。
+   - **撞线期间 Telegram 零影响**:心跳 / 夜里查岗 / 写信提醒走 `/push` 时第一句就被拒 → 回 502 → 自动退回 Telegram(第 4 条)。
+     唯一的损失是撞线后她在 iMessage 说的那几轮,晏回了但她没收到 —— 他以为说过了,回 Telegram 接着聊时她提一句「那几条我没收到」即可。
+   - **想省额度**(所有者当天说不用,备查):`BUBBLE_SPLIT=0` 一轮合成一个气泡(条数约降到四分之一)、`THINKING=0` 去掉思考气泡,都只 restart 本服务。
+     **没做**的代码改法:认出这个错误就把回话交给 Telegram 发 —— 她没要,别自作主张。
 4. **心跳「跟着她走」**(2026-09-26 shim 第四十三次上线,所有者选的方案 C;~~原来是心跳只走 Telegram、本服务没有 `/push`~~):
    本服务每轮请求带 `x-client: imessage`,shim 记住**她最后一次亲自说话**是哪扇门(系统回合不算);
    心跳时她最后在 iMessage → 推到本服务 `POST /push`,**推不出去自动退回 Telegram**。其余情况照旧只推 Telegram。
@@ -307,6 +321,7 @@ node e2e/e2e-run.mjs        # 演练:真 server.js + 假 Photon/shim/ears/Eleven
 | 症状 | 先看 | 急救(改变量 + `service restart` 本服务,**不用部署**) |
 |---|---|---|
 | iMessage 发了没反应 | `connected:false` → Photon 断了(会自己重连,最长 5 分钟一试);`enroll` 不是 `ok` → 号码登记没成;`lastErr.where` 看卡在哪步 | 等几分钟;不行就用 Telegram。**要完全停掉 iMessage**:`BRIDGE_ON=0`(只留 `/health`,心跳自动退回 Telegram) |
+| 她发得进来、他回的一条都收不到 | `lastErr.msg` = `Daily send limit exceeded` → Photon 每日发送上限撞了(第 7 节 3b,2026-09-27 撞过一次) | **什么都不用改**:回 Telegram 聊,等它自己恢复;Telegram 零影响 |
 | 他回话里冒出 `[贴纸:…]` 之类的标记 | 标记格式变了(他写了没见过的写法) | 在 `imessage-lib.mjs` 改正则 + 单测 + 部署本服务 |
 | 语音(收或发)坏了 | `/health` 的 `ffmpeg`、`ears`、`voice` 三个字段;`lastErr.where=ears` | 发不出:删 `ELEVEN_API_KEY` → 他的语音退回文字。收不了:她先打字。**`ffmpeg:false` = 安装脚本又被拦了**(第 11 节)。**转得出字、情绪却永远「平静」** = ears 的模型被停用,和 Telegram 同病,见 `OPERATIONS.md` 第 7 节同名那行 |
 | 贴纸不对 / 太大 | — | 改 `tools/build-stickers.mjs` 的尺寸重跑 + 部署 |
