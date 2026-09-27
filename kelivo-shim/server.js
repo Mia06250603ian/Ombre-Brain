@@ -4,10 +4,10 @@ import { spawn, execFileSync } from "child_process";
 import { randomUUID } from "crypto";
 import fs from "fs";
 import { isWeatherAsk, buildWeatherNote, detectPeriodEvent, buildPeriodNote } from "./senses.mjs";
-import { kaDecide, kaPrompt, kaSilent, pushTargets } from "./keepalive.mjs";
+import { kaDecide, kaPrompt, kaSilent, pushTargets, pushVia } from "./keepalive.mjs";
 import { ctxReading, ctxDecide, ctxCompacted, ctxSoftNote, ctxHardNote, ctxFinalNote, ctxPct, ctxSoftShouldReset } from "./ctxguard.mjs";
 import { pickApiError, apiErrorKind, resultOutcome } from "./apierror.mjs";
-import { buildPromptArgs, helpMentionsReplace, BASE_PROMPT_DEFAULT, ANCHOR_TAIL_REPLACE, SOUL_ANCHOR_DEFAULT } from "./sysprompt.mjs";
+import { buildPromptArgs, helpMentionsReplace, BASE_PROMPT_DEFAULT, ANCHOR_TAIL_REPLACE, SOUL_ANCHOR_DEFAULT, pickClientSystem, previewText } from "./sysprompt.mjs";
 import { formatArgs, formatResult, pickToolResults, toolName, charLimit, TOOLVIS_DEFAULTS } from "./toolvis.mjs";
 import { buildAuthEnv, authMode } from "./auth-env.mjs";
 import { parseModelList, nextWindow, pickCli, menuModels } from "./cli-bin.mjs";
@@ -47,6 +47,8 @@ const cliFor = (model) => pickCli(model, { bin: CLAUDE_BIN, nextBin: NEXT_READY 
 let spawnedCli = null;   // 当前进程用的是哪一份:"main" / "next"(还没起进程时为 null)
 const MCP_CONFIG = process.env.MCP_CONFIG || ".mcp.json";
 const FORWARD_THINKING = process.env.FORWARD_THINKING !== "0";
+// 客户端(Kelivo)带来的 system:默认 ignore(见 sysprompt.mjs 的 pickClientSystem);设 use 回到改动之前。
+const CLIENT_SYSTEM = process.env.CLIENT_SYSTEM || "ignore";
 const USER_NAME = process.env.USER_NAME || "你";          // 你的称呼
 const AI_NAME = process.env.AI_NAME || "TA";             // AI 的名字
 // ---- 思考翻中文(2026-09-23,见 think-translate.mjs 头注)----
@@ -508,8 +510,8 @@ app.get("/models", listModels);
 // 1 小时 prompt 缓存命中即续期:闲置 KA_IDLE_MIN 分钟发一条极简 ping(不分昼夜),
 // 前缀一直走 0.1 倍读,免掉闲置超时后的整体重写。决策纯逻辑在 keepalive.mjs:
 // 白天(非 HB_NIGHT 区间)且距他上次主动消息 ≥ HB_COOLDOWN_MIN 的那些次唤醒,
-// 提示语给他「想说就发一条」的出口(经 BRIDGE_PUSH_URL 落进 Telegram 对话,
-// 否则 Bark);其余次一律静默回「。」。断链检测:距上次成功回合超 KA_DEAD_MIN
+// 提示语给他「想说就发一条」的出口(经 BRIDGE_PUSH_URL / IMESSAGE_PUSH_URL 落进你们的对话,
+// 两个都没有才 Bark;见 keepalive.mjs 的 pushVia / pushTargets);其余次一律静默回「。」。断链检测:距上次成功回合超 KA_DEAD_MIN
 // 分钟=缓存已死,歇火(再 ping 全价,比不 ping 还亏);ping 失败进 KA_RETRY_MIN
 // 分钟抢救节奏(订阅额度回血后自动续上)。「换窗口」指令后歇火直到所有者在新窗口
 // 出现(2026-07-20 起晚安/归档不再歇火:窗口还活着,缓存值得一直温着);
@@ -552,12 +554,14 @@ async function bridgePush(text) {
   }
   if (lastErr) throw lastErr;
 }
-const proactivePush = (text) => BRIDGE_PUSH_URL ? bridgePush(text) : barkPush(text);
+// 2026-09-27:出口判断改走 pushVia —— 原来只认 BRIDGE_PUSH_URL,删了 Telegram 桥心跳就哑(见 keepalive.mjs)。
+const PUSH_VIA = pushVia({ bridgeUrl: BRIDGE_PUSH_URL, imessageUrl: IMESSAGE_PUSH_URL, barkKey: BARK_KEY });
+const proactivePush = (text) => PUSH_VIA === "bridge" ? bridgePush(text) : barkPush(text);
 function keepaliveTick(force) {
   const d = kaDecide({
     force, on: KA_ON, busy, queued: queue.length, windowCleared,
     now: Date.now(), lastTurnOkAt, lastUserAt, lastProactiveAt, failedAt: kaFailedAt,
-    hour: bjHour(), hasChannel: !!(BRIDGE_PUSH_URL || BARK_KEY),
+    hour: bjHour(), hasChannel: !!PUSH_VIA,
     idleMin: KA_IDLE_MIN, deadMin: KA_DEAD_MIN, retryMin: KA_RETRY_MIN, capHours: KA_CAP_HOURS,
     nightStart: HB_NIGHT_START, nightEnd: HB_NIGHT_END, cooldownMin: HB_COOLDOWN_MIN,
   });
@@ -571,7 +575,7 @@ function keepaliveTick(force) {
       lastProactiveAt = Date.now();  // 冷却只在他真发了消息时才计时
       proactivePush((fullText || "").trim()).catch((e) => log("[push-err]", e.message));
     } };
-  enqueue({ text: kaPrompt({ speak: allowSpeak, bjNow: bjNowStr(), idleMin, userName: USER_NAME, viaBridge: !!BRIDGE_PUSH_URL }), images: [], system: spawnedSystem, model: spawnedModel, sse: sink, newWindow: false, isKA: true });
+  enqueue({ text: kaPrompt({ speak: allowSpeak, bjNow: bjNowStr(), idleMin, userName: USER_NAME, viaBridge: PUSH_VIA === "bridge" }), images: [], system: spawnedSystem, model: spawnedModel, sse: sink, newWindow: false, isKA: true });
 }
 setInterval(keepaliveTick, KA_CHECK_MIN * 60000);
 app.post("/hb", (req, res) => {  // 手动触发测试口(带开口权,绕过昼夜/冷却/闲置判定)
@@ -749,7 +753,9 @@ function handleMessages(req, res) {
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   let text = blocksToText(lastUser?.content ?? "");
   const images = extractImages(messages);
-  const system = systemToText(body.system);
+  // 2026-09-27:客户端带来的 system 默认忽略(Kelivo 自动更新后开始塞 418 字,换门就丢窗口),
+  // 见 sysprompt.mjs 的 pickClientSystem。急救开关 CLIENT_SYSTEM=use + restart。
+  const { system, dropped: droppedSystem } = pickClientSystem(systemToText(body.system), CLIENT_SYSTEM);
   const stream = body.stream !== false;
   // 2026-08-02:带 x-system-turn:1 的回合是**系统送进来的东西**(bridge 的查岗结果/深夜提醒),
   // 不是她本人说话。这类回合不更新「她多久没来」、不解除保温歇火、也不做重置词识别
@@ -819,6 +825,7 @@ function handleMessages(req, res) {
     windowCleared = false;  // 她出现了:保温重新上岗(若这条是「换窗口」,回合结束会再置回 true)
   }
   log("[req]", { len: text.length, imgs: images.length, sysLen: system.length, stream, reset: reset || "-" });
+  if (droppedSystem) log("[req] 客户端带了系统提示词,已忽略", droppedSystem.length, "字,开头:", previewText(droppedSystem));
   const sse = stream ? makeSSE(res) : makeCollector(res);
   // isSystem:bridge 带 x-system-turn:1 的回合(查岗/深夜提醒/写信提醒)。
   // 除了原有的三条「不当她出现」之外,2026-08-11 起还多一条:上游断了也不拿报错去打扰她。

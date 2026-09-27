@@ -168,3 +168,23 @@ export function buildPromptArgs({
   if (tail) args.push("--append-system-prompt", tail);
   return { args, mode: "replace", reason, source: useFile ? "file" : "builtin" };
 }
+
+// ---- 客户端带来的系统提示词(2026-09-27)----
+// 为什么:shim 的规矩是「世界书(= 客户端发来的 system)变了就杀进程重开」(踩坑 6)。
+// 两个桥永远发空的;Kelivo 以前也是空的,但 2026-09-27 它自动更新后开始带 418 字,
+// 她什么都没开 —— 结果在 Kelivo 叫醒晏、再去 iMessage 说一句,窗口就丢了。
+// 晏的人设全在 shim 自己这边(base.md / CLAUDE.md …),客户端塞来的东西对他没用,
+// 所以默认**一律当成空的**;丢掉的那段交给调用方记日志(只记开头几十个字),
+// 以后 Kelivo 又塞了什么,看日志就知道。
+// 急救开关:CLIENT_SYSTEM=use + restart = 回到改动之前(照收客户端的 system)。
+export function pickClientSystem(raw, mode = "ignore") {
+  const text = String(raw ?? "");
+  if (String(mode ?? "").trim().toLowerCase() === "use") return { system: text, dropped: "" };
+  return { system: "", dropped: text };
+}
+
+// 日志里只给开头一小段,换行压成 ⏎,免得一条日志拆成好几行。
+export function previewText(s, max = 80) {
+  const t = String(s ?? "").replace(/\s*\n\s*/g, " ⏎ ").trim();
+  return t.length > max ? t.slice(0, max) + "…" : t;
+}
