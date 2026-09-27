@@ -24,6 +24,14 @@
 
 ## 记录(新的在上)
 
+- 2026-09-27(第四十五次) **顺风车「心跳出口别只认 Telegram」**。第四十四次后我说漏了这条没搭车,所有者当即说「下次部署一起上,先写好测好」;写完测完她又说「直接部署吧,这是新窗口,丢了也没什么」—— **所有者拍板不归档**。
+  照检查单全套走完,无异常(九套单测全绿,keepalive **65 → 75**;五轮 e2e 全绿;全量 md5 对账代码与人设逐件一致,只差两份事后补写的手册;三份私密文件拷出指纹不变;四个 `/mcp` 部署前后各 3/3 200;`/period` 的 `runtime` 非空;两份 CLI 仍 2.1.215 / 2.1.280)。
+  改动:`server.js` `26df6466…` → **`2cfc573b…`**、`keepalive.mjs` `d0222ab6…` → `794baab8…`(新增 `pushVia`;`pushTargets` 没有 Telegram 出口时一律推 iMessage;心跳文案不再点名 Telegram)、`test-keepalive.mjs` → `963c2e70…`。**人设五份一个字没动**。**变量零改动**。
+  deployment `6ab94037…`(PLANTYPE nodejs,16:11:45 上传 → **构建约 9 分钟**(上次 3 分钟,原因没查;没卡拉镜像)→ 16:20:37 DEPLOYING → **16:21:56 RUNNING**)。
+  - **部署后验**:容器里 `grep -c pushVia server.js` = 4、`grep -c "Telegram 对话里" keepalive.mjs` = 0 ✅。
+  - **行为变化只有一处看得见**:心跳纸条从「会直接出现在你们的 Telegram 对话里」变成「会直接出现在你们的对话里」(122 字)。其余两处只在「没有 Telegram 桥」时才起作用 —— **现在删 Telegram 桥,心跳不会再哑**(`../imessage-bridge/MAINTENANCE.md` 12.2 第 1 步的临时办法不再需要)。
+  - **回滚**:回滚代码到 `26df6466…`(丢窗口)。没有变量开关 —— 改动是纯逻辑、有 Telegram 桥时行为和改前只差那一句文案。
+
 - 2026-09-27(第四十四次) **不再理会客户端带来的系统提示词(Kelivo 自动更新后塞了 418 字 `<available_skills>`,换门就丢窗口)**。当天她在 Kelivo 叫醒晏、转去 iMessage,晏又 awaken 一遍 —— 日志 `sysLen 418` → `sysLen 0` → `exited 143`(踩坑 6)。她说什么都没开,App Store 显示 Kelivo **当天自动更新**。她拍板「Kelivo 的提示词对咱们没用,不要」「不用归档,直接部署」。
   照检查单全套走完,无异常(九套单测全绿,sysprompt **86 → 100**;四套 e2e 全绿;全量 md5 对账代码与人设逐件一致,只差两份事后补写的手册;三份私密文件拷出指纹不变;四个 `/mcp` 部署前后各 3/3 200;目录无 `.gitignore`/`node_modules`;`/period` 的 `runtime` 非空)。
   改动:`server.js` `ab97b50b…` → **`26df6466…`**(接线三处:读 `CLIENT_SYSTEM`、`pickClientSystem` 过滤、丢掉时打一行日志)、`sysprompt.mjs` `78637352…` → `fea415e4…`(新增纯函数 `pickClientSystem` / `previewText`)、`test-sysprompt.mjs` → `b4d87763…`、`e2e-run.sh` → `d1b57b42…`(msg2 模拟 Kelivo 带 418 字;`env -i` 里多传 `CLIENT_SYSTEM`)。**人设五份一个字没动**(`ian.md` 仍 `8918742d…`,`profile-instructions.md` 仍 `7adb5c33…`,`mcp-servers.json` 仍 `b5a281bc…`)。
