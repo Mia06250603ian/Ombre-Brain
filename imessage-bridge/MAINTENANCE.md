@@ -142,7 +142,7 @@ kelivo-shim ──▶ 常驻 claude 进程 = 晏(同一个)
 | `ACTIVITY_URL` | 默认 `https://yan-telegram-bridge.zeabur.app/activity` |
 | `EARS_URL` / `EARS_TOKEN` | 同 telegram-bridge(同值)。两个都配了语音输入才开 |
 | `ELEVEN_API_KEY` / `ELEVEN_VOICE_ID` | 同 telegram-bridge(同值)。不配 = 他的 `[语音]` 退回文字 |
-| `VOICE_MODEL` / `VOICE_SPEED` / `VOICE_STABILITY` / `VOICE_MAX_CHARS` | 同 telegram-bridge,默认值也一样(0.85 / 0.6 / 500) |
+| `VOICE_MODEL` / `VOICE_SPEED` / `VOICE_STABILITY` / `VOICE_MAX_CHARS` | 同 telegram-bridge,代码默认值也一样(0.85 / 0.6 / 500)。**线上 2026-09-28 起 `VOICE_MODEL=eleven_v3`、`VOICE_STABILITY=0.5`,和 telegram-bridge 一起换、要退一起退**(退法见那边环境变量表 `VOICE_MODEL` 行)。⚠️ **本服务没设 `VOICE_SPEED`**(跑默认 0.85,而 TG 线上是 0.95,2026-09-28 实测)—— v2 时代 iMessage 里的语音因此比 TG 慢一点;v3 不认语速,这个差别暂时不起作用,**退回 v2 时要一致就补设 0.95** |
 | `MEDIA_TIMEOUT_MS` / `EARS_TIMEOUT_MS` | 图片/语音转码与 ears 的超时,默认各 60000 |
 | `ENROLL_ON` | 启动时自动登记她的号码(第 3 节第 11 条),默认开。设 `0` 关 |
 | `PHOTON_API` | 登记接口的地址,默认 `https://spectrum.photon.codes`(演练时换成假的) |

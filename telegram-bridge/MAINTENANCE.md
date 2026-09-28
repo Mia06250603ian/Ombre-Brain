@@ -447,8 +447,9 @@ kelivo-shim(yan-shim.zeabur.app)──→ 常驻 claude 进程(人设+记忆,见
 | TURN_TIMEOUT_MS | 单轮超时,默认 900000(15 分钟) |
 | ELEVEN_API_KEY | ElevenLabs API key(限权:仅文本转语音+音色读;值不入库,所有者持有)。不设=语音功能关 |
 | ELEVEN_VOICE_ID | 晏的声音(所有者在 ElevenLabs 选定;免费档注意:声音库社区声音 API 用不了,默认声音和自建声音可用) |
-| VOICE_SPEED | 语速,默认 0.85(所有者 2026-07-18 四档盲测选 0.95 后,同日试听调定 0.85) |
-| VOICE_STABILITY | 默认 0.6 |
+| VOICE_MODEL | ElevenLabs 模型,代码默认 `eleven_multilingual_v2`。**线上 `eleven_v3`(2026-09-28 起,所有者试听后定的「先试 v3,不行退回 v2」)**。两个桥读同名变量,**要换一起换**(`../imessage-bridge/` 同)。**退回 v2 = 两边删掉本变量和 `VOICE_STABILITY` + 各 restart**(不部署、不碰晏),⚠️ **退回前先让她口头叫晏别再写 `[laughs]` 这类标签**——v2 不认标签,大概率照字念出来(未实测)。v3 的脾气(音色会飘、不认语速、叹气类标签会让他「虚」)与试听记录见 `../TIMELINE.md` 09-28 第六十六件 |
+| VOICE_SPEED | 语速,代码默认 0.85(所有者 2026-07-18 四档盲测选 0.95 后,同日试听调定 0.85)。⚠️ **线上是 `0.95`**(2026-09-28 `variable list` 实测;手册此前一直写 0.85,何时改回的无记录)。**v3 不认这个参数**(官方:v3 的语速靠标签和标点控制),留着是为了退回 v2 时原样 |
+| VOICE_STABILITY | 代码默认 0.6。**线上 `0.5`(2026-09-28 起,配 v3)**。v3 官方只有三档:0 Creative / 0.5 Natural / 1.0 Robust(接口收 0.6、0.75 不报错,但是否真按小数念无法验证)。**所有者选 0.5**:活人感最好,代价是音色偶尔飘;嫌飘就改 `1.0`(更稳、标签效果变弱),改值 + restart |
 | VOICE_MAX_CHARS | 单段语音字数上限,默认 500,超长退回文字(省积分;免费档每月 1 万积分≈1 万字符) |
 | EARS_URL | ears 服务地址(默认空=功能关)。当前 https://yan-ears-listen.zeabur.app |
 | EARS_TOKEN | ears 的接口锁,与 ears 服务的 EARS_TOKEN 同值。两个都配了语音输入才开 |
@@ -480,6 +481,8 @@ kelivo-shim(yan-shim.zeabur.app)──→ 常驻 claude 进程(人设+记忆,见
 语音用法:回复里 `[语音]英文内容[/语音]`(全角括号也认;忘写闭合=标记后全算语音)。
 bridge 调 ElevenLabs(免费档实测可直出 Ogg/Opus,失败自动降级 mp3),经 sendVoice 发成
 Telegram 原生语音条;任何一步失败退回发文字,话不丢。内容用英文(中文有口音,所有者不要)。
+**2026-09-28 起跑 v3,段内可穿插英文方括号标签**(`[chuckles]` `[teasing]` 等,正则 `VOICE_RE` 只认 `[/语音]` 收尾,段内方括号不会截断)。
+晏怎么用标签:当前窗口是所有者口头教的;永久版挂在 `../kelivo-shim/MAINTENANCE.md`《搭顺风车的待办》。
 标记教学在 shim 的 CLAUDE.md(待下次 shim 部署;之前所有者可在对话里直接告诉他语法,当窗口有效)。
 
 ## 部署
