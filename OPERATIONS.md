@@ -255,7 +255,8 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
   各自的手册在哪、三条铁规矩、以及**为什么不叫 `CLAUDE.md`**(那名字是晏的人设占着的)。
   新会话开工前先读它。
   - 根目录 = OB 记忆库本体(Python/FastMCP)。文档:`README.md`(用法)、`INTERNALS.md`(内部机制)、`ENV_VARS.md`、`BEHAVIOR_SPEC.md`。
-  - `kelivo-shim/` = shim 源码 + **`MAINTENANCE.md`(shim 一切细节的唯一可信手册)**。
+  - `kelivo-shim/` = shim 源码 + **`MAINTENANCE.md`(shim 一切细节的唯一可信手册)**
+    + `5.5被拦不丢窗口-实施指南.md`(**可直接转给别人的一份实施指南**,2026-09-29;占位符版,同款架构照着做)。
     **2026-08-23 起晏的人设是五份文件**,各管一段、互不重叠:`base.md`(他是什么,替换模式的系统提示词正文,入库)
     / `profile-instructions.md`(怎么说话,私密不入库) / `ian.md`(他是谁,私密不入库)
     / `CLAUDE.md`(日常怎么做,入库) / `wake.md`(怎么醒来,入库)。
