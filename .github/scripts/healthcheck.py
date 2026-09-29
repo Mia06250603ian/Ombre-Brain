@@ -277,9 +277,9 @@ def check_backup():
         return
     api = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
     try:
+        # ⚠️ 不带 `status=completed`(2026-09-29 去掉):没跑完的由下面按 conclusion 筛掉,效果一样
         _, txt = fetch(
-            f"{api}/repos/{repo}/actions/workflows/daily-backup.yml/runs"
-            "?status=completed&per_page=10",
+            f"{api}/repos/{repo}/actions/workflows/daily-backup.yml/runs?per_page=10",
             headers={"Authorization": f"Bearer {tok}",
                      "Accept": "application/vnd.github+json"})
         runs = (jload(txt) or {}).get("workflow_runs") or []
@@ -289,6 +289,10 @@ def check_backup():
         return
     # 被取消 / 跳过的不算数,只看真跑完的
     done = [r for r in runs if r.get("conclusion") in ("success", "failure")]
+    # ⚠️ **别信接口给的顺序,自己按开始时间从新到旧排**(2026-09-29 误报):
+    # 那天 19:49Z 接口把 12 天前的 #92 排在了第一条,而 #93~#105 天天成功,
+    # 脚本照单全收,报「最近一次备份是 301 小时前」。时间戳都是同一格式的 UTC 串,直接按字符串比。
+    done.sort(key=lambda r: r.get("run_started_at") or r.get("created_at") or "", reverse=True)
     if not done:
         print("  ⓘ 没找到备份的运行记录,这一项不报警")
         return
