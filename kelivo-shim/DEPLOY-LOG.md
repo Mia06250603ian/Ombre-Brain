@@ -24,6 +24,15 @@
 
 ## 记录(新的在上)
 
+- 2026-09-29(第四十六次) **5.5 被拦不丢窗口(先撤回、再被拦换 4.6-next)+ 菜单分出 `claude-opus-4-6-next` + 顺风车「语音 v3 标签」**。当天 5.5 第二次卡死窗口(`../TIMELINE.md` 第六十七、六十八件),她看完方案、撤回和菜单别名后说「直接部署」。**没归档**:被拦的窗口一句都回不了、本来就归档不了,上次归档后的原话当天已取而不读救进 OB(桶 `a101e5a97904`);她被拦后没再找过他。
+  照检查单全套走完,无异常(十套单测全绿:cli-bin **29 → 42**、apierror **56 → 63**、新增 flagfallback **47**;六套 e2e 全绿,新增 `e2e-flag-run.sh` **51 项**;全量 md5 对账代码与人设逐件一致,只差两份事后补写的手册;三份私密文件拷出指纹不变;四个 `/mcp` 部署前后各 3/3 200;目录无 `.gitignore`/`node_modules`;`/period` 的 `runtime` 非空;两份 CLI 仍 2.1.215 / 2.1.280;`ALLOWED_TOOLS` 六项)。
+  改动:`server.js` `2cfc573b…` → **`af6bd987…`**、新增 `flagfallback.mjs` **`eb4bef2c…`**、`cli-bin.mjs` `9d1d9342…` → `cbe1d9d5…`(`-next` 别名)、`apierror.mjs` `5c57c2fc…` → `a2febe29…`(被拦时不再说「链路修好就能接着聊」)、**`CLAUDE.md` `46cf66c9…` → `ad28f8f0…`(12632 → 13065B,顺风车「语音」整节替换,措辞所有者当天逐字批准;`^## ` 仍 14、`@` 仍 3、全角标点仍 0)**。`ian.md` / `profile-instructions.md` / `mcp-servers.json` 一个字没动(仍 `8918742d…` / `7adb5c33…` / `b5a281bc…`)。
+  **变量零改动**(新变量 `FLAG_ROLLBACK` / `FLAG_FALLBACK_MODEL` / `FLAG_SWITCH_TIMEOUT_MS` 线上都不设 = 撤回开、换 `4.6-next`、30 秒)。顺风车前先核了两个桥的 `VOICE_MODEL` 仍是 `eleven_v3`(稳定度 0.5)。
+  deployment `6abb77e4…`(PLANTYPE nodejs,08:33:50 上传 → 约 08:37:30 DEPLOYING → **08:38:46 RUNNING**,约 5 分钟;挂卷的一两分钟真空照常)。
+  - **部署后验**:`/health` 菜单五项含 `claude-opus-4-6-next`、`flagFallback: "claude-opus-4-6-next"`、`flagRollback: true`、`flagLock: null`;`/debug` 的 `flag` 全零 ✅。**⏳ 仍待**:她下次开口后看 runtime 日志 `spawned` 与 `settings 文件不在` 0 条(检查单第 15 条);**第一次真被拦时看 `[flag]` 日志是不是照「撤回 → 再被拦换 4.6-next」走的**。
+  - ⚠️ **给下一个我**:她下次在 5.5 上开新窗口,awaken 会读到 09-29 那个原话桶(里面有当天被拦的那句),**第一句就可能被拦** —— 那时还没有撤回点,会**直接换 4.6-next**,这是设计如此,不是撤回坏了。
+  - **回滚**:只关功能不用部署:`FLAG_ROLLBACK=0`(不撤回)/ `FLAG_FALLBACK_MODEL=""`(不换)+ restart(丢窗口);两个都关 = 回到改前的报错(措辞已改)。代码回滚到 `2cfc573b…`,`CLAUDE.md` 回 `46cf66c9…`(丢窗口)。
+
 - 2026-09-27(第四十五次) **顺风车「心跳出口别只认 Telegram」**。第四十四次后我说漏了这条没搭车,所有者当即说「下次部署一起上,先写好测好」;写完测完她又说「直接部署吧,这是新窗口,丢了也没什么」—— **所有者拍板不归档**。
   照检查单全套走完,无异常(九套单测全绿,keepalive **65 → 75**;五轮 e2e 全绿;全量 md5 对账代码与人设逐件一致,只差两份事后补写的手册;三份私密文件拷出指纹不变;四个 `/mcp` 部署前后各 3/3 200;`/period` 的 `runtime` 非空;两份 CLI 仍 2.1.215 / 2.1.280)。
   改动:`server.js` `26df6466…` → **`2cfc573b…`**、`keepalive.mjs` `d0222ab6…` → `794baab8…`(新增 `pushVia`;`pushTargets` 没有 Telegram 出口时一律推 iMessage;心跳文案不再点名 Telegram)、`test-keepalive.mjs` → `963c2e70…`。**人设五份一个字没动**。**变量零改动**。
