@@ -19,7 +19,10 @@ function sse(res, events) {
   res.end();
 }
 const textOf = (c) => typeof c === "string" ? c : (c || []).filter((x) => x.type === "text").map((x) => x.text).join("\n");
-const strip = (t) => t.replace(/<system-reminder>[\s\S]*?<\/system-reminder>\s*/g, "").trim();
+// 换模型后 CLI 会在下一条前面塞一段自己的 `/model` 记录(caveat + command + stdout),比对轮次时去掉
+const strip = (t) => t.replace(/<system-reminder>[\s\S]*?<\/system-reminder>\s*/g, "")
+  .replace(/<local-command-caveat>[\s\S]*?<\/local-command-caveat>\s*/g, "")
+  .replace(/<command-name>[\s\S]*?<\/local-command-stdout>\s*/g, "").trim();
 
 http.createServer((req, res) => {
   let body = "";

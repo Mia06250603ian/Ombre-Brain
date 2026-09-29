@@ -10,6 +10,8 @@
 #   B 两个急救开关都关 —— 回到老样子:报错(措辞改成「安全审查拦了」);
 #   C 只关撤回(FLAG_ROLLBACK=0)—— 被拦直接换 4.6;说到一半被拦:半截话 + 空一行 + 提示 + 回话;
 #   D 窗口第一句就被拦(没有可退回的点)+ 系统回合 —— 直接换 4.6、不出提示;
+#   F 菜单里的 `claude-opus-4-6-next`(新版上的 4.6)—— 5.5 窗口里点它 = 原地换、窗口不丢;点回 5.5 也原地;
+#     点普通的 4.6(旧版)才开新窗口。
 #   E 撤回重起失败(会话记录被删,撤回点找不到)—— 先退一步不截断地接回;被拦那句跟着回来,她下一句再被拦 → 换 4.6。不卡死、不丢窗口。
 # 全绿输出 "E2E FLAG ALL PASS"。
 set -u
@@ -45,6 +47,7 @@ echo '{ "mcpServers": {} }' > mcp-empty.json
 printf '%s' "{\"hasCompletedOnboarding\":true,\"projects\":{\"$WORK\":{\"hasTrustDialogAccepted\":true,\"hasCompletedProjectOnboarding\":true}}}" > .claude.json
 
 M46=claude-opus-4-6
+A46=claude-opus-4-6-next
 M48=claude-opus-4-8
 M55=claude-opus-5-5
 
@@ -116,6 +119,18 @@ curl -sS http://127.0.0.1:8710/health > health-D.json
 cp calls.json calls-D.json
 stop_shim
 
+# ---- 阶段 F:菜单里手动选 4.6-next ----
+start_shim F "$M46" "" 1
+curl -sS http://127.0.0.1:8710/v1/models > models-F.json
+say "turn-f1" "$M55" sse-f1.txt
+say "turn-f2" "$A46" sse-f2.txt
+curl -sS http://127.0.0.1:8710/health > health-F2.json
+say "turn-f3" "$M55" sse-f3.txt
+say "turn-f4" "$M46" sse-f4.txt
+curl -sS http://127.0.0.1:8710/health > health-F4.json
+cp calls.json calls-F.json
+stop_shim
+
 # ---- 阶段 E:撤回重起失败 ----
 start_shim E "$M46" "" 1
 say "turn-e1" "$M55" sse-e1.txt
@@ -131,14 +146,14 @@ const fs = require("fs");
 const W = process.env.E2E_WORK;
 const rd = (f) => fs.readFileSync(`${W}/${f}`, "utf8");
 const js = (f) => JSON.parse(rd(f));
-const M46 = "claude-opus-4-6", M48 = "claude-opus-4-8", M55 = "claude-opus-5-5";
+const M46 = "claude-opus-4-6", M48 = "claude-opus-4-8", M55 = "claude-opus-5-5", A46 = "claude-opus-4-6-next";
 let bad = 0, n = 0;
 const ok = (c, name) => { n++; if (!c) { bad++; console.error("FAIL:", name); } else console.log("  ok:", name); };
 const text = (f) => [...rd(f).matchAll(/^data: (.*)$/gm)].map((m) => { try { return JSON.parse(m[1]); } catch { return {}; } })
   .filter((d) => d.type === "content_block_delta" && d.delta.type === "text_delta").map((d) => d.delta.text).join("");
-const NOTE = "⚠️ 5.5 拦了这句,已经自动换成 4.6 接着聊,窗口没丢。\n\n";
+const NOTE = "⚠️ 5.5 拦了这句,已经自动换成 4.6-next 接着聊,窗口没丢。\n\n";
 
-const RB = "⚠️ 5.5 拦了这句,已经撤回了(他没看到)。换个说法再说一次吧;要是还被拦,会自动换成 4.6 接着聊。";
+const RB = "⚠️ 5.5 拦了这句,已经撤回了(他没看到)。换个说法再说一次吧;要是还被拦,会自动换成 4.6-next 接着聊。";
 const callsFor = (cs, tag) => cs.filter((c) => !c.validate && c.user.includes(tag));
 
 // ── A ──
@@ -167,7 +182,8 @@ ok(a5re && a5re.nudge && /FLAGME[\s\S]*【系统·补发】/.test(a5re.user), "A
 ok(a5re && a5re.turns.some((t) => /turn-a1/.test(t)) && a5re.turns.some((t) => /turn-a3/.test(t)), "A:4.6 看得到之前成功的几轮(窗口没丢)");
 ok(cA.some((c) => c.validate && c.model === M46), "A:换模型前 CLI 先验了一下 4.6(非流式的 Hi)");
 const h5 = js("health-A5.json"), d5 = js("debug-A5.json");
-ok(h5.model === M46 && h5.cli === "next" && h5.flagLock && h5.flagLock.from === M55, "A:/health 报换过去了、锁在 4.6");
+ok(h5.model === A46 && h5.cli === "next" && h5.flagLock && h5.flagLock.from === M55 && h5.flagLock.to === A46, `A:/health 报换过去了、锁在菜单里那项 4.6-next(got ${h5.model})`);
+ok(h5.flagFallback === A46, "A:/health 报被拦后换到 4.6-next");
 ok(d5.flag.count === 1 && d5.flag.rollbacks === 2, `A:/debug 撤回两次、换一次(got ${JSON.stringify(d5.flag)})`);
 ok(text("sse-a6.txt") === "reply-" + M46, "A:之后 Kelivo 还报 5.5 → 留在 4.6");
 ok(text("sse-a7.txt") === "reply-" + M48 && js("health-A7.json").flagLock === null, "A:她改选 4.8 = 新窗口、锁解开");
@@ -193,6 +209,25 @@ ok(!/resume/.test(rd("shim-C.log")), "C:没撤回");
 // ── D ──
 ok(text("sse-d1.txt") === "reply-" + M46, `D:第一句就被拦(无处可退)→ 直接换 4.6;系统回合不出提示(got ${JSON.stringify(text("sse-d1.txt"))})`);
 ok(js("health-D.json").flagLock !== null, "D:换过去也锁上");
+
+// ── F ──
+const mF = js("models-F.json").data.map((x) => x.id);
+ok(mF.includes(A46) && mF.includes(M46), `F:菜单里 4.6 和 4.6-next 分成两项(got ${JSON.stringify(mF)})`);
+const cF = js("calls-F.json"), logF = rd("shim-F.log");
+ok(text("sse-f2.txt") === "reply-" + M46, "F:5.5 窗口里点 4.6-next → 4.6 回(上游收到的是真名 claude-opus-4-6)");
+const f2 = callsFor(cF, "turn-f2")[0];
+ok(f2 && f2.model === M46 && f2.turns.some((t) => /turn-f1/.test(t)), "F:原地换过去,前面那轮还在(窗口没丢)");
+ok(/\[model\] 原地换模型\(新版 CLI,窗口不丢\): claude-opus-5-5 -> claude-opus-4-6-next/.test(logF), "F:日志留了原地换模型");
+const hF2 = js("health-F2.json");
+ok(hF2.model === A46 && hF2.cli === "next" && hF2.flagLock === null, "F:/health 报 4.6-next、新版、没上锁(手动换的不锁)");
+ok(text("sse-f3.txt") === "reply-" + M55, "F:再点回 5.5 → 原地换回");
+const f3 = callsFor(cF, "turn-f3")[0];
+ok(f3 && f3.model === M55 && f3.turns.some((t) => /turn-f1/.test(t)) && f3.turns.some((t) => /turn-f2/.test(t)), "F:换回 5.5 仍是同一个窗口");
+ok(text("sse-f4.txt") === "reply-" + M46, "F:点普通的 4.6 → 旧版回");
+const f4 = callsFor(cF, "turn-f4")[0];
+ok(f4 && !f4.turns.some((t) => /turn-f1/.test(t)), "F:普通的 4.6 = 旧版 = 开了新窗口(和以前一样)");
+ok(js("health-F4.json").cli === "main", "F:/health 报旧版(main)");
+ok((logF.match(/\[claude\] spawned/g) || []).length === 2, `F:只起过两次进程(开头 + 点普通 4.6),got ${(logF.match(/\[claude\] spawned/g) || []).length}`);
 
 // ── E ──
 const logE = rd("shim-E.log");

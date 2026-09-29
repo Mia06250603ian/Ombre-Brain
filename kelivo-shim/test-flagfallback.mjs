@@ -50,17 +50,18 @@ eq(A({ model: "claude-opus-4-6", justRolledBack: true }), "none", "已经是 4.6
 eq(flagAction(), "none", "什么都不给不炸");
 const rn = flagRollbackNote("claude-opus-5-5");
 ok(rn.startsWith("⚠️ 5.5 拦了这句,已经撤回了"), "撤回提示:说清是 5.5 拦的、已经撤回");
-ok(rn.includes("换个说法") && rn.includes("4.6"), "撤回提示:告诉她下一步,以及再被拦会怎样");
+ok(rn.includes("换个说法") && rn.includes("4.6-next"), "撤回提示:告诉她下一步,以及再被拦会换到菜单里哪一项");
 ok(!rn.includes("\n"), "撤回提示一行");
 
 // ---- shortModel / flagNote ----
 eq(shortModel("claude-opus-5-5"), "5.5", "5.5 缩写");
 eq(shortModel("claude-opus-4-6"), "4.6", "4.6 缩写");
 eq(shortModel("claude-opus-4-5-20251101"), "4.5", "带日期的 4.5 缩写");
+eq(shortModel("claude-opus-4-6-next"), "4.6-next", "别名照原样带 -next(和菜单对得上)");
 eq(shortModel("weird"), "weird", "认不出原样返回");
 eq(shortModel(undefined), "", "undefined 不炸");
-const note = flagNote("claude-opus-5-5", "claude-opus-4-6");
-eq(note, "⚠️ 5.5 拦了这句,已经自动换成 4.6 接着聊,窗口没丢。\n\n", "提示原文(所有者 09-29 定:放正文)");
+const note = flagNote("claude-opus-5-5", "claude-opus-4-6-next");
+eq(note, "⚠️ 5.5 拦了这句,已经自动换成 4.6-next 接着聊,窗口没丢。\n\n", "提示原文(所有者 09-29 定:放正文;名字和菜单那项一致)");
 ok(note.endsWith("\n\n"), "提示后空一行,把他的回话隔开");
 
 // ---- lockedModel ----

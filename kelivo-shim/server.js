@@ -10,7 +10,7 @@ import { pickApiError, apiErrorKind, resultOutcome } from "./apierror.mjs";
 import { buildPromptArgs, helpMentionsReplace, BASE_PROMPT_DEFAULT, ANCHOR_TAIL_REPLACE, SOUL_ANCHOR_DEFAULT, pickClientSystem, previewText } from "./sysprompt.mjs";
 import { formatArgs, formatResult, pickToolResults, toolName, charLimit, TOOLVIS_DEFAULTS } from "./toolvis.mjs";
 import { buildAuthEnv, authMode } from "./auth-env.mjs";
-import { parseModelList, nextWindow, pickCli, menuModels } from "./cli-bin.mjs";
+import { parseModelList, nextWindow, pickCli, menuModels, realModel, nextAlias } from "./cli-bin.mjs";
 import { wrapTranslatingSink, makeCliTranslator, translatePrompt, limitConcurrency } from "./think-translate.mjs";
 import { flagAction, flagNote, flagRollbackNote, lockedModel, FLAG_NUDGE } from "./flagfallback.mjs";
 
@@ -50,6 +50,10 @@ let spawnedCli = null;   // 当前进程用的是哪一份:"main" / "next"(还�
 // 默认换到 4.6(所有者 09-29 定)。**急救开关:FLAG_FALLBACK_MODEL="" + restart** = 回到被拦就报错的老样子。
 const FLAG_FALLBACK_MODEL = (process.env.FLAG_FALLBACK_MODEL ?? "claude-opus-4-6").trim();
 const FLAG_SWITCH_TIMEOUT_MS = +(process.env.FLAG_SWITCH_TIMEOUT_MS || 30000) || 30000;
+// 换过去的那一个在菜单里叫 `claude-opus-4-6-next`(= 新版 CLI 上的 4.6,见 cli-bin.mjs 的别名一节),
+// 她要能在菜单里认出它、也能自己点它。新版 CLI 在、功能开着才进菜单。
+const FLAG_TO = FLAG_FALLBACK_MODEL ? nextAlias(FLAG_FALLBACK_MODEL) : "";
+if (FLAG_TO && NEXT_READY && !MODELS.includes(FLAG_TO)) MODELS.push(FLAG_TO);
 let flagLock = null;      // { from, to, at }:这个进程被拦过、已换模型;进程一换(新窗口/重启/改选模型)就解
 let flagFallbacks = 0;    // 开机以来换过几次(只进 /debug,她拿「多久被拦一次」做决定用)
 let pendingCtl = null;    // 正在等回执的那条 control_request:{ id, resolve }
@@ -233,7 +237,7 @@ function spawnClaude(kelivoSystem, model, resume = null) {
     "--output-format", "stream-json",
     "--verbose",
     "--include-partial-messages",
-    "--model", spawnedModel,
+    "--model", realModel(spawnedModel),   // 菜单别名 `…-next` 发给上游时去掉后缀(走哪份 CLI 已由 cliFor 决定)
     "--effort", EFFORT,
     "--thinking-display", "summarized",   // 隐藏flag:没它 -p 下拿不到思考
     ...sp.args,
@@ -405,7 +409,7 @@ function handleEvent(ev) {
     }
     // 5.5 被安全审查拦了:先别报错,原地换模型、让他接着回这一轮(flagfallback.mjs)。换不成才走下面的老路。
     // 先撤回;撤回过又被拦(或撤不了)才换模型(所有者 09-29 选的 A)
-    const act = flagAction({ apiError: turn.apiError, fullText: turn.fullText, fallbackModel: FLAG_FALLBACK_MODEL,
+    const act = flagAction({ apiError: turn.apiError, fullText: turn.fullText, fallbackModel: FLAG_TO,
                              model: spawnedModel, cli: spawnedCli, tried: turn.flagTried,
                              rollbackOn: FLAG_ROLLBACK, canRollback: !!(sessionId && keepUuid), justRolledBack, newWindow: turn.newWindow });
     if (act === "rollback") { flagRollback(turn); return; }
@@ -456,7 +460,7 @@ function flagRollback(t) {
   const old = proc; proc = null; try { old?.kill(); } catch {}   // 先置空:旧进程的 close 回调看到 proc !== p 就不动现场
   proc = spawnClaude(spawnedSystem, spawnedModel, resume);
   justRolledBack = true; flagRollbacks++;
-  if (!t.isKA && !t.isSystem) { t.prefix = (t.fullText ? "\n\n" : "") + flagRollbackNote(spawnedModel); t.sse?.text(t.prefix); }
+  if (!t.isKA && !t.isSystem) { t.prefix = (t.fullText ? "\n\n" : "") + flagRollbackNote(spawnedModel, FLAG_TO); t.sse?.text(t.prefix); }
   if (t.isKA) kaFailedAt = Date.now();   // 保温那枪没打成:进抢救节奏(缓存其实还温着,撤回不伤缓存)
   t.done = true;
   t.sse?.finish(undefined, t.prefix);
@@ -466,11 +470,11 @@ function flagRollback(t) {
 
 // 被拦 → 给活着的进程换模型 → 补一句让他接着回。等回执期间 busy 一直是 true,别的消息排队等着。
 function flagFallback(t, ev) {
-  const from = spawnedModel, to = FLAG_FALLBACK_MODEL, p = proc;
+  const from = spawnedModel, to = FLAG_TO, p = proc;
   t.flagTried = true;
   lastApiError = { at: new Date().toISOString(), kind: "flagged", text: t.apiError.slice(0, 300) };
   log("[flag] 被拦了,原地换模型重发:", from, "->", to);
-  setModel(p, to).then((switched) => {
+  setModel(p, realModel(to)).then((switched) => {
     if (turn !== t || proc !== p) return;   // 等的时候进程没了:close 回调已经替这一轮收过场
     if (!switched) { log("[flag] ⚠️ 换模型没成功,按原来的报错收场"); finishTurn(ev); return; }
     spawnedModel = to; flagFallbacks++;
@@ -501,10 +505,27 @@ function pump() {
   if (busy || !queue.length) return;
   const item = queue.shift();
   busy = true;
-  // 世界书**或模型**变了都要重开进程(模型在出生时用 --model 钉死,活着改不了)。
+  // 2026-09-29:新版 CLI 的进程里换到另一个也走新版的模型(5.5 ↔ 4.6-next)= **原地 set_model,窗口不丢**。
+  // 这就是菜单里 `-next` 那一项的用处(她在 5.5 窗口里点它,不开新窗口)。换不成就退回老办法:杀进程开新窗口。
+  if (proc && item.system === spawnedSystem && item.model !== spawnedModel && spawnedCli === "next" && cliFor(item.model).which === "next") {
+    const p = proc, from = spawnedModel, to = item.model;
+    const wait = Math.max(0, procReadyAt - Date.now());   // 刚起的进程先等 MCP 握手完(踩坑 1)
+    setTimeout(() => setModel(p, realModel(to)).then((switched) => {
+      if (proc === p) {
+        if (switched) { spawnedModel = to; log("[model] 原地换模型(新版 CLI,窗口不丢):", from, "->", to); }
+        else { log("[model] ⚠️ 原地换模型没成,按老办法开新窗口:", from, "->", to); try { p.kill(); } catch {} proc = null; }
+      }
+      runItem(item);
+    }), wait);
+    return;
+  }
+  // 世界书**或模型**变了都要重开进程(模型在出生时用 --model 钉死,活着改不了 —— 旧版 CLI 至今如此)。
   // ⚠️ item.model 恒为字符串:没报模型/报了不在名单的,入口处已回落成 spawnedModel,
   // 所以「没报模型」永远不会触发重开——这是防两个桥把她拽回旧模型的那道锁。
   if (proc && (item.system !== spawnedSystem || item.model !== spawnedModel)) { try { proc.kill(); } catch {} proc = null; }
+  runItem(item);
+}
+function runItem(item) {
   ensureProc(item.system, item.model);
   // toolBlocks/toolNames 是**每轮**的:index 会跨轮重用,跨轮留着会把上一轮的参数吐到这一轮。
   // 思考翻中文:只包「她真看得见思考」的出口(流式 SSE,Kelivo/Telegram 桥/网页都走这条),
@@ -590,7 +611,7 @@ app.get("/health", (_q, r) => r.json({ ok: true, model: spawnedModel, models: MO
                                        cli: spawnedCli, cliNext: NEXT_READY ? "ready" : "missing",
                                        nextModels: NEXT_CLI_MODELS, modelsDropped: MODELS_DROPPED,
                                        // 2026-09-29:被拦后换到哪(null = 功能关),以及这个窗口是不是已经换过、锁着
-                                       flagFallback: FLAG_FALLBACK_MODEL || null, flagRollback: FLAG_ROLLBACK, flagLock }));
+                                       flagFallback: FLAG_TO || null, flagRollback: FLAG_ROLLBACK, flagLock }));
 app.get("/debug", (_q, r) => r.json({
   lastUsage,
   // 2026-08-11 起:最近一次上游报错(null = 从没报过)。「他怎么不说话」先看这里,
@@ -598,7 +619,7 @@ app.get("/debug", (_q, r) => r.json({
   lastApiError,
   // 2026-09-29:被拦后原地换模型。flagFallbacks = 开机以来换过几次;flagLock 非 null = 当前窗口已换过、锁着
   // rollback = 撤回开没开;rollbacks = 撤回过几次;justRolledBack = 刚撤回、还没成功过一轮(这时再被拦就换模型)
-  flag: { to: FLAG_FALLBACK_MODEL || null, lock: flagLock, count: flagFallbacks,
+  flag: { to: FLAG_TO || null, lock: flagLock, count: flagFallbacks,
           rollback: FLAG_ROLLBACK, rollbacks: flagRollbacks, justRolledBack, canRollback: !!(sessionId && keepUuid) },
   // 2026-08-02:她本人上次说话的时间 / 保温是否歇火。查岗那类系统回合(x-system-turn:1)
   // **不会**动这两个值——排查「他的『她多久没来』准不准」时看这里。

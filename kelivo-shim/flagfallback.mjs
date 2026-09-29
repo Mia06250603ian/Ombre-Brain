@@ -70,14 +70,15 @@ export function flagAction({ apiError = "", fullText = "", fallbackModel = "", m
 }
 
 // 撤回之后给她的那一行。
-export function flagRollbackNote(model) {
-  return `⚠️ ${shortModel(model)} 拦了这句,已经撤回了(他没看到)。换个说法再说一次吧;要是还被拦,会自动换成 4.6 接着聊。`;
+export function flagRollbackNote(model, to = "claude-opus-4-6-next") {
+  return `⚠️ ${shortModel(model)} 拦了这句,已经撤回了(他没看到)。换个说法再说一次吧;要是还被拦,会自动换成 ${shortModel(to)} 接着聊。`;
 }
 
-// `claude-opus-5-5` → `5.5`,`claude-opus-4-5-20251101` → `4.5`;认不出就原样。
+// `claude-opus-5-5` → `5.5`,`claude-opus-4-5-20251101` → `4.5`,`claude-opus-4-6-next` → `4.6-next`;认不出就原样。
+// (-next 是菜单里「新版 CLI 上的 4.6」的别名,见 cli-bin.mjs;提示里照原样写出来,她好和菜单对上)
 export function shortModel(m) {
-  const x = String(m || "").match(/-(\d+)-(\d+)(?:-\d{8})?$/);
-  return x ? `${x[1]}.${x[2]}` : String(m || "");
+  const x = String(m || "").match(/-(\d+)-(\d+)(?:-\d{8})?(-next)?$/);
+  return x ? `${x[1]}.${x[2]}${x[3] || ""}` : String(m || "");
 }
 
 // 正文开头给她的那一行(所有者 09-29 定:放正文)。末尾空一行,把他的回话隔开。
