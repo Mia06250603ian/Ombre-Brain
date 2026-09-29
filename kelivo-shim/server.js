@@ -12,7 +12,7 @@ import { formatArgs, formatResult, pickToolResults, toolName, charLimit, TOOLVIS
 import { buildAuthEnv, authMode } from "./auth-env.mjs";
 import { parseModelList, nextWindow, pickCli, menuModels } from "./cli-bin.mjs";
 import { wrapTranslatingSink, makeCliTranslator, translatePrompt, limitConcurrency } from "./think-translate.mjs";
-import { flagFallbackDecision, flagNote, lockedModel, FLAG_NUDGE } from "./flagfallback.mjs";
+import { flagAction, flagNote, flagRollbackNote, lockedModel, FLAG_NUDGE } from "./flagfallback.mjs";
 
 const PORT = process.env.PORT || 8080;
 const SHIM_KEY = process.env.SHIM_KEY || "";            // Kelivo 要填的 API Key,自己编
@@ -53,6 +53,12 @@ const FLAG_SWITCH_TIMEOUT_MS = +(process.env.FLAG_SWITCH_TIMEOUT_MS || 30000) ||
 let flagLock = null;      // { from, to, at }:这个进程被拦过、已换模型;进程一换(新窗口/重启/改选模型)就解
 let flagFallbacks = 0;    // 开机以来换过几次(只进 /debug,她拿「多久被拦一次」做决定用)
 let pendingCtl = null;    // 正在等回执的那条 control_request:{ id, resolve }
+// 第一道:撤回(同日加;所有者选「先撤回,再被拦才换 4.6」)。急救开关 FLAG_ROLLBACK=0 + restart = 不撤回、直接换。
+const FLAG_ROLLBACK = process.env.FLAG_ROLLBACK !== "0";
+let sessionId = null;       // 当前窗口的会话 id(CLI 每条事件都带)
+let keepUuid = null;        // 上一轮**成功**回合最后一条 assistant 的 uuid = 撤回点
+let justRolledBack = false; // 刚撤回过、之后还没成功过一轮:这时再被拦就别再撤回了,换模型
+let flagRollbacks = 0;      // 开机以来撤回过几次(只进 /debug)
 const MCP_CONFIG = process.env.MCP_CONFIG || ".mcp.json";
 const FORWARD_THINKING = process.env.FORWARD_THINKING !== "0";
 // 客户端(Kelivo)带来的 system:默认 ignore(见 sysprompt.mjs 的 pickClientSystem);设 use 回到改动之前。
@@ -193,15 +199,20 @@ let ctxArchivedAt = 0, ctxCompactions = 0, ctxLastWould = null;
 // ctxFinalFired = 本压缩周期是否已催过「存原话」(终线一周期只发一次,压缩检测后随 softFired 一起复位)
 let ctxFinalFired = false;
 
-function spawnClaude(kelivoSystem, model) {
+// resume(2026-09-29,只给「撤回」用):{ sid, at } —— 用 --resume 接着同一个会话,at 有值就截到那一条为止。
+// **续上的是同一个窗口**,所以守卫记账、锁、撤回点都不清零;不带 resume = 新窗口,照旧全部清零。
+function spawnClaude(kelivoSystem, model, resume = null) {
   spawnedSystem = kelivoSystem || "";
   spawnedModel = model || MODEL;
   // 双引擎:这个模型走哪一份 CLI(见 cli-bin.mjs)。main 那份的 bin/env 与改动前逐字相同。
   const cli = cliFor(spawnedModel);
   spawnedCli = cli.which;
-  ctxTokens = 0; ctxSoftFired = false; ctxTrusted = true;   // 新进程=空上下文,守卫状态清零(覆盖世界书切换/窗口重启/崩溃复活各路径)
-  ctxArchivedAt = 0; ctxCompactions = 0; ctxLastWould = null; ctxFinalFired = false;
-  flagLock = null;                                          // 新进程 = 新窗口,被拦那个窗口的锁跟着作废
+  if (!resume) {
+    ctxTokens = 0; ctxSoftFired = false; ctxTrusted = true;   // 新进程=空上下文,守卫状态清零(覆盖世界书切换/窗口重启/崩溃复活各路径)
+    ctxArchivedAt = 0; ctxCompactions = 0; ctxLastWould = null; ctxFinalFired = false;
+    flagLock = null;                                          // 新进程 = 新窗口,被拦那个窗口的锁跟着作废
+    sessionId = null; keepUuid = null; justRolledBack = false;
+  }
   if (pendingCtl) { const c = pendingCtl; pendingCtl = null; c.resolve(false); }
   // 系统提示词参数由 sysprompt.mjs 决定(纯逻辑,单测 test-sysprompt.mjs 覆盖两种模式与两道降级阀)。
   // 锚点永远占系统提示词的绝对末位(有世界书时排世界书之后),两种模式一致。
@@ -232,6 +243,8 @@ function spawnClaude(kelivoSystem, model) {
     "--allowedTools", ALLOWED,
     "--tools", BUILTIN_TOOLS,
   ];
+  // 撤回:接着同一个会话,截到上一轮成功回合的最后一条(被拦那一轮就没了)。09-29 真接口验过,缓存几乎全中。
+  if (resume?.sid) { args.push("--resume", resume.sid); if (resume.at) args.push("--resume-session-at", resume.at); }
   // PreCompact 钩子只能靠 --settings 进来(print 模式忽略项目级 settings)。
   // 空值 = 不带这个参数 = 压缩回到默认摘要,是本功能的急救开关。
   // ⚠️ **存在性检查不能删**:2026-08-09 实测,`--settings` 指向不存在的文件时 CLI
@@ -250,8 +263,9 @@ function spawnClaude(kelivoSystem, model) {
   const env = { ...buildAuthEnv(process.env), ...cli.extraEnv };
   // 被拦后换模型由 shim 来做(下面 flagFallback),关掉 CLI 自带的那套(`switchModelsOnFlag`):
   // 两边都换的话 shim 以为还在 5.5、CLI 已经悄悄换了,/health 和锁全乱。09-23 线上它本来就没触发过。
-  if (FLAG_FALLBACK_MODEL && cli.which === "next") env.CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK = "1";
+  if ((FLAG_FALLBACK_MODEL || FLAG_ROLLBACK) && cli.which === "next") env.CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK = "1";
   const p = spawn(cli.bin, args, { cwd: process.cwd(), env, stdio: ["pipe", "pipe", "pipe"] });
+  p.resume = resume; p.okTurns = 0;   // 撤回重起的进程:成功过一轮之前就退了 = 撤回本身没成(见 close)
   // ⚠️ 2026-09-23:按 UTF-8 流式解码。原来 onStdout 里是 `chunk.toString()`,管道分块正好切在
   // 汉字中间时会碎成 `���`(telegram-bridge 同款 bug 当天在 TG 上撞到;这里概率低但同理)。
   p.stdout.setEncoding("utf8");
@@ -263,13 +277,22 @@ function spawnClaude(kelivoSystem, model) {
     proc = null; busy = false;
     if (pendingCtl) { const c = pendingCtl; pendingCtl = null; c.resolve(false); }
     if (turn && !turn.done) { if (turn.isKA) kaFailedAt = Date.now(); try { turn.sse?.finish(); } catch {} turn = null; }
+    // 撤回重起的进程一轮都没成就退了 = 截断被拒 / 会话 id 不认。退一步:只 --resume、不截断
+    // (被拦那句回来了,下一句会再被拦 → 那时 justRolledBack 还是 true,走换 4.6)—— 总比开新窗口丢掉整段强。
+    if (p.resume?.at && !p.okTurns) {
+      log("[flag] ⚠️ 撤回重起没成,改成不截断地接回原会话");
+      setTimeout(() => { if (!proc) proc = spawnClaude(spawnedSystem, spawnedModel, { sid: p.resume.sid }); }, 1500);
+      return;
+    }
+    if (p.resume && !p.okTurns) log("[flag] ⚠️ 连接回原会话也没成,只能开新窗口");
     setTimeout(() => ensureProc(spawnedSystem, spawnedModel), 1500); // 复活时带上原世界书**和原模型**,否则下一条消息必触发杀进程重开
   });
   procReadyAt = Date.now() + MCP_WARMUP_MS;
   log("[claude] spawned", spawnedModel, "sysLen", spawnedSystem.length,
       "sysPrompt", `${SYS_PROMPT_MODE}->${sp.mode}/${sp.source || "-"}(${sp.reason})`,
       "auth", authMode(process.env),    // direct = 直连 / proxy = 走 CLIProxyAPI,只有这两个字,不带值
-      "cli", cli.which);                // main = 钉死的 2.1.215 / next = 双引擎的新版
+      "cli", cli.which,                 // main = 钉死的 2.1.215 / next = 双引擎的新版
+      ...(resume ? ["resume", resume.at ? "truncate" : "full"] : []));
   return p;
 }
 function ensureProc(sys, model) { if (!proc) proc = spawnClaude(sys, model); }
@@ -296,7 +319,10 @@ function handleEvent(ev) {
     }
     return;
   }
+  if (ev.session_id) sessionId = ev.session_id;   // 撤回要用(--resume)
   if (!turn) return;
+  // 撤回点:这一轮最后一条正常的 assistant 消息。成功收尾时才转正成 keepUuid(finishTurn)。
+  if (ev.type === "assistant" && ev.uuid && !ev.isApiErrorMessage) turn.lastUuid = ev.uuid;
   // 上游报错(2026-08-11 起):主要来自 `system/api_retry`(每次重试一条,带 401/503 和第几次),
   // 兜底是 CLI 最终那条 `assistant` 报错消息。**常驻进程模式下 result 仍报 success**,
   // 所以不在这里捡下来的话,这一轮就会被当成「他没话说」——她收到的就是「空回复」。
@@ -378,9 +404,12 @@ function handleEvent(ev) {
       }
     }
     // 5.5 被安全审查拦了:先别报错,原地换模型、让他接着回这一轮(flagfallback.mjs)。换不成才走下面的老路。
-    const fb = flagFallbackDecision({ apiError: turn.apiError, fullText: turn.fullText, fallbackModel: FLAG_FALLBACK_MODEL,
-                                      model: spawnedModel, cli: spawnedCli, tried: turn.flagTried });
-    if (fb.fallback) { flagFallback(turn, ev); return; }
+    // 先撤回;撤回过又被拦(或撤不了)才换模型(所有者 09-29 选的 A)
+    const act = flagAction({ apiError: turn.apiError, fullText: turn.fullText, fallbackModel: FLAG_FALLBACK_MODEL,
+                             model: spawnedModel, cli: spawnedCli, tried: turn.flagTried,
+                             rollbackOn: FLAG_ROLLBACK, canRollback: !!(sessionId && keepUuid), justRolledBack, newWindow: turn.newWindow });
+    if (act === "rollback") { flagRollback(turn); return; }
+    if (act === "fallback") { flagFallback(turn, ev); return; }
     finishTurn(ev);
   }
 }
@@ -405,6 +434,8 @@ function finishTurn(ev) {
     if (turn.isKA) kaFailedAt = Date.now();      // 保温 ping 失败(额度耗尽/上游断)→ 抢救节奏
   } else {
     lastTurnOkAt = Date.now(); kaFailedAt = 0;   // 任何成功回合都续上缓存链
+    if (turn.lastUuid) keepUuid = turn.lastUuid;  // 撤回点前移到这一轮末尾
+    justRolledBack = false; if (proc) proc.okTurns++;
   }
   const usage = ev.usage ? { output_tokens: ev.usage.output_tokens } : undefined;
   const wasNewWindow = turn.newWindow;
@@ -413,6 +444,23 @@ function finishTurn(ev) {
   turn = null; busy = false;
   if (wasNewWindow) windowCleared = true;        // 换窗口指令:保温歇火,等她在新窗口出现(晚安/归档不再走到这,保温一直在岗)
   if (wasNewWindow && proc) { log("[window] restart"); try { proc.kill(); } catch {} proc = null; }
+  pump();
+}
+
+// 被拦 → 撤回:杀掉进程,用 --resume 截到上一轮成功回合末尾重起(被拦那一轮没了),告诉她换个说法。
+function flagRollback(t) {
+  t.flagTried = true;
+  lastApiError = { at: new Date().toISOString(), kind: "flagged", text: t.apiError.slice(0, 300) };
+  const resume = { sid: sessionId, at: keepUuid };
+  log("[flag] 被拦了,撤回这一轮:", spawnedModel, "退回到", keepUuid);
+  const old = proc; proc = null; try { old?.kill(); } catch {}   // 先置空:旧进程的 close 回调看到 proc !== p 就不动现场
+  proc = spawnClaude(spawnedSystem, spawnedModel, resume);
+  justRolledBack = true; flagRollbacks++;
+  if (!t.isKA && !t.isSystem) { t.prefix = (t.fullText ? "\n\n" : "") + flagRollbackNote(spawnedModel); t.sse?.text(t.prefix); }
+  if (t.isKA) kaFailedAt = Date.now();   // 保温那枪没打成:进抢救节奏(缓存其实还温着,撤回不伤缓存)
+  t.done = true;
+  t.sse?.finish(undefined, t.prefix);
+  turn = null; busy = false;
   pump();
 }
 
@@ -542,14 +590,16 @@ app.get("/health", (_q, r) => r.json({ ok: true, model: spawnedModel, models: MO
                                        cli: spawnedCli, cliNext: NEXT_READY ? "ready" : "missing",
                                        nextModels: NEXT_CLI_MODELS, modelsDropped: MODELS_DROPPED,
                                        // 2026-09-29:被拦后换到哪(null = 功能关),以及这个窗口是不是已经换过、锁着
-                                       flagFallback: FLAG_FALLBACK_MODEL || null, flagLock }));
+                                       flagFallback: FLAG_FALLBACK_MODEL || null, flagRollback: FLAG_ROLLBACK, flagLock }));
 app.get("/debug", (_q, r) => r.json({
   lastUsage,
   // 2026-08-11 起:最近一次上游报错(null = 从没报过)。「他怎么不说话」先看这里,
   // 不用再进容器翻 CLI 的会话原件。它不随新窗口清零,是故意的——跨重启也要留着痕。
   lastApiError,
   // 2026-09-29:被拦后原地换模型。flagFallbacks = 开机以来换过几次;flagLock 非 null = 当前窗口已换过、锁着
-  flag: { to: FLAG_FALLBACK_MODEL || null, lock: flagLock, count: flagFallbacks },
+  // rollback = 撤回开没开;rollbacks = 撤回过几次;justRolledBack = 刚撤回、还没成功过一轮(这时再被拦就换模型)
+  flag: { to: FLAG_FALLBACK_MODEL || null, lock: flagLock, count: flagFallbacks,
+          rollback: FLAG_ROLLBACK, rollbacks: flagRollbacks, justRolledBack, canRollback: !!(sessionId && keepUuid) },
   // 2026-08-02:她本人上次说话的时间 / 保温是否歇火。查岗那类系统回合(x-system-turn:1)
   // **不会**动这两个值——排查「他的『她多久没来』准不准」时看这里。
   presence: { lastUserAt: new Date(lastUserAt).toISOString(), idleMin: Math.round((Date.now() - lastUserAt) / 60000), windowCleared,

@@ -1,6 +1,6 @@
 // test-flagfallback.mjs — 「5.5 被拦 → 原地换 4.6」的纯逻辑单测:node test-flagfallback.mjs
 // 全绿输出 "ALL PASS";不碰网络、不碰 claude 进程。整链路见 e2e-flag-run.sh。
-import { isFlagged, flagFallbackDecision, shortModel, flagNote, lockedModel } from "./flagfallback.mjs";
+import { isFlagged, flagFallbackDecision, flagAction, flagRollbackNote, shortModel, flagNote, lockedModel } from "./flagfallback.mjs";
 
 let n = 0, bad = 0;
 function ok(cond, name) { n++; if (!cond) { bad++; console.error("FAIL:", name); } }
@@ -32,6 +32,26 @@ eq(D({ model: "claude-opus-4-6" }).reason, "same-model", "已经是 4.6 了还�
 eq(D({ cli: "main" }).reason, "not-next-cli", "老版 CLI 上不做(set_model 只在新版上验过)");
 eq(D({ cli: null }).fallback, false, "还没起进程时不做");
 eq(flagFallbackDecision().fallback, false, "什么都不给不炸,也不换");
+
+// ---- flagAction:先撤回,再被拦才换(所有者 09-29 选的 A)----
+const A = (o) => flagAction({ ...base, rollbackOn: true, canRollback: true, justRolledBack: false, newWindow: false, ...o });
+eq(A({}), "rollback", "第一次被拦 → 撤回");
+eq(A({ justRolledBack: true }), "fallback", "撤回之后换了说法又被拦 → 换 4.6");
+eq(A({ canRollback: false }), "fallback", "没有可退回的点(窗口第一句就被拦)→ 直接换 4.6");
+eq(A({ newWindow: true }), "fallback", "「换窗口」指令回合被拦 → 不撤回");
+eq(A({ rollbackOn: false }), "fallback", "急救开关 FLAG_ROLLBACK=0 → 直接换 4.6(= 上午那版)");
+eq(A({ rollbackOn: false, fallbackModel: "" }), "none", "两个开关都关 → 原来的报错");
+eq(A({ justRolledBack: true, fallbackModel: "" }), "none", "撤回过又被拦、但换模型关着 → 原来的报错(不再无限撤回)");
+eq(A({ fallbackModel: "" }), "rollback", "只关换模型,撤回照做");
+eq(A({ apiError: "API Error: 503 auth_unavailable" }), "none", "链路断不是被拦:什么都不做");
+eq(A({ tried: true }), "none", "这一轮已经处理过一次:不再处理");
+eq(A({ cli: "main" }), "none", "老版 CLI 上两样都不做");
+eq(A({ model: "claude-opus-4-6", justRolledBack: true }), "none", "已经是 4.6 还被拦、又撤回过 → 原来的报错");
+eq(flagAction(), "none", "什么都不给不炸");
+const rn = flagRollbackNote("claude-opus-5-5");
+ok(rn.startsWith("⚠️ 5.5 拦了这句,已经撤回了"), "撤回提示:说清是 5.5 拦的、已经撤回");
+ok(rn.includes("换个说法") && rn.includes("4.6"), "撤回提示:告诉她下一步,以及再被拦会怎样");
+ok(!rn.includes("\n"), "撤回提示一行");
 
 // ---- shortModel / flagNote ----
 eq(shortModel("claude-opus-5-5"), "5.5", "5.5 缩写");
