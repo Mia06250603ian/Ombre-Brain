@@ -310,6 +310,11 @@ BACKUP_CASES = [
     ("读不到运行记录 → 不许叫", "炸", 0, "读不到备份的运行记录"),
     ("被取消的不算数:取消 + 失败 + 失败 → 仍按连续 2 次失败叫",
      [("cancelled", 1), ("failure", 5), ("failure", 29)], 1, "连续 2 次失败"),
+    # 2026-09-29 误报的原样:接口把 12 天前那条排在第一,新的排在后面
+    ("接口顺序乱了:301 小时前的排第一、昨天的成功排后面 → 不许叫",
+     [("success", 301), ("success", 20), ("success", 44)], 0, "每日备份在推"),
+    ("接口顺序乱了:旧的成功排第一、最新两次是失败 → 仍按连续 2 次失败叫",
+     [("success", 77), ("failure", 5), ("failure", 29)], 1, "连续 2 次失败"),
 ]
 for name, runs, want_code, want_text in BACKUP_CASES:
     code, out = run({"lastApiError": None}, prev_run_hours=3, backup_runs=runs)
