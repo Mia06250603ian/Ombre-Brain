@@ -24,6 +24,15 @@
 //     `<total_tokens>N tokens left</total_tokens>`,关掉(实测有效)。
 //     它同时塞的环境信息和「You are powered by …」**没找到开关**,只能认 —— 好在只影响 5.5。
 
+// ---- 菜单里的「-next」别名(2026-09-29,所有者要的)----
+// 同一个 4.6 在新旧两份 CLI 上都能跑,菜单里只有一个名字她分不清、会点错。于是给新版那份起个别名:
+// `claude-opus-4-6-next` = **在新版 CLI 上跑的 4.6**。发给上游的模型名去掉 `-next`(realModel),
+// 走哪份 CLI 由别名决定(pickCli)。用处:5.5 窗口里点它 = 原地换 4.6 不丢窗口(server.js 的 pump)。
+export const NEXT_ALIAS_SUFFIX = "-next";
+export const isNextAlias = (m) => typeof m === "string" && m.length > NEXT_ALIAS_SUFFIX.length && m.endsWith(NEXT_ALIAS_SUFFIX);
+export const realModel = (m) => isNextAlias(m) ? m.slice(0, -NEXT_ALIAS_SUFFIX.length) : m;
+export const nextAlias = (m) => m ? (isNextAlias(m) ? m : m + NEXT_ALIAS_SUFFIX) : "";
+
 export function parseModelList(s) {
   return [...new Set(String(s ?? "").split(/[,;\s]+/)
     .map((x) => x.trim().replace(/^["']+|["']+$/g, "")).filter(Boolean))];
@@ -52,7 +61,7 @@ export function nextEnv(window) {
 // 新版不在(nextBin 空)时一律 main —— 但那种情况下需要新版的模型根本进不了菜单(见 menuModels),
 // 唯一还能走到这里的是 BRAIN_MODEL 本身被设成了新模型:那是配置错,/health 的 cli 字段会露出来。
 export function pickCli(model, { bin, nextBin = "", nextModels = [], window = 200000 } = {}) {
-  if (nextBin && nextModels.includes(model)) return { bin: nextBin, which: "next", extraEnv: nextEnv(window) };
+  if (nextBin && (nextModels.includes(model) || isNextAlias(model))) return { bin: nextBin, which: "next", extraEnv: nextEnv(window) };
   return { bin, which: "main", extraEnv: {} };
 }
 
@@ -60,6 +69,6 @@ export function pickCli(model, { bin, nextBin = "", nextModels = [], window = 20
 // 当前默认模型(BRAIN_MODEL)永远保留,哪怕它需要新版 —— 拿掉它 shim 就没有模型可用了。
 export function menuModels(models, { nextModels = [], nextReady = false, keep = "" } = {}) {
   if (nextReady) return { menu: [...models], dropped: [] };
-  const dropped = models.filter((m) => m !== keep && nextModels.includes(m));
+  const dropped = models.filter((m) => m !== keep && (nextModels.includes(m) || isNextAlias(m)));
   return { menu: models.filter((m) => !dropped.includes(m)), dropped };
 }

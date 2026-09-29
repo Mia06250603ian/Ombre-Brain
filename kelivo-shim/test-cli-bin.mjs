@@ -1,6 +1,7 @@
 // test-cli-bin.mjs — 双引擎选路的单测,部署前跑一遍:node test-cli-bin.mjs
 // 全绿输出 "ALL PASS";不碰网络、不碰 claude 进程。
 import { parseModelList, nextWindow, nextEnv, pickCli, menuModels } from "./cli-bin.mjs";
+import { isNextAlias, realModel, nextAlias } from "./cli-bin.mjs";
 
 let n = 0, bad = 0;
 function ok(cond, name) { n++; if (!cond) { bad++; console.error("FAIL:", name); } }
@@ -51,6 +52,23 @@ eq(menuModels([M46], { nextModels: [M55], nextReady: false, keep: M46 }),
    { menu: [M46], dropped: [] }, "没配 5.5 就什么都不报(= 看门狗睡着)");
 eq(menuModels([M55, M46], { nextModels: [M55], nextReady: false, keep: M55 }).menu, [M55, M46],
    "默认模型本身永远保留(拿掉它 shim 就没模型可用了)");
+
+// ---- -next 别名(2026-09-29):菜单里分清「新版上的 4.6」----
+const A46 = "claude-opus-4-6-next";
+eq(isNextAlias(A46), true, "认得 -next");
+eq(isNextAlias(M46), false, "普通名字不是别名");
+eq(isNextAlias("-next"), false, "光一个后缀不算");
+eq(isNextAlias(undefined), false, "undefined 不炸");
+eq(realModel(A46), M46, "发给上游的去掉 -next");
+eq(realModel(M55), M55, "普通名字原样");
+eq(nextAlias(M46), A46, "起别名");
+eq(nextAlias(A46), A46, "已经是别名就不再叠");
+eq(nextAlias(""), "", "空就是空(功能关)");
+eq(pickCli(A46, base).which, "next", "4.6-next → 新版");
+eq(pickCli(M46, base).which, "main", "4.6 → 仍是旧版(逐字不变)");
+eq(pickCli(A46, { ...base, nextBin: "" }).which, "main", "新版不在:别名也只能回旧版(但那时它根本进不了菜单)");
+eq(menuModels([M46, M55, A46], { nextModels: [M55], nextReady: false, keep: M46 }),
+   { menu: [M46], dropped: [M55, A46] }, "新版不在:别名和 5.5 一起拿掉");
 
 if (bad) { console.error(`\n${bad}/${n} FAIL`); process.exit(1); }
 console.log(`ALL PASS (${n})`);

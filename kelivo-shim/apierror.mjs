@@ -71,6 +71,13 @@ export function apiErrorKind(raw) {
 // 并且**不撒谎**——她的话其实已经进了他的窗口(在 CLI 的会话历史里),只是他没能回。
 // 末尾带上短标识,是为了下一个排查的人一眼知道去查什么。
 export function apiErrorNote(raw) {
+  // 2026-09-29:安全审查拦截**不是链路断**,原来那句「链路修好就能接着聊」对它是误导 ——
+  // 这个窗口在那个模型上等多久都回不了(被拦那句跟着每句重发)。只有自动换模型没开或没成功才会走到这里。
+  const flagged = String(raw || "").match(/(?:^|\s)((?:Opus|Sonnet|Haiku|Fable)\s[\d.]+|This model)'s safeguards flagged this message/i);
+  if (flagged) {
+    const who = /^this model$/i.test(flagged[1]) ? "这个模型" : `${flagged[1]} `;
+    return `⚠️[shim] ${who}的安全审查拦了这句(不是断线,也不是他不理你)——这个窗口在它上面回不了了,去 Kelivo 切到 4.x 说一句就能接着聊(会开新窗口)。`;
+  }
   const kind = apiErrorKind(raw);
   return `⚠️[shim] 上游断了,他这句没回上来(${kind || "上游报错"})——不是他不理你;你的话他收到了,链路修好就能接着聊。`;
 }

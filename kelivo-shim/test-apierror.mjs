@@ -62,6 +62,16 @@ ok(note.includes("不是他不理你"), "文案要说清不是他的问题");
 ok(!note.includes("\n"), "文案是一行(Telegram 里不撑开)");
 ok(note.length < 120, `文案不过长 (${note.length})`);
 ok(apiErrorNote("完全认不出的报错").includes("上游报错"), "认不出类型时有兜底措辞");
+// 2026-09-29:5.5 安全拦截的真实原文(线上 /debug 的 lastApiError,09-29 06:34 UTC)
+const REAL_FLAG = "API Error: Opus 5.5's safeguards flagged this message (https://www.anthropic.com/legal/aup). This sometimes happens with safe, normal conversations. Claude Code can't respond to this message with Opus 5.5.\n\nTry rephrasing the request in a new session or change your model.";
+const fn = apiErrorNote(REAL_FLAG);
+ok(fn.includes("Opus 5.5 的安全审查"), "拦截:说清是哪个模型的安全审查拦的");
+ok(!fn.includes("链路修好"), "拦截:不再说「链路修好就能接着聊」(那是误导,等多久都回不了)");
+ok(fn.includes("切到 4.x"), "拦截:告诉她怎么恢复");
+ok(fn.includes("不是他不理你"), "拦截:同样说清不是他的问题");
+ok(!fn.includes("\n") && fn.length < 120, `拦截:文案一行且不过长 (${fn.length})`);
+ok(apiErrorNote("API Error: This model's safeguards flagged this message.").includes("这个模型的安全审查"), "拦截:另一种措辞也认");
+ok(resultOutcome({ subtype: "success", fullText: "", apiError: REAL_FLAG }).note === fn, "拦截:决策表用的就是这句");
 
 // ---- resultOutcome:一轮结束时的决策表 ----
 const R = (o) => resultOutcome(o);
