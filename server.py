@@ -539,6 +539,17 @@ def _format_bucket_summary_line(b: dict, prefix: str = "") -> str:
     return f"{prefix}{line}" if prefix else line
 
 
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, "") or default)
+    except ValueError:
+        return default
+
+
+# breath 向量通道的放行线(见 _breath_impl 里那段注释)。改值 + restart 即生效;设 0.5 = 回到 2026-09-30 之前的行为。
+VECTOR_MIN_SIM = _env_float("OMBRE_VECTOR_MIN_SIM", 0.70)
+
+
 def _is_expired(meta: dict, today: str = "") -> bool:
     """到期记忆(2026-08-19):expires_at 是 YYYY-MM-DD,**过了那天**才算过期(当天仍有效)。
     与 trigger_date 是一对镜像:那个「到那天浮现」,这个「到那天退休」。
@@ -931,11 +942,15 @@ async def _breath_impl(
 
     # --- Vector similarity channel: find semantically related buckets ---
     # --- 向量相似度通道：找到语义相关的桶 ---
+    # 放行线 OMBRE_VECTOR_MIN_SIM(2026-09-30 由写死的 0.5 改成可调,默认 0.70)。
+    # 真实库实测(410 条、gemini-embedding-001,20 个查询):0.5 形同虚设 —— 任何查询都有 430~447 个桶过线,
+    # 库里真没有的事(「她养的狗」「搬家」)也照样拿满 5 条「语义关联」,几乎永远到不了「未找到相关记忆」。
+    # 真没有的事最高分 0.56~0.69;真有的事(含换说法)大多 0.70~0.81。量法见 INTERNALS 3.3.1。
     matched_ids = {b["id"] for b in matches}
     try:
         vector_results = await embedding_engine.search_similar(query, top_k=fetch_limit)
         for bucket_id, sim_score in vector_results:
-            if bucket_id not in matched_ids and sim_score > 0.5:
+            if bucket_id not in matched_ids and sim_score > VECTOR_MIN_SIM:
                 bucket = await bucket_mgr.get(bucket_id)
                 if bucket and not (bucket["metadata"].get("pinned") or bucket["metadata"].get("protected")):
                     bucket["score"] = round(sim_score * 100, 2)
