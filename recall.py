@@ -52,6 +52,26 @@ STOP_WORDS = {
 }
 
 
+# 繁 → 简(2026-09-30):语音转写(ears)常把普通话输出成繁体(「測試」「說」「海邊」),
+# 而记忆库全是简体,子串匹配一个字都对不上 —— 她用语音说「海边」永远翻不到。跟她手机设置无关。
+# 用 opencc-python-reimplemented(Apache-2.0,纯 Python;没选 zhconv 是因为它是 GPL,本仓库 MIT)。
+# 包缺了/坏了就原样返回:宁可语音翻不到,也不能让 /api/recall 整个报错。
+try:
+    from opencc import OpenCC as _OpenCC
+    _T2S = _OpenCC("t2s")
+except Exception:  # pragma: no cover - 依赖缺失时的退路
+    _T2S = None
+
+
+def to_simplified(text: str) -> str:
+    if not text or _T2S is None:
+        return text or ""
+    try:
+        return _T2S.convert(text)
+    except Exception:
+        return text
+
+
 def clean_query(text: str) -> str:
     """去掉桥自动写的那部分,只留她真说的话(2026-09-30)。
     - 「(她发来一个贴纸)」「(她发来一张图片…)」「(她给你的…点了 ❤)」这类括号句全是桥写的,整段去掉;
@@ -62,7 +82,7 @@ def clean_query(text: str) -> str:
     t = re.sub(L + "她[^()\uff08\uff09]*" + R, " ", t)
     t = re.sub(r"\[语音\]\s*", " ", t)
     t = re.sub(L + "语气(?:" + C + "|分析)[^()\uff08\uff09]*" + R, " ", t)
-    return re.sub(r"\s+", " ", t).strip()
+    return to_simplified(re.sub(r"\s+", " ", t).strip())
 
 
 class WordDF:

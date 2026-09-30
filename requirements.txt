@@ -26,6 +26,10 @@ python-frontmatter>=1.1.0,<2.0.0
 # 中文分词
 jieba>=0.42.1,<1.0.0
 
+# 繁 → 简（2026-09-30，自动浮现 /api/recall 用：语音转写常输出繁体，记忆库是简体）
+# Apache-2.0、纯 Python、零依赖。没选 zhconv：它是 GPL，本仓库 MIT。包缺了 recall.py 会原样退回，不影响别的。
+opencc-python-reimplemented>=0.1.7,<0.2.0
+
 # 异步 HTTP 客户端（应用层保活 ping）
 httpx>=0.27.0,<1.0.0
 

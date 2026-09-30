@@ -237,3 +237,19 @@ def test_real_thing_still_triggers_with_stop_words_around():
     buckets += [_bucket(f"f{i}", f"填充{i}", f"第{i}件不相干的事。", []) for i in range(60)]
     out = recall.pick("委屈死了 鼻炎又犯了", [buckets[0]], buckets, datetime.now())
     assert out["pick"] and out["pick"]["rare"] == ["鼻炎"]
+
+
+# ---------------- 繁体语音(2026-09-30 她用语音测试时撞到的)----------------
+
+def test_traditional_voice_is_simplified():
+    # ears 转写原文就是繁体:「測試一下功能我現在說我閉眼又犯了」(鼻炎被听成了閉眼,那个没法修)
+    assert recall.clean_query("[语音] 測試一下功能我現在說（语气：平静）") == "测试一下功能我现在说"
+    assert recall.clean_query("想去海邊") == "想去海边"
+
+
+def test_traditional_voice_triggers_simplified_memory():
+    buckets = [_bucket("sea", "海边写下的约定", "她说以后每年都去海边。", ["海边"])]
+    buckets += [_bucket(f"f{i}", f"填充{i}", f"第{i}件不相干的事。", []) for i in range(60)]
+    q = recall.clean_query("[语音] 好想去海邊啊（语气：开心）")
+    out = recall.pick(q, [buckets[0]], buckets, datetime.now())
+    assert out["pick"] and out["pick"]["id"] == "sea"
