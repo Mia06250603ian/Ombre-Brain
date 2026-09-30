@@ -33,7 +33,9 @@
   deployment `6abd5a9b…`(PLANTYPE nodejs,约 18:53 上传 → **18:57:59 RUNNING**,约 5 分钟)。
   - **部署后验**:`/health` ok、`auth: direct`;`/debug` 守卫清零、`trusted:true`、阈值 155000/161500/164000、`lastApiError` null、`recall.mode = on`、`configured: true`;`/period` 的 `runtime` 非空(**第四十二次挂卷后「跨部署存活」这条仍待验的,本次验过了**)。
   - **回滚**:只关功能不用部署、**不丢窗口**:`POST /recall?key=<SHIM_KEY>` `{"mode":"off"}`(重启后回到变量值;要永久关就把 `RECALL_MODE` 删掉,随下次重启生效)。代码回滚到 `af6bd987…`(丢窗口)。
-  - **⏳ 仍待**:她下次开口后看 runtime 日志 `spawned`、`settings 文件不在` 0 条、`[recall]` 行;几天后拉 `GET /recall?key=` 看真实配对准不准。
+  - ✅ **开口后验过**(19:10 被 bridge 的系统回合叫醒:`spawned claude-opus-4-6 … replace … auth direct cli main`、`settings 文件不在` 0 条、无 `exited`、`lastApiError` null;
+    系统回合**不问 OB**,照设计)。她本人 19:18 / 19:19 两句:第一句问了 OB、候选全是 `no_rare_word` → 空手;第二句挑中「归档策略调整」、**217ms、已递进去**。
+    容器内 `GET /recall` 两条记录与日志一致。**⏳ 仍待**:她用几天后拉 `GET /recall?key=` 看真实配对准不准。
 
 - 2026-09-29(第四十六次) **5.5 被拦不丢窗口(先撤回、再被拦换 4.6-next)+ 菜单分出 `claude-opus-4-6-next` + 顺风车「语音 v3 标签」**。当天 5.5 第二次卡死窗口(`../TIMELINE.md` 第六十七、六十八件),她看完方案、撤回和菜单别名后说「直接部署」。**没归档**:被拦的窗口一句都回不了、本来就归档不了,上次归档后的原话当天已取而不读救进 OB(桶 `a101e5a97904`);她被拦后没再找过他。
   照检查单全套走完,无异常(十套单测全绿:cli-bin **29 → 42**、apierror **56 → 63**、新增 flagfallback **47**;六套 e2e 全绿,新增 `e2e-flag-run.sh` **51 项**;全量 md5 对账代码与人设逐件一致,只差两份事后补写的手册;三份私密文件拷出指纹不变;四个 `/mcp` 部署前后各 3/3 200;目录无 `.gitignore`/`node_modules`;`/period` 的 `runtime` 非空;两份 CLI 仍 2.1.215 / 2.1.280;`ALLOWED_TOOLS` 六项)。
