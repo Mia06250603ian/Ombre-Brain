@@ -164,3 +164,20 @@ def test_http_ok_shape(http_client, monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert set(body) >= {"pick", "reason", "candidates"}
+
+
+# ---------------- 省下的那次 embedding 调用(2026-09-30 优化)----------------
+
+@pytest.mark.asyncio
+async def test_recall_search_skips_embedding(tmp_path, mock_embedding_engine):
+    """自动浮现走 use_embedding=False:一次 embedding API 都不许调;普通搜索(breath 用的)照旧调。"""
+    from bucket_manager import BucketManager
+    mock_embedding_engine.enabled = True
+    bm, key_to_id = await _build(_prod_config(str(tmp_path / "buckets")))
+    bm.embedding_engine = mock_embedding_engine
+    all_b = await bm.list_all(include_archive=False)
+    hits = await bm.search("阿蟹今天被我压扁了", limit=20, use_embedding=False, all_buckets=all_b)
+    assert mock_embedding_engine.search_similar.await_count == 0
+    assert hits and hits[0]["id"] == key_to_id["crab"]
+    await bm.search("阿蟹今天被我压扁了", limit=20)
+    assert mock_embedding_engine.search_similar.await_count == 1, "默认行为(breath)不该被改动"

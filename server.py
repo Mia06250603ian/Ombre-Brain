@@ -2845,7 +2845,8 @@ async def api_recall(request):
     exclude = [x for x in request.query_params.get("exclude", "").split(",") if x.strip()]
     try:
         all_buckets = await bucket_mgr.list_all(include_archive=False)
-        matches = await bucket_mgr.search(query, limit=20)   # search() 不 touch,只读
+        # search() 不 touch,只读;跳过向量预筛(用不上,还每句多调一次 embedding API);全库只读一遍
+        matches = await bucket_mgr.search(query, limit=20, use_embedding=False, all_buckets=all_buckets)
         for b in matches:
             b["content"] = strip_wikilinks(b.get("content", ""))
         out = _recall.pick(query, matches, all_buckets, datetime.now(),

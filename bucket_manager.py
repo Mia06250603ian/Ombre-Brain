@@ -668,6 +668,8 @@ class BucketManager:
         domain_filter: list[str] = None,
         query_valence: float = None,
         query_arousal: float = None,
+        use_embedding: bool = True,
+        all_buckets: list[dict] = None,
     ) -> list[dict]:
         """
         Multi-dimensional indexed search for memory buckets.
@@ -675,12 +677,17 @@ class BucketManager:
 
         domain_filter: pre-filter by domain (None = search all)
         query_valence/arousal: emotion coordinates for resonance scoring
+        use_embedding / all_buckets(2026-09-30,给自动浮现 /api/recall 用;默认值 = 原行为):
+          use_embedding=False 跳过向量预筛 —— 自动浮现只认原话里的稀有标签,向量那一步用不上,
+            还会每句话多调一次 embedding API(慢、花额度);
+          all_buckets 传进来就不再自己 list_all 一遍(调用方已经读过全库)。
         """
         if not query or not query.strip():
             return []
 
         limit = limit or self.max_results
-        all_buckets = await self.list_all(include_archive=False)
+        if all_buckets is None:
+            all_buckets = await self.list_all(include_archive=False)
 
         if not all_buckets:
             return []
@@ -702,7 +709,7 @@ class BucketManager:
 
         # --- Layer 1.5: embedding pre-filter (optional, reduces multi-dim ranking set) ---
         # --- 第1.5层：embedding 预筛（可选，缩小精排候选集）---
-        if self.embedding_engine and self.embedding_engine.enabled:
+        if use_embedding and self.embedding_engine and self.embedding_engine.enabled:
             try:
                 vector_results = await self.embedding_engine.search_similar(query, top_k=50)
                 if vector_results:
