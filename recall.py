@@ -9,8 +9,11 @@
 #      否则被附过一次的桶权重越涨越高,越容易再被附,滚雪球。bucket_manager.search() 本身就不 touch。
 #   2. **宁可空手**:她大部分话是闲聊,没东西可附是常态。拿不准就不附(附错比不附更伤)。
 #   3. **只信「稀有词」**:标签是子串匹配,「今天好开心」会撞上所有带「开心」标签的桶。
-#      所以命中必须至少有一个**在全库里不常见**的标签出现在她这句话里(「团子」「阿蟹」),
-#      只靠「开心」「担心」「日常」这类满库都是的标签撞上的,一律不算。
+#      所以命中必须至少有一个**在全库里不常见**的标签出现在她这句话里(「鼻炎」「螃蟹」),
+#      只靠「开心」「我们」「记忆」这类到处都是的词撞上的,一律不算。
+#      ⚠️ 「常不常见」数的是**全库有多少条记忆的正文/名字/标签里出现过这个词**,不是「几个桶打了这个标签」。
+#      2026-09-30 拿真实库(410 条)彩排撞出来的:真实标签极散(2389 个标签里 1869 个只出现一次),
+#      按标签数「开心」和「海边」都只挂 2 个桶,分不开;按正文数「开心」50、「我们」119、「海边」5,一目了然。
 #
 # 纯逻辑,不碰网络;tests/test_recall.py 拿编的语料测它。
 # ============================================================
@@ -19,31 +22,38 @@ from __future__ import annotations
 
 import math
 import re
-from collections import Counter
 from datetime import datetime, timedelta
 
-# 稀有标签的门槛:df ≤ max(RARE_MIN, 全库桶数 × RARE_RATIO)。
-# 2026-09-30 在 30 条编的语料上定的(泛词每个挂在 8~9 条上,专名挂在 1~2 条上);
-# 真实语料上要看 shim 的观察记录再调,别凭感觉改。
+# 稀有词的门槛:出现在 ≤ max(RARE_MIN, 全库桶数 × RARE_RATIO) 条记忆里。
+# 2026-09-30 按真实库定的 5%(410 条 → 21):日常词 声音 22 / 第一次 30 / 吃饭 44 / 开心 50 / 说话 60 / 记忆 73 / 我们 119 被挡住,
+# 专名 海边 5 / 螃蟹 5 / 鼻炎 10 / 纪念日 12 / 代码 13 / 吵架 14 / zeabur 17 放行。现场量法见 INTERNALS 3.3.2。
 RARE_MIN = 3
-RARE_RATIO = 0.03
+RARE_RATIO = 0.05
 MIN_TAG_LEN = 2
 
 
-def tag_df(buckets: list[dict]) -> Counter:
-    """每个标签(小写)挂在几个桶上。"""
-    df: Counter = Counter()
-    for b in buckets:
-        tags = {str(t).strip().lower() for t in (b.get("metadata", {}).get("tags") or []) if str(t).strip()}
-        df.update(tags)
-    return df
+class WordDF:
+    """一个词在全库多少条记忆里出现过(名字 + 正文 + 标签,不分大小写)。按需算、算过缓存。"""
+    def __init__(self, buckets: list[dict]):
+        self.docs = []
+        for b in buckets:
+            meta = b.get("metadata", {})
+            tags = " ".join(str(t) for t in (meta.get("tags") or []))
+            self.docs.append(f"{meta.get('name', '')} {b.get('content', '')} {tags}".lower())
+        self._cache: dict = {}
+
+    def get(self, word: str, default: int = 0) -> int:
+        w = (word or "").lower()
+        if w not in self._cache:
+            self._cache[w] = sum(1 for d in self.docs if w in d)
+        return self._cache[w]
 
 
 def rare_limit(n_buckets: int) -> int:
     return max(RARE_MIN, math.ceil(n_buckets * RARE_RATIO))
 
 
-def rare_tags_in(query: str, tags: list, df: Counter, limit: int) -> list[str]:
+def rare_tags_in(query: str, tags: list, df, limit: int) -> list[str]:
     """这个桶的标签里,哪些**原样出现在她这句话里**且在全库不常见。"""
     q = (query or "").lower()
     hits = []
@@ -96,7 +106,7 @@ def pick(query: str, matches: list[dict], all_buckets: list[dict], now: datetime
     """从 search() 的结果里挑**最多一条**。返回
     {"pick": {...} | None, "reason": str, "candidates": [...]}。
     candidates 给 shim 的观察记录用(前三条、各自为什么行/不行),不含正文。"""
-    df = tag_df(all_buckets)
+    df = WordDF(all_buckets)
     limit = rare_limit(len(all_buckets))
     exclude = set(exclude_ids or ())
     candidates, chosen = [], None
