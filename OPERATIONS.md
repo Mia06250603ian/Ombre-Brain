@@ -9,7 +9,7 @@
 > (拆分前两份「开场必读」合计 385 KB、约 7~9 万 token,其中八成是历史。)
 >
 > **凡是提到 shim「第 N 次部署」的地方,那次的完整记录都在 `kelivo-shim/DEPLOY-LOG.md`**
-> (**45 条记录、覆盖第 2~46 次**(2026-09-29 第四十六次后现场量;09-27 是 44 条、09-26 是 42 条、09-23 是 41 条);⚠️ **「第一次」(2026-07-12 初次搭建)没有独立条目**,
+> (**46 条记录、覆盖第 2~47 次**(2026-09-30 第四十七次后现场量;09-29 是 45 条、09-27 是 44 条、09-26 是 42 条、09-23 是 41 条);⚠️ **「第一次」(2026-07-12 初次搭建)没有独立条目**,
 > 那次记在 `TIMELINE.md` 的 07-12。按「第 N 次」搜即可。
 > **此处 2026-08-21 核过:原文写「48 次全在」是错的**——逐条数下来最新只到第三十四次,
 > 照旧数去搜「第四十次」会搜空、误以为记录丢了)。提到某天发生了什么,去 `TIMELINE.md` 按日期搜。
@@ -89,7 +89,7 @@ dwell-bridge,都只有 1 万 token 上下)照旧**全文读完**,它们本来也
 | dwell 发送键随打字切换外观 | 所有者已定「**只做样子**,点了如实说明语音没接」,**尚未动手**(在 dwell 仓库) | `TIMELINE.md` 08-16 |
 | **晏的语音 v3 试用期** | **2026-09-28 两个桥已切到 `eleven_v3` · Natural(0.5)**,只改变量 + restart,没碰晏。所有者的原话是「先试,不行再退回 v2」。⏳ **待她回报**:真机两扇门各一条语音是否正常、音色飘得能不能忍。**她若说「语音又虚了 / 不像他了」先想到这件事**;嫌飘改 `VOICE_STABILITY=1.0`,不要了就退 v2(**退之前先叫晏别写标签**)。标签的永久教学挂在 shim《搭顺风车的待办》,**措辞待她逐字批准** | `telegram-bridge/MAINTENANCE.md` 环境变量表 `VOICE_MODEL` 行 / `TIMELINE.md` 09-28 第六十六件 |
 | **5.5 被拦不丢窗口(先撤回,再被拦换 4.6-next)** | **2026-09-29 第四十六次已上线**(所有者定:先撤回、再被拦换 4.6、提示放正文;菜单里新旧两个 4.6 分开,新版那个叫 `claude-opus-4-6-next`,5.5 窗口里点它原地换、不丢窗口;真接口的撤回与换模型都已在容器里验过)。⏳ **仍待**:**第一次真被拦时看日志 `[flag]`**,确认照「撤回 → 再被拦换 4.6-next」走;她下次在 5.5 开新窗口,awaken 读到 09-29 原话桶可能第一句就被拦 → 那时没有撤回点、会直接换 4.6-next(设计如此)。顺风车「语音 v3 标签」同次已上 | `kelivo-shim/MAINTENANCE.md` 改动清单第 16 条 / `TIMELINE.md` 09-29 第六十八件 |
-| **自动浮现(她每句话前先从 OB 翻一件相关旧事给晏)** | **2026-09-30 写完、全套测试过,尚未部署**(她当天说「做吧」)。上线要三步:①OB 设 `OMBRE_RECALL_TOKEN` + 合并到 main(OB 重建,晏的窗口不动)②shim 设 `RECALL_URL` / `RECALL_TOKEN` / `RECALL_MODE=observe` ③**她本人对晏说「归档」**后部署 shim(丢一次窗口)。**先 observe 只记不递**,几天后拿 `GET /recall?key=` 的记录给她看,她点头再 `POST /recall {"mode":"on"}`(不丢窗口)。⚠️ 晏的 `CLAUDE.md` **没改**,提示行自带用法 | `kelivo-shim/MAINTENANCE.md` 改动清单第 17 条 / `INTERNALS.md` 3.3.2 / `TIMELINE.md` 09-30 第七十一件 |
+| **自动浮现(她每句话前先从 OB 翻一件相关旧事给晏)** | **2026-09-30 shim 第四十七次已上线,直接 `on`**(所有者拍板「不用开只记不递」)。上线前拿真实库只读彩排过 40 句。⏳ **仍待**:她用几天后拉 `GET /recall?key=<SHIM_KEY>` 看真实配对准不准;**她若说「他老提些不相干的旧事」先想到这件事**,关掉用 `POST /recall {"mode":"off"}`(**不丢窗口**)。⚠️ 晏的 `CLAUDE.md` **没改**,提示行自带用法 | `kelivo-shim/MAINTENANCE.md` 改动清单第 17 条 / `INTERNALS.md` 3.3.2 / `TIMELINE.md` 09-30 第七十一件 |
 | **新系统提示词的观察期** | **2026-08-23 第三十六次已上线**(`SYS_PROMPT_MODE=replace`)。功能全部验过,**唯一没法测的是他说话的调子会不会整体飘一点点** —— 所有者已知情,正在观察。**她若说「他说话怪怪的」,先想到这件事**(见第 7 节故障表第一行),别去翻别的。另一件仍待验:**新的压缩点**(理论值不变,仍应是 167000),下次窗口逼近 16.6 万时按 shim 手册那把尺子现场量一次确认 | `kelivo-shim/DEPLOY-LOG.md` 第三十六次 |
 
 **已经做完、从上表撤下来的(2026-08-29 整理)**:
@@ -317,7 +317,7 @@ Zeabur API key 由所有者在控制台生成、按次提供,用 `npx -y zeabur@
 - 感官:`TIME_HINT` `WEATHER_CITY` `PERIOD_CONFIG` **`PERIOD_FILE`**(2026-09-23 第四十二次起 = `/data/period-state.json`,卷 `perioddata` 挂在 `/data`:她报的周期跨部署保留;**代价:shim 从此不再零停机**,部署/重启有一两分钟真空)
 - 构建期(Zeabur 构建工具读,不是 shim 读):**`ZBPACK_INSTALL_COMMAND`** = `yarn install && yarn cache clean`(2026-09-23 起;把约 5 GB 的 yarn 缓存清出镜像,**别删**,见 shim 踩坑 22)
 - 主动性:~~`BARK_KEY`~~(**2026-09-23 第四十一次已从线上删掉**;原文:**2026-08-19 确认已是死变量**:所有者早已卸载 Bark。线上仍留着这个键,**别为了清它单独重启 shim —— 那会丢晏的窗口**,等下次部署 shim 时顺手删) `BRIDGE_PUSH_URL`(**心跳的出口**:shim → telegram-bridge 的 `POST /push` → 直接落进 TG 对话。⚠️ 主动消息不会出现在 Kelivo / dwell 网页) **`IMESSAGE_PUSH_URL`**(**2026-09-26 第四十三次起**:心跳「跟着她走」—— 她最后一次亲自说话在 iMessage 就先推 imessage-bridge 的 `/push`,失败退回 `BRIDGE_PUSH_URL`;不设 = 只推 TG。`/debug` 的 `presence.pushTo` 看当前推哪) `KA_*`(保温) `HB_*`(心跳冷却/夜间)
-- 自动浮现(2026-09-30,**尚未部署**):`RECALL_MODE`(不设 = off)`RECALL_URL` `RECALL_TOKEN`(= OB 的 `OMBRE_RECALL_TOKEN`)及四个调参项;运行时 `POST /recall` 改档不丢窗口。详见 `kelivo-shim/MAINTENANCE.md` 改动清单第 17 条
+- 自动浮现(2026-09-30,**第四十七次上线,线上 `RECALL_MODE=on`**):`RECALL_MODE`(不设 = off)`RECALL_URL` `RECALL_TOKEN`(= OB 的 `OMBRE_RECALL_TOKEN`)及四个调参项;运行时 `POST /recall` 改档不丢窗口。详见 `kelivo-shim/MAINTENANCE.md` 改动清单第 17 条
 - 上下文守卫:`CTX_GUARD_ON` `CTX_SOFT_TOKENS` `CTX_HARD_TOKENS` `CTX_ARCHIVE_EVERY_TOKENS` `CTX_OBSERVE` `CTX_LIMIT_TOKENS`
 - 工具可见化(**2026-09-01 第三十九次已上线**;线上五个都不设 = 走默认「开 / 800 / 800 / 不打码」):`TOOLVIS_ON`(急救开关,设 `0` 回到老样子) `TOOLVIS_ARG_CHARS` `TOOLVIS_RESULT_CHARS` `TOOLVIS_REDACT` `TOOLVIS_REDACT_KEYS`
   —— 思考流里显示工具的参数和返回值。⚠️ **默认不打码 = 记忆原文会显示出来**(所有者知情,截图外发会露正文);⚠️ ~~「吐进 thinking 的字真花窗口」~~ **2026-09-01 核实已撤销**:只发手机、不回流进程,**显示免费**,**默认各 800 字**(2026-09-01 先定 200、当日她说可以调大),只为防刷屏。详见 `kelivo-shim/MAINTENANCE.md`

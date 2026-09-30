@@ -24,6 +24,17 @@
 
 ## 记录(新的在上)
 
+- 2026-09-30(第四十七次) **自动浮现上线,直接开 `on`**(改动清单第 17 条;借鉴 `Mia06250603ian/Latent-memory`)。她说「我让他归档了,直接上线吧,你测试了没问题就行」,又说「**不用开只记不递**」—— **所有者拍板跳过 observe,直接 on**。所有者本人归档过(OB 里 18:36 新建的归档桶,18:46 被晏自己删了重存成 `ee11ac7b8a87`,旧版在回收站)。
+  照检查单全套走完,无异常(十一套单测全绿,新增 `test-recall.mjs` **46**;六套 e2e 全绿,新增 `e2e-recall-run.sh`;全量 md5 对账代码与人设逐件一致,只差两份事后补写的手册;三份私密文件拷出指纹不变;四个 `/mcp` 部署前 3/3 200;目录无 `.gitignore`/`node_modules`;CLI 2.1.215;`ALLOWED_TOOLS` 六项)。
+  **OB 先上**(PR #166、#167,两次都**没自己重建**,照 OPERATIONS 第 6 节手动 `service redeploy`;五步验收全过:桶数 407 → 406 是晏自己删重存归档、MCP 3/3、`recall.py`/`server.py`/`bucket_manager.py` md5 与仓库一致、日志零 Traceback)。
+  ⚠️ **例外:真实库彩排撞出第一版的毛病,当场改了再上**。第一版按「几个桶打了这个标签」判稀有词,真实库标签极散,「今天好开心呀」「记忆库是不是又出问题了」「我们第一次吵架」都翻错;改成按「全库多少条记忆的正文里出现过这个词」(≤ 5%),40 句只读彩排:挑中 9 句全对、31 句空手。细节 `../INTERNALS.md` 3.3.2、`../TIMELINE.md` 第七十二件。
+  改动:`server.js` `af6bd987…` → **`3e8806cb…`**、新增 `recall.mjs` **`8abecef7…`**;五个 `e2e-*-run.sh` 的 `cp` 清单加 `recall.mjs`。**人设五份一个字没动**(`CLAUDE.md` 仍 `ad28f8f0…`,提示行自带用法)。
+  **变量**(`variable create` 不 restart,随新容器生效):shim 新增 `RECALL_URL` / `RECALL_TOKEN` / **`RECALL_MODE=on`**;OB 新增 `OMBRE_RECALL_TOKEN`(与 shim 那把同值,值不入库)。
+  deployment `6abd5a9b…`(PLANTYPE nodejs,约 18:53 上传 → **18:57:59 RUNNING**,约 5 分钟)。
+  - **部署后验**:`/health` ok、`auth: direct`;`/debug` 守卫清零、`trusted:true`、阈值 155000/161500/164000、`lastApiError` null、`recall.mode = on`、`configured: true`;`/period` 的 `runtime` 非空(**第四十二次挂卷后「跨部署存活」这条仍待验的,本次验过了**)。
+  - **回滚**:只关功能不用部署、**不丢窗口**:`POST /recall?key=<SHIM_KEY>` `{"mode":"off"}`(重启后回到变量值;要永久关就把 `RECALL_MODE` 删掉,随下次重启生效)。代码回滚到 `af6bd987…`(丢窗口)。
+  - **⏳ 仍待**:她下次开口后看 runtime 日志 `spawned`、`settings 文件不在` 0 条、`[recall]` 行;几天后拉 `GET /recall?key=` 看真实配对准不准。
+
 - 2026-09-29(第四十六次) **5.5 被拦不丢窗口(先撤回、再被拦换 4.6-next)+ 菜单分出 `claude-opus-4-6-next` + 顺风车「语音 v3 标签」**。当天 5.5 第二次卡死窗口(`../TIMELINE.md` 第六十七、六十八件),她看完方案、撤回和菜单别名后说「直接部署」。**没归档**:被拦的窗口一句都回不了、本来就归档不了,上次归档后的原话当天已取而不读救进 OB(桶 `a101e5a97904`);她被拦后没再找过他。
   照检查单全套走完,无异常(十套单测全绿:cli-bin **29 → 42**、apierror **56 → 63**、新增 flagfallback **47**;六套 e2e 全绿,新增 `e2e-flag-run.sh` **51 项**;全量 md5 对账代码与人设逐件一致,只差两份事后补写的手册;三份私密文件拷出指纹不变;四个 `/mcp` 部署前后各 3/3 200;目录无 `.gitignore`/`node_modules`;`/period` 的 `runtime` 非空;两份 CLI 仍 2.1.215 / 2.1.280;`ALLOWED_TOOLS` 六项)。
   改动:`server.js` `2cfc573b…` → **`af6bd987…`**、新增 `flagfallback.mjs` **`eb4bef2c…`**、`cli-bin.mjs` `9d1d9342…` → `cbe1d9d5…`(`-next` 别名)、`apierror.mjs` `5c57c2fc…` → `a2febe29…`(被拦时不再说「链路修好就能接着聊」)、**`CLAUDE.md` `46cf66c9…` → `ad28f8f0…`(12632 → 13065B,顺风车「语音」整节替换,措辞所有者当天逐字批准;`^## ` 仍 14、`@` 仍 3、全角标点仍 0)**。`ian.md` / `profile-instructions.md` / `mcp-servers.json` 一个字没动(仍 `8918742d…` / `7adb5c33…` / `b5a281bc…`)。
