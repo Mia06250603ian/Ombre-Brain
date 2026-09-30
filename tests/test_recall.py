@@ -125,7 +125,24 @@ def test_excerpt_cuts_at_sentence():
 
 def test_rare_limit_scales():
     assert recall.rare_limit(10) == 3
-    assert recall.rare_limit(1000) == 30
+    assert recall.rare_limit(410) == 21     # 2026-09-30 真实库的规模
+    assert recall.rare_limit(1000) == 50
+
+
+def test_common_word_in_text_is_not_rare_even_if_tagged_once():
+    """2026-09-30 真实库彩排撞出来的:「开心」只被 1 个桶打成标签,但 50 条记忆的正文里都有。
+    按「几个桶打了这个标签」算它是稀有词,「今天好开心呀」就会随手翻出一件旧事 —— 必须按正文算。"""
+    now = datetime.now()
+    old = (now - timedelta(days=10)).isoformat()
+    buckets = [{"id": f"b{i}", "content": f"那天她很开心,第{i}件小事。", "metadata": {"name": f"小事{i}", "tags": [], "created": old}}
+               for i in range(40)]
+    buckets.append({"id": "happy", "content": "一件事。", "metadata": {"name": "某事", "tags": ["开心"], "created": old}})
+    buckets.append({"id": "nose", "content": "她鼻炎犯了。", "metadata": {"name": "鼻炎", "tags": ["鼻炎"], "created": old}})
+    by_id = {b["id"]: b for b in buckets}
+    out = recall.pick("今天好开心呀", [by_id["happy"]], buckets, now)
+    assert out["pick"] is None and out["candidates"][0]["skip"] == "no_rare_word"
+    out = recall.pick("我鼻炎又犯了", [by_id["nose"]], buckets, now)
+    assert out["pick"] and out["pick"]["id"] == "nose"
 
 
 # ---------------- HTTP 层 ----------------
