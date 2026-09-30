@@ -13,6 +13,7 @@ import { buildAuthEnv, authMode } from "./auth-env.mjs";
 import { parseModelList, nextWindow, pickCli, menuModels, realModel, nextAlias } from "./cli-bin.mjs";
 import { wrapTranslatingSink, makeCliTranslator, translatePrompt, limitConcurrency } from "./think-translate.mjs";
 import { flagAction, flagNote, flagRollbackNote, lockedModel, FLAG_NUDGE } from "./flagfallback.mjs";
+import { recallMode, skipReason, coolingIds, buildUrl, formatHint, fetchRecall, observation, pushRing } from "./recall.mjs";
 
 const PORT = process.env.PORT || 8080;
 const SHIM_KEY = process.env.SHIM_KEY || "";            // Kelivo 要填的 API Key,自己编
@@ -57,6 +58,24 @@ if (FLAG_TO && NEXT_READY && !MODELS.includes(FLAG_TO)) MODELS.push(FLAG_TO);
 let flagLock = null;      // { from, to, at }:这个进程被拦过、已换模型;进程一换(新窗口/重启/改选模型)就解
 let flagFallbacks = 0;    // 开机以来换过几次(只进 /debug,她拿「多久被拦一次」做决定用)
 let pendingCtl = null;    // 正在等回执的那条 control_request:{ id, resolve }
+// ---- 自动浮现(2026-09-30,见 recall.mjs 头注)----
+// 她每句话进晏之前,问 OB 的 /api/recall 有没有一件相关的旧事。三档 off / observe / on。
+// **不设 RECALL_MODE(或没配 URL/token)= off,这条路径和改动前逐字相同**(不等 OB、不改顺序)。
+// 运行时改档:POST /recall {"mode":"on"}(带 SHIM_KEY),**不重启、不丢窗口**;重启回到变量值。
+const RECALL_URL = (process.env.RECALL_URL || "").trim();          // 例:https://ianmian.zeabur.app/api/recall
+const RECALL_TOKEN = (process.env.RECALL_TOKEN || "").trim();      // = OB 那边的 OMBRE_RECALL_TOKEN
+const RECALL_CONFIGURED = !!(RECALL_URL && RECALL_TOKEN);
+const RECALL_TIMEOUT_MS = +(process.env.RECALL_TIMEOUT_MS || 1500) || 1500;   // 等 OB 最多这么久,超了就不附,照常发
+const RECALL_COOLDOWN_H = +(process.env.RECALL_COOLDOWN_H || 12) || 12;       // 同一件旧事多久内不再附
+const RECALL_MAX_CHARS = +(process.env.RECALL_MAX_CHARS || 240) || 240;       // 摘录上限(字)
+const RECALL_MIN_AGE_H = +(process.env.RECALL_MIN_AGE_H ?? 24);               // 多新的桶不附(多半还在这个窗口里)
+const RECALL_WINDOW_MAX = +(process.env.RECALL_WINDOW_MAX ?? 30);             // 每个窗口最多附几次(递进去的字永久占窗口);0 = 不封顶
+let recallModeNow = recallMode(process.env.RECALL_MODE);
+let recallWindowCount = 0;                // 这个窗口已经附了(或 observe 下「本来会附」)几次;新窗口/压缩后清零
+const recallCooldown = new Map();         // 桶 id → 上次附出的时间
+const recallLog = [];                     // 最近 50 条观察记录(GET /recall 看)
+let recallChain = Promise.resolve();      // 保证消息顺序:等 OB 的那一两秒里,后来的消息不许插队
+let recallPending = 0;                    // 链上还有几条没交给队列;>0 时连不问 OB 的消息也得排进链
 // 第一道:撤回(同日加;所有者选「先撤回,再被拦才换 4.6」)。急救开关 FLAG_ROLLBACK=0 + restart = 不撤回、直接换。
 const FLAG_ROLLBACK = process.env.FLAG_ROLLBACK !== "0";
 let sessionId = null;       // 当前窗口的会话 id(CLI 每条事件都带)
@@ -216,6 +235,7 @@ function spawnClaude(kelivoSystem, model, resume = null) {
     ctxArchivedAt = 0; ctxCompactions = 0; ctxLastWould = null; ctxFinalFired = false;
     flagLock = null;                                          // 新进程 = 新窗口,被拦那个窗口的锁跟着作废
     sessionId = null; keepUuid = null; justRolledBack = false;
+    recallWindowCount = 0;                                    // 新窗口:自动浮现的每窗上限重新算
   }
   if (pendingCtl) { const c = pendingCtl; pendingCtl = null; c.resolve(false); }
   // 系统提示词参数由 sysprompt.mjs 决定(纯逻辑,单测 test-sysprompt.mjs 覆盖两种模式与两道降级阀)。
@@ -399,6 +419,7 @@ function handleEvent(ev) {
         // 可信读数从高位暴跌过半 = CLI 刚静默压缩过:守卫记账复位,下一轮涨起来照样提醒
         if (ctxCompacted({ contextTokens: r.tokens, prevTokens: ctxTrusted ? ctxTokens : 0, softTokens: CTX_SOFT_TOKENS, trusted: r.trusted })) {
           ctxCompactions++; ctxSoftFired = false; ctxArchivedAt = 0; ctxFinalFired = false;
+          recallWindowCount = 0;   // 压缩后之前附的那些已被摘要掉,上限重新算
           log("[ctx] compaction detected", ctxTokens, "->", r.tokens, "(guard re-armed, total", ctxCompactions + ")");
         }
         ctxTokens = r.tokens; ctxTrusted = r.trusted;
@@ -636,6 +657,8 @@ app.get("/debug", (_q, r) => r.json({
               final: CTX_FINAL_TOKENS, finalChars: CTX_FINAL_CHARS, finalFired: ctxFinalFired,
               softFired: ctxSoftFired, trusted: ctxTrusted, lastArchiveTokens: ctxArchivedAt,
               compactions: ctxCompactions, observe: CTX_OBSERVE, lastWould: ctxLastWould },
+  // 2026-09-30:自动浮现。详细记录在 GET /recall(要 key,因为带她那句话的开头)
+  recall: recallState(),
 }));
 
 // Kelivo「模型」页拉这个列表,没有它选不了模型
@@ -870,6 +893,28 @@ app.post("/period", (req, res) => {
   res.json({ ok: true, effective: { ...periodEnv, ...cfg } });
 });
 
+// ---- 自动浮现的观察口 / 运行时开关(2026-09-30)----
+// GET  /recall?key=<SHIM_KEY>                   → 现在哪一档 + 最近 50 条「这句话配了哪件旧事」
+// POST /recall?key=<SHIM_KEY> {"mode":"on"}     → 改档(off / observe / on),**不重启、不丢窗口**;重启回到 RECALL_MODE
+function recallKeyOk(req) { return !SHIM_KEY || (req.query.key || req.get("x-api-key")) === SHIM_KEY; }
+function recallState() {
+  return { mode: recallModeNow, configuredMode: recallMode(process.env.RECALL_MODE), configured: RECALL_CONFIGURED,
+           windowCount: recallWindowCount, windowMax: RECALL_WINDOW_MAX, cooling: recallCooldown.size,
+           timeoutMs: RECALL_TIMEOUT_MS, cooldownH: RECALL_COOLDOWN_H, maxChars: RECALL_MAX_CHARS, minAgeH: RECALL_MIN_AGE_H };
+}
+app.get("/recall", (req, res) => {
+  if (!recallKeyOk(req)) return res.status(401).json({ ok: false });
+  res.json({ ...recallState(), log: [...recallLog].reverse() });
+});
+app.post("/recall", (req, res) => {
+  if (!recallKeyOk(req)) return res.status(401).json({ ok: false });
+  const want = String((req.body || {}).mode || "").trim().toLowerCase();
+  if (!["off", "observe", "on"].includes(want)) return res.status(400).json({ ok: false, error: "mode 只能是 off / observe / on" });
+  recallModeNow = want;
+  log("[recall] mode ->", want);
+  res.json({ ok: true, ...recallState() });
+});
+
 // ---- 重置词(2026-07-20 分工:换窗只认 SWITCH_WORDS,晚安/归档都不再换窗) ----
 const GOODNIGHT_WORDS = ["晚安"];
 const ARCHIVE_WORDS = ["归档"];
@@ -959,6 +1004,52 @@ function handleMessages(req, res) {
       } catch (e) { log("[ctx-hint]", e.message); }
     }
   }
+  // 自动浮现:off 时直接走下面的 finish(同步,和改动前逐字相同);
+  // 要问 OB 时排进 recallChain,等回来(最多 RECALL_TIMEOUT_MS)再 finish —— 链保证消息不乱序。
+  const recallSkip = skipReason({ mode: recallModeNow, configured: RECALL_CONFIGURED, text, reset, systemTurn,
+                                  windowCount: recallWindowCount, windowMax: RECALL_WINDOW_MAX });
+  if (recallSkip) {
+    if (recallSkip !== "off" && recallSkip !== "system_turn") pushRing(recallLog, observation({ mode: recallModeNow, text, skip: recallSkip }));
+    const m = { text, hints, images, system, droppedSystem, stream, reset, newWindow, systemTurn, body };
+    if (!recallPending) return finishMessage(req, m, res);   // 链上没人在等:同步走,和改动前一样
+    recallPending++;
+    const job = recallChain.then(() => { try { finishMessage(req, m, res); } catch (e) { log("[recall-finish]", e.message); recallFail(res); } })
+      .finally(() => { recallPending--; });
+    recallChain = job.catch(() => {});
+    return;
+  }
+  const userText = text;
+  recallPending++;
+  const job = recallChain.then(async () => {
+    let line = "";
+    try {
+      const mode = recallModeNow;
+      const url = buildUrl(RECALL_URL, { q: userText, n: RECALL_MAX_CHARS, minAgeH: RECALL_MIN_AGE_H,
+                                         exclude: coolingIds(recallCooldown, Date.now(), RECALL_COOLDOWN_H) });
+      const r = await fetchRecall({ url, token: RECALL_TOKEN, timeoutMs: RECALL_TIMEOUT_MS });
+      const hint = formatHint(r.pick);
+      if (hint) {
+        recallCooldown.set(r.pick.id, Date.now());   // observe 也记冷却,记录才像真开了的样子
+        recallWindowCount++;
+        if (mode === "on") line = hint;
+      }
+      pushRing(recallLog, observation({ mode, text: userText, res: r, injected: !!line }));
+      if (r.error || hint) log("[recall]", mode, r.error || r.pick.name, `${r.ms}ms`, line ? "injected" : "");
+    } catch (e) { log("[recall]", e.message); }
+    try { finishMessage(req, { text, hints: line ? [...hints, line] : hints, images, system, droppedSystem, stream, reset, newWindow, systemTurn, body }, res); }
+    catch (e) { log("[recall-finish]", e.message); recallFail(res); }
+  }).finally(() => { recallPending--; });
+  recallChain = job.catch(() => {});
+}
+// 排进链的那条万一在 finishMessage 里抛了:同步时 express 会回 500,异步时得自己回,不然客户端一直挂着
+function recallFail(res) {
+  try { if (!res.headersSent) res.status(500).json({ type: "error", error: { type: "api_error", message: "shim error" } }); } catch {}
+}
+
+// 注入完感官/守卫/浮现之后,把这条交给队列。2026-09-30 从 handleMessages 末尾原样拆出来(自动浮现要异步等 OB)。
+function finishMessage(req, m, res) {
+  let { text } = m;
+  const { hints, images, system, droppedSystem, stream, reset, newWindow, systemTurn, body } = m;
   if (hints.length) text = `${hints.join("\n")}\n\n${text}`;
   if (!systemTurn) {
     lastUserAt = Date.now();

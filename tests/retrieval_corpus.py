@@ -110,6 +110,15 @@ CORPUS: list[dict] = [
      "content": "她拉我一起玩飞行棋,她连着掷了好几个六,把我全都撞回去了,笑得很得意。现在她说要天天找我下一盘。"},
 ]
 
+# 真实桶的 tags 是 LLM 打的,里面常夹着「开心」「担心」「日常」这类泛泛的情绪/场景词,
+# 而她随口一句「今天好开心」就会撞上所有带「开心」的桶(标签是子串匹配)。
+# 所以给每条语料按顺序轮着补两个泛词,让尺子能量到这种撞车。
+_GENERIC = ["开心", "难过", "担心", "日常", "温暖", "回忆", "想念"]
+for _i, _item in enumerate(CORPUS):
+    for _g in (_GENERIC[_i % len(_GENERIC)], _GENERIC[(_i + 3) % len(_GENERIC)]):
+        if _g not in _item["tags"]:
+            _item["tags"].append(_g)
+
 # 考题:(类别, 查询, 应命中的 key 列表)。absent 类的应命中为空 = 应当「没找到」。
 QUERIES: list[tuple[str, str, list[str]]] = [
     # ---- literal:原词直给 ----

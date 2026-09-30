@@ -2815,6 +2815,48 @@ async def api_search(request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+# ---- 自动浮现(2026-09-30):shim 每句话前来问「有没有一件相关的旧事」 ----
+# 挑选逻辑在 recall.py(只读、宁可空手、只信稀有词,理由写在那个文件开头)。
+# 鉴权:环境变量 OMBRE_RECALL_TOKEN,shim 带 `Authorization: Bearer <它>`。
+# **不设 = 这条口子关着(404)**,部署完零行为变化。和面板那套 cookie 鉴权无关,shim 没有 cookie。
+@mcp.custom_route("/api/recall", methods=["GET"])
+async def api_recall(request):
+    from starlette.responses import JSONResponse
+    import recall as _recall
+    token = os.environ.get("OMBRE_RECALL_TOKEN", "").strip()
+    if not token:
+        return JSONResponse({"error": "recall disabled"}, status_code=404)
+    auth = request.headers.get("authorization", "")
+    given = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+    if not given or not hmac.compare_digest(given, token):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    query = (request.query_params.get("q", "") or "")[:2000]
+    if not query.strip():
+        return JSONResponse({"pick": None, "reason": "empty_query", "candidates": []})
+
+    def _num(name, default, lo, hi):
+        try:
+            return max(lo, min(hi, float(request.query_params.get(name, default))))
+        except (TypeError, ValueError):
+            return default
+
+    max_chars = int(_num("n", 240, 60, 800))
+    min_age = _num("min_age_hours", 24, 0, 24 * 30)
+    exclude = [x for x in request.query_params.get("exclude", "").split(",") if x.strip()]
+    try:
+        all_buckets = await bucket_mgr.list_all(include_archive=False)
+        matches = await bucket_mgr.search(query, limit=20)   # search() 不 touch,只读
+        for b in matches:
+            b["content"] = strip_wikilinks(b.get("content", ""))
+        out = _recall.pick(query, matches, all_buckets, datetime.now(),
+                           min_age_hours=min_age, max_chars=max_chars,
+                           exclude_ids=exclude, is_expired=_is_expired)
+        return JSONResponse(out)
+    except Exception as e:
+        logger.warning(f"recall failed / 自动浮现查询失败: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 # 记忆网络每个桶最多连几条边。相似度 > 0.5 的边在几百个桶里可能上万条，
 # 前端那 80 轮力导向 + 逐条画线扛不住，糊成一团也看不出东西。
 # 环境变量 OMBRE_NETWORK_EDGES_PER_NODE 可调；设 0 = 不封顶（改值 + restart 即生效）。

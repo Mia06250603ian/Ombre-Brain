@@ -161,6 +161,7 @@
 | `/api/trash` | GET | **回收站**:列出「已删掉、但写前快照还在」的桶(新删的在前)。**只读**,逻辑在 `bucket_manager.list_trash()` 🔒 |
 | `/api/trash/{id}/restore` | POST | 把回收站里的一条捞回来(默认最新快照,可传 `{"version":…}`)。**桶还在则回 409**(那是回滚,走 `trace(restore=…)`);恢复后**重建向量** 🔒 |
 | `/api/search?q=` | GET | 搜索 🔒 |
+| `/api/recall?q=` | GET | **自动浮现的查询口**(2026-09-30):给 shim 用,最多回一件相关旧事。鉴权是 `OMBRE_RECALL_TOKEN`(Bearer),**不是**面板 cookie;不设 = 404。见 3.3.2 |
 | `/api/network` | GET | 向量相似网络 🔒 |
 | `/api/breath-debug` | GET | 评分调试 🔒 |
 | `/api/config` | GET | 配置查看（key 脱敏）🔒 |
@@ -1502,6 +1503,20 @@ PW=/tmp/turbulence-e2e/node_modules PORT=8811 \
   如果属实,**「库里没有」的时候晏还是会拿到一堆看着相关的东西**。测试里有 `test_vector_channel_report`,设了 `OMBRE_API_KEY` 才跑、只报数不判红(约 65 次 embedding 调用)。
   **要调 0.5 那条线,先跑它拿到数再说。**
 - 另外:搜到不足 3 条时有 40% 概率附一段「忽然想起来」的随机旧桶(`server.py` 随机浮现),它带标注,不算进上面的数。
+- 语料每条都补了两个泛标签(「开心」「担心」「日常」…,真实桶里 LLM 常打这类),专门量「一句闲聊撞上泛标签」。
+
+### 3.3.2 自动浮现的查询口 `GET /api/recall`(2026-09-30 新增,**尚未上线**)
+
+shim 在她每句话进晏之前来问「有没有一件相关的旧事」,**最多回一件**。shim 那半见 `kelivo-shim/MAINTENANCE.md` 改动清单第 17 条。
+- **鉴权**:环境变量 `OMBRE_RECALL_TOKEN`,请求带 `Authorization: Bearer <它>`。**不设 = 口子关着(404)**,和面板的 cookie 鉴权无关。
+- **参数**:`q` 她的原话(截 2000 字)、`n` 摘录字数(60~800,默认 240)、`min_age_hours`(默认 24)、`exclude` 逗号分隔的冷却中桶 id。
+- **返回**:`{pick: {id,name,created,score,rare,excerpt} | null, reason, candidates}`;`candidates` 是前三条及各自没选上的原因,**不含正文**。
+- **挑选规矩在 `recall.py` 开头**,三条:①**只读**(`search()` 本来就不 `touch`;测试 `test_search_is_read_only` 盯着);
+  ②**宁可空手**;③**只信稀有词**:她那句话里必须原样出现这个桶的某个**不常见**标签(挂在 ≤ max(3, 桶数×3%) 个桶上),
+  只靠「开心」「担心」这种满库都是的标签撞上的一律不算。另外跳过钉选(awaken 已带全文)、feel、休眠、被否认过、已到期、24 小时内新存的。
+- **现在的成绩**(2026-09-30,编的语料,`tests/test_recall.py`):相关的 10 句全挑对,闲聊 12 句(含 4 句专撞泛标签的)全空手。
+  ⚠️ **真实语料上准不准没量过** —— 所以 shim 先开 `observe` 只记不递,看记录再定。
+- ⚠️ 稀有词门槛是在编的语料上定的:真实库里若某人名(如「外婆」)挂在很多桶上,会被当成泛词而**不再触发**。要调改 `recall.py` 顶部两个常数,改前后都跑 `tests/test_recall.py`。
 
 ### 3.4 Token 限制 / 截断
 
