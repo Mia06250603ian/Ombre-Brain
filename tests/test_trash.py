@@ -31,7 +31,10 @@ def mgr():
 
 
 def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    # 2026-09-30:原来是 asyncio.get_event_loop().run_until_complete(coro) —— 单跑全绿,
+    # 但排在 pytest-asyncio 的用例后面跑时,前面那些已把当前事件循环收掉,这里就报
+    # 「There is no current event loop」,6 条一起红。每次自己起一个新循环就不依赖前面的状态了。
+    return asyncio.run(coro)
 
 
 async def _make(mgr, name, **kw):
