@@ -2845,8 +2845,8 @@ async def api_recall(request):
     given = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
     if not given or not hmac.compare_digest(given, token):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    query = (request.query_params.get("q", "") or "")[:2000]
-    if not query.strip():
+    query = _recall.clean_query((request.query_params.get("q", "") or "")[:2000])   # 去掉桥写的贴纸/图片/语气那些
+    if len(query) < 2:
         return JSONResponse({"pick": None, "reason": "empty_query", "candidates": []})
 
     def _num(name, default, lo, hi):

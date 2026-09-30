@@ -198,3 +198,42 @@ async def test_recall_search_skips_embedding(tmp_path, mock_embedding_engine):
     assert hits and hits[0]["id"] == key_to_id["crab"]
     await bm.search("阿蟹今天被我压扁了", limit=20)
     assert mock_embedding_engine.search_similar.await_count == 1, "默认行为(breath)不该被改动"
+
+
+# ---------------- 2026-09-30 上线当晚她的真实消息撞出来的 ----------------
+
+@pytest.mark.parametrize("raw,want", [
+    ("(她发来一个贴纸)", ""),
+    ("（她发来一个贴纸：🥺）", ""),
+    ("[语音] 我鼻炎又犯了（语气：低落，和平时比更慢）", "我鼻炎又犯了"),
+    ("[语音] 想去海边（语气分析还在认识她的声音）", "想去海边"),
+    ("(她给你的「好」点了 ❤) 嗯嗯", "嗯嗯"),
+    ("我鼻炎又犯了", "我鼻炎又犯了"),
+])
+def test_clean_query_strips_bridge_text(raw, want):
+    assert recall.clean_query(raw) == want
+
+
+def _bucket(i, name, content, tags, days=10):
+    return {"id": i, "content": content,
+            "metadata": {"name": name, "tags": tags, "created": (datetime.now() - timedelta(days=days)).isoformat()}}
+
+
+@pytest.mark.parametrize("text", [
+    "我哪里有 我去给你更新ob功能了呀 委屈",   # 「委屈」是情绪词,不是具体的事
+    "你awaken啦?",                            # 系统词
+    "好想你呀",
+    "我好心疼你",
+])
+def test_stop_words_never_trigger(text):
+    buckets = [_bucket("x", "某事", "那天她有点委屈,也很想你,心疼。awaken 之后归档。", ["委屈", "awaken", "想你", "心疼", "ob"])]
+    buckets += [_bucket(f"f{i}", f"填充{i}", f"第{i}件不相干的事。", []) for i in range(60)]
+    out = recall.pick(text, [buckets[0]], buckets, datetime.now())
+    assert out["pick"] is None, out
+
+
+def test_real_thing_still_triggers_with_stop_words_around():
+    buckets = [_bucket("nose", "鼻炎换药", "她鼻炎犯了。", ["鼻炎", "委屈"])]
+    buckets += [_bucket(f"f{i}", f"填充{i}", f"第{i}件不相干的事。", []) for i in range(60)]
+    out = recall.pick("委屈死了 鼻炎又犯了", [buckets[0]], buckets, datetime.now())
+    assert out["pick"] and out["pick"]["rare"] == ["鼻炎"]
