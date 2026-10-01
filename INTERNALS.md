@@ -1512,7 +1512,7 @@ PW=/tmp/turbulence-e2e/node_modules PORT=8811 \
 
 ### 3.3.2 自动浮现的查询口 `GET /api/recall`(2026-09-30 新增,**尚未上线**)
 
-shim 在她每句话进晏之前来问「有没有一件相关的旧事」,**最多回一件**。shim 那半见 `kelivo-shim/MAINTENANCE.md` 改动清单第 17 条。
+shim 在她每句话进晏之前来问「有没有一件相关的旧事」,**最多回一件**。shim 那半见 `kelivo-shim/MAINTENANCE.md` 改动清单第 17 条。可转给别人的占位符版教程:`kelivo-shim/自动浮现-实施指南.md`(2026-10-01;**改了本节的规矩,那份的代码和第 5 节「坑」要跟着改**)。
 - **鉴权**:环境变量 `OMBRE_RECALL_TOKEN`,请求带 `Authorization: Bearer <它>`。**不设 = 口子关着(404)**,和面板的 cookie 鉴权无关。
 - **参数**:`q` 她的原话(截 2000 字)、`n` 摘录字数(60~800,默认 240)、`min_age_hours`(默认 24)、`exclude` 逗号分隔的冷却中桶 id。
 - **返回**:`{pick: {id,name,created,score,rare,excerpt} | null, reason, candidates}`;`candidates` 是前三条及各自没选上的原因,**不含正文**。
