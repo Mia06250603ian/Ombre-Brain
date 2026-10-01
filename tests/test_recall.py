@@ -253,3 +253,47 @@ def test_traditional_voice_triggers_simplified_memory():
     q = recall.clean_query("[语音] 好想去海邊啊（语气：开心）")
     out = recall.pick(q, [buckets[0]], buckets, datetime.now())
     assert out["pick"] and out["pick"]["id"] == "sea"
+
+
+# ---------------- 几个桶都合格时挑哪一件(2026-10-01 她在线上撞到的)----------------
+
+def _three_hm():
+    old = (datetime.now() - timedelta(days=10)).isoformat()
+    def b(i, name, score):
+        return {"id": i, "score": score, "content": f"{name}。",
+                "metadata": {"name": name, "tags": ["人机恋"], "created": old}}
+    matches = [b("letter", "佳佳的情书", 61.64), b("blogger", "人机恋博主态度", 61.58), b("yesno", "人机恋中的否定与肯定", 59.82)]
+    filler = [{"id": f"f{i}", "content": f"第{i}件不相干的事。", "metadata": {"name": f"填充{i}", "tags": [], "created": old}}
+              for i in range(60)]
+    return matches, matches + filler
+
+
+def test_name_closest_to_her_words_wins_over_score():
+    """她说「人机恋博主」:情书分高 0.06,但「人机恋博主态度」才是那件事。"""
+    matches, all_b = _three_hm()
+    out = recall.pick("人机恋博主", matches, all_b, datetime.now())
+    assert out["pick"]["id"] == "blogger", out
+
+
+def test_overlap_tie_falls_back_to_search_order():
+    """只说「人机恋」:后两个桶名都重合 3 个字,按原来的分数顺序取前一个;情书重合 0,不选。"""
+    matches, all_b = _three_hm()
+    out = recall.pick("人机恋", matches, all_b, datetime.now())
+    assert out["pick"]["id"] == "blogger", out
+
+
+def test_no_overlap_anywhere_keeps_old_behavior():
+    """桶名都不含她那句话里的稀有词 → 和原来一样取第一个合格的。"""
+    old = (datetime.now() - timedelta(days=10)).isoformat()
+    a = {"id": "a", "score": 70, "content": "x", "metadata": {"name": "某天", "tags": ["鼻炎"], "created": old}}
+    c = {"id": "c", "score": 60, "content": "y", "metadata": {"name": "另一天", "tags": ["鼻炎"], "created": old}}
+    filler = [{"id": f"f{i}", "content": f"第{i}件事。", "metadata": {"name": f"填充{i}", "tags": [], "created": old}} for i in range(60)]
+    out = recall.pick("鼻炎又犯了", [a, c], [a, c] + filler, datetime.now())
+    assert out["pick"]["id"] == "a"
+
+
+def test_overlap_only_counts_runs_with_a_rare_word():
+    """「佳佳」这类到处都是的字不该给桶名加分:重合段里必须有命中的稀有词。"""
+    assert recall.name_overlap("佳佳说人机恋博主", "佳佳的情书", ["人机恋"]) == 0
+    assert recall.name_overlap("佳佳说人机恋博主", "人机恋博主态度", ["人机恋"]) == 5
+    assert recall.name_overlap("人机恋", "人机恋中的否定与肯定", ["人机恋"]) == 3

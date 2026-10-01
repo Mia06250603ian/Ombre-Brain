@@ -154,6 +154,29 @@ def excluded_reason(meta: dict, now: datetime, min_age_hours: float, is_expired=
     return ""
 
 
+def name_overlap(query: str, name: str, rare: list[str]) -> int:
+    """桶名和她这句话**共有的最长一段字**有多长 —— 只算包含某个命中稀有词的那段(2026-10-01)。
+    为什么要它:几个桶都合格时,原来直接取 search() 分数最高的,那个分是时间/重要度/情绪的综合分,
+    跟「哪件最贴她这句话」关系不大。真实一例:她说「人机恋博主」,三个桶都打了「人机恋」,
+    「佳佳的情书」61.64 分险胜「人机恋博主态度」61.58,于是递了情书。按这个数:后者 5、情书 0。
+    只认含稀有词的那段,是为了不让「佳佳」「我们」这种到处都是的字给桶名白加分。"""
+    q, n = (query or "").lower(), (name or "").lower()
+    best = 0
+    for r in rare or ():
+        start = n.find(r)
+        while start != -1:
+            # 以这次出现为核心,往两边扩,看最长能扩到多长还在她那句话里
+            for i in range(start, -1, -1):
+                for j in range(len(n), start + len(r) - 1, -1):
+                    if j - i <= best:
+                        break
+                    if n[i:j] in q:
+                        best = j - i
+                        break
+            start = n.find(r, start + 1)
+    return best
+
+
 def pick(query: str, matches: list[dict], all_buckets: list[dict], now: datetime,
          min_age_hours: float = 24, max_chars: int = 240, exclude_ids=(), is_expired=None) -> dict:
     """从 search() 的结果里挑**最多一条**。返回
@@ -162,7 +185,7 @@ def pick(query: str, matches: list[dict], all_buckets: list[dict], now: datetime
     df = WordDF(all_buckets)
     limit = rare_limit(len(all_buckets))
     exclude = set(exclude_ids or ())
-    candidates, chosen = [], None
+    candidates, eligible = [], []
     for b in matches:
         meta = b.get("metadata", {})
         why = excluded_reason(meta, now, min_age_hours, is_expired)
@@ -171,11 +194,18 @@ def pick(query: str, matches: list[dict], all_buckets: list[dict], now: datetime
             why = "cooldown"
         if not why and not rare:
             why = "no_rare_word"
+        overlap = name_overlap(query, meta.get("name", ""), rare) if not why else 0
         if len(candidates) < 3:
             candidates.append({"id": b["id"], "name": meta.get("name", b["id"]),
-                               "score": b.get("score", 0), "rare": rare, "skip": why})
-        if not why and chosen is None:
-            chosen = (b, rare)
+                               "score": b.get("score", 0), "rare": rare, "overlap": overlap, "skip": why})
+        if not why:
+            eligible.append((overlap, len(eligible), b, rare))
+    # 合格的里面:先比桶名跟她这句话重合多少(见 name_overlap),一样再按 search() 原来的顺序。
+    # 全都是 0 时等于原行为(取第一个合格的)。
+    chosen = None
+    if eligible:
+        _, _, b, rare = max(eligible, key=lambda e: (e[0], -e[1]))
+        chosen = (b, rare)
     if chosen is None:
         reason = "empty" if not matches else "no_trusted_hit"
         return {"pick": None, "reason": reason, "candidates": candidates}
