@@ -3822,6 +3822,13 @@ if __name__ == "__main__":
             _app = mcp.streamable_http_app()
         else:
             _app = mcp.sse_app()
+        # --- 机器走的门上锁(2026-10-03,mcp_guard.py 开头有来龙去脉)---
+        # 不设 OMBRE_MCP_TOKEN = 不上锁,和改动前一样。先加它再加 CORS:Starlette 后加的在外层,
+        # 这样 CORS 包在锁外面,401 也带 CORS 头、预检(OPTIONS)由 CORS 先接走。
+        from mcp_guard import TokenGuard
+        _mcp_token = os.environ.get("OMBRE_MCP_TOKEN", "").strip()
+        _app.add_middleware(TokenGuard, token=_mcp_token)
+        logger.info("MCP 门锁: " + ("已上锁(/mcp、钩子需带钥匙)" if _mcp_token else "未上锁(OMBRE_MCP_TOKEN 没设)"))
         _app.add_middleware(
             CORSMiddleware,
             allow_origins=["*"],

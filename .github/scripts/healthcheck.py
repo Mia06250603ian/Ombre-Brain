@@ -508,11 +508,23 @@ mcp_body = json.dumps({
     "params": {"protocolVersion": "2024-11-05", "capabilities": {},
                "clientInfo": {"name": "healthcheck", "version": "1"}},
 }).encode()
-st, txt, err = fetch_retry(f"{OB}/mcp", method="POST", body=mcp_body, headers={
+# 2026-10-03 起 /mcp 可以上锁(OB 的 OMBRE_MCP_TOKEN,见 mcp_guard.py)。两种情况都不许误报:
+#   - 配了 secret `OMBRE_MCP_TOKEN` → 带着钥匙握手,必须 200(连「钥匙对不上」都能查出来)
+#   - 没配 → 不带钥匙;收到 401 说明「门还在、而且锁着」,同样算活着(不必为体检多发一把钥匙)
+_mcp_token = os.environ.get("OMBRE_MCP_TOKEN", "").strip()
+_mcp_headers = {
     "Content-Type": "application/json",
     "Accept": "application/json, text/event-stream",
-})
-check("记忆库 · MCP 握手(晏连记忆库的路)", st is not None, err or "")
+}
+if _mcp_token:
+    _mcp_headers["Authorization"] = f"Bearer {_mcp_token}"
+st, txt, err = fetch_retry(f"{OB}/mcp", method="POST", body=mcp_body, headers=_mcp_headers)
+if st is None and not _mcp_token and err == "HTTP 401":
+    check("记忆库 · MCP 握手(晏连记忆库的路)", True)
+    notes.append("MCP 门已上锁(体检没配钥匙,只确认门还在)")
+else:
+    check("记忆库 · MCP 握手(晏连记忆库的路)", st is not None,
+          (err or "") + (" —— 钥匙对不上:看 OB 的 OMBRE_MCP_TOKEN 和本仓库 secret 是不是同一把" if _mcp_token and err == "HTTP 401" else ""))
 # 2026-09-23:备份推不上去的时候,记忆库本身是活的 —— 上面几条全绿,所以要单独看。
 check_backup()
 

@@ -35,9 +35,14 @@ def main():
 
 
 def _call_endpoint(base_url, path):
+    headers = {"Accept": "text/plain"}
+    # 2026-10-03:服务端设了 OMBRE_MCP_TOKEN 之后,这两个钩子要带钥匙(见 mcp_guard.py)
+    token = os.environ.get("OMBRE_MCP_TOKEN", "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(
         f"{base_url}{path}",
-        headers={"Accept": "text/plain"},
+        headers=headers,
         method="GET",
     )
     try:

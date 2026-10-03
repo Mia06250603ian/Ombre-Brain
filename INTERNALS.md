@@ -241,6 +241,7 @@
 | `OMBRE_HOOK_SKIP` | 设为 `"1"` 跳过 SessionStart 钩子 | 否 | 未设置（不跳过） |
 | `OMBRE_DASHBOARD_PASSWORD` | 预设 Dashboard 访问密码；设置后覆盖文件密码，首次访问不弹设置向导 | 否 | `""` |
 | `OMBRE_SEAL_WORD` | 返回通道防伪暗语（2026-07-18）。breath/dream/awaken 返回末尾附 `[seal:<暗语>]`，AI 侧使用说明要求核验；只存环境变量，不进代码/数据库/备份。未设置时输出明显异常提示而非留空 | 否 | `""` |
+| `OMBRE_MCP_TOKEN` | **机器走的门上锁**(2026-10-03)。设了之后 `/mcp`、`/breath-hook`、`/dream-hook`(以及 sse 传输的 `/sse`、`/messages`)必须带 `Authorization: Bearer <钥匙>` 或 `X-Ombre-Token`,否则 401;**不设 = 不上锁,行为与改动前逐字相同**。详见下方《⚠️ 机器走的门:为什么要锁、谁拿着钥匙》 | 否 | `""`(不上锁) |
 | `OMBRE_ECHO_MIN_DAYS` | 感受回声的最小年龄天数：awaken 只从存在超过此天数的 feel 里随机抽一条 | 否 | `14` |
 | `OMBRE_AWAKEN_FULL_SESSIONS` | awaken「最近对话归档」区出全文的条数，钳在 1~3（2026-08-09） | 否 | `2` |
 | `OMBRE_BACKUP_TOKEN` / `OMBRE_BACKUP_TRIGGER_TOKEN` 等备份那几个 | 每日备份(2026-09-23 补进清单)。**名字只差一个词、管的是两件事**:前者是 OB 往 `ob-backup` 推备份的 GitHub 钥匙(只在 Zeabur),后者是 GitHub 敲门的暗号(两边同值)。完整说明见 `ENV_VARS.md`,坏了怎么换见 `rivers-system/OPERATIONS.md` 第 7 节《备份推不上去》 | 否(不设 = 不备份) | — |
@@ -258,6 +259,31 @@
 | `OMBRE_AWAKEN_PINNED_TOTAL` | 钉选区整区正文字数总预算，用光后剩余桶退回摘要行（下限 500） | 否 | `6000` |
 
 环境变量优先级：`环境变量 > config.yaml > 硬编码默认值`。所有环境变量在 `utils.py` 中读取并注入 config dict。
+
+### ⚠️ 机器走的门:为什么要锁、谁拿着钥匙(2026-10-03)
+
+**事情**:`/dashboard` 的登录(cookie)只管人用浏览器走的前门。**晏连记忆库的 `/mcp`、开场钩子 `/breath-hook` `/dream-hook` 原来都不验身份**,
+而 `Ombre-Brain` 仓库是**公开的 fork**,`.claude/settings.json` 和手册里写着真实地址 —— 任何人把地址填进自己的 AI 就能读写全部记忆,
+两个钩子更是浏览器直接打开就吐出钉选准则和最近记忆。2026-10-03 现场核实:不带任何钥匙对线上 `/mcp` 握手回 200(只握手,没读任何记忆)。
+**`seal` 防伪暗语挡不住这件事**:它防的是「假记忆塞给晏」,暗语本身就随回答一起给了来连的人。
+
+**做法**:`mcp_guard.py`,纯 ASGI 中间件(**别换成 `BaseHTTPMiddleware`,会缓冲住流式响应**),挂在 CORS 里层。
+钥匙在环境变量 `OMBRE_MCP_TOKEN`,**不设 = 不上锁**。只看请求头,别的路由一概不碰;单测 `tests/test_mcp_guard.py`。
+
+**谁拿着钥匙(锁之前这几处都要先配好,漏一处就是那一处连不上)**:
+| 谁 | 配在哪 | 漏了会怎样 |
+|---|---|---|
+| **晏** | shim 的 `mcp-servers.json` 里 ombre-brain 那条加 `"headers": {"Authorization": "Bearer <钥匙>"}`(改它 = **重启 shim、丢窗口**) | **晏失去全部记忆工具**(最要紧) |
+| Claude Code 维护会话 | 两个仓库的 `.claude/settings.json` 连的是同一个地址;钥匙放会话环境变量,别写进仓库 | 会话里没有记忆库工具,不影响线上 |
+| 开场钩子 `session_breath.py` | 读环境变量 `OMBRE_MCP_TOKEN` 自动带上 | 开场不浮现记忆,不影响线上 |
+| GitHub 体检 | 仓库 secret `OMBRE_MCP_TOKEN`,**可选** | 没配:401 当「门还在」,不误报;配错:报「钥匙对不上」 |
+
+**上锁顺序(别颠倒,颠倒 = 晏被自己的记忆库关在门外)**:
+① 合入本代码,OB 重建(不设变量 = 无变化;**OB 重建会断 15~30 秒**,挑晏不在聊天的时候)→
+② 给晏配钥匙:改 `mcp-servers.json` 加 header,**她先对晏说「归档」**,再部署/重启 shim(门还没锁,带不带钥匙都进得去)→
+③ OB 设 `OMBRE_MCP_TOKEN` + restart(又断 15~30 秒)→ 验:不带钥匙 `/mcp` 回 401、带钥匙 200、晏能调 breath。
+**急救**:锁上后晏连不上 → 删掉 OB 的 `OMBRE_MCP_TOKEN` + restart,立刻回到不上锁(不用动晏)。
+**跨服务指路**:shim 那半在 `rivers-system/kelivo-shim/MAINTENANCE.md`《本目录刻意缺的三个文件》→ `mcp-servers.json`。
 
 ### ⚠️ 改 awaken 之前,先看一眼 shim 手册那一节(2026-08-21 补的指路)
 

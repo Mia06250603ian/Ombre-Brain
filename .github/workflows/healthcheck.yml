@@ -99,4 +99,7 @@ jobs:
           # **没配也能跑**:走代理时整条跳过;⚠️ 但**切成直连之后没配,这条会叫** ——
           # 那时它就是真问题(长期令牌到期前一秒都完全正常,日期是唯一能提前发出的信号)。
           CLAUDE_TOKEN_EXPIRES: ${{ vars.CLAUDE_TOKEN_EXPIRES }}
+          # 记忆库 /mcp 的钥匙(2026-10-03,和 OB 的 OMBRE_MCP_TOKEN 是同一把)。**没配也能跑**:
+          # 门锁着时体检收到 401 就当「门还在」;配了才能连「钥匙对不上」一起查出来。
+          OMBRE_MCP_TOKEN: ${{ secrets.OMBRE_MCP_TOKEN }}
         run: python3 .github/scripts/healthcheck.py

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """离线验证新加的那条告警:喂假的 /debug,看它该叫时叫、不该叫时闭嘴。
 不联网(urlopen 全被替换掉),不碰线上。"""
-import io, json, os, runpy, sys, urllib.request
+import io, json, os, runpy, sys, urllib.error, urllib.request
 from datetime import datetime, timedelta, timezone
 
 # ⚠️ **必须相对本文件定位,不能写死绝对路径。**
@@ -24,7 +24,8 @@ def authfiles(hours_ago, status="active", **extra):
 
 
 def run(debug_payload, prev_run_hours=None, auth_files=None, cpa_pw=None,
-        shim_auth=None, token_expires=None, shim_extra=None, backup_runs=None):
+        shim_auth=None, token_expires=None, shim_extra=None, backup_runs=None,
+        mcp_locked=None, mcp_token=None):
     """把所有 HTTP 请求换成假的;只有 /debug 用传进来的内容,其余一律健康。
 
     `prev_run_hours`:假装上一趟巡逻是几小时前(给告警窗口那段用)。
@@ -44,6 +45,11 @@ def run(debug_payload, prev_run_hours=None, auth_files=None, cpa_pw=None,
         os.environ["CPA_MANAGEMENT_PASSWORD"] = cpa_pw
     else:
         os.environ.pop("CPA_MANAGEMENT_PASSWORD", None)
+
+    if mcp_token is None:
+        os.environ.pop("OMBRE_MCP_TOKEN", None)
+    else:
+        os.environ["OMBRE_MCP_TOKEN"] = mcp_token
 
     if token_expires is None:
         os.environ.pop("CLAUDE_TOKEN_EXPIRES", None)
@@ -80,6 +86,9 @@ def run(debug_payload, prev_run_hours=None, auth_files=None, cpa_pw=None,
         if url.endswith("/debug"):
             return FakeResp(json.dumps(debug_payload))
         if "/mcp" in url:
+            # mcp_locked(2026-10-03):假装 OB 的 /mcp 已上锁,钥匙是这个值;没带或带错 → 401
+            if mcp_locked is not None and req.get_header("Authorization") != f"Bearer {mcp_locked}":
+                raise urllib.error.HTTPError(url, 401, "Unauthorized", {}, None)
             return FakeResp("{}")
         if "yan-telegram-bridge" in url:
             return FakeResp(json.dumps({"ok": True, "polling": True}))
@@ -348,6 +357,20 @@ ok = code == 0 and "【演习】" not in out
 print(("  ✅ " if ok else "  ❌ ") + "演习开关关着时:一点影响都没有")
 fail += 0 if ok else 1
 os.environ.pop("HEALTHCHECK_TEST_ALARM", None)
+
+# MCP 门锁(2026-10-03):锁上之后体检不许误报,钥匙对不上又必须叫
+for name, kw, want_code, want_text in [
+    ("门锁着、体检没配钥匙 → 401 算「门还在」,不许叫", {"mcp_locked": "K"}, 0, "MCP 门已上锁"),
+    ("门锁着、体检配了对的钥匙 → 200,不许叫", {"mcp_locked": "K", "mcp_token": "K"}, 0, "✅ 记忆库 · MCP 握手"),
+    ("门锁着、体检配的钥匙不对 → 必须叫,并说钥匙对不上", {"mcp_locked": "K", "mcp_token": "X"}, 1, "钥匙对不上"),
+    ("门没锁、体检配了钥匙 → 照常 200,不许叫", {"mcp_token": "K"}, 0, "✅ 记忆库 · MCP 握手"),
+]:
+    code, out = run({"lastApiError": None}, **kw)
+    ok = (code == want_code) and (want_text in out)
+    print(("  ✅ " if ok else "  ❌ ") + name + (f"   [退出码 {code},期望 {want_code}]" if not ok else ""))
+    if not ok:
+        fail += 1
+        print("     " + "\n     ".join(out.strip().splitlines()[-14:]))
 
 # 顺带确认:失败时会走 Telegram 那一步,且没配 secret 时是优雅跳过、不炸
 code, out = run({"lastApiError": {"at": iso(0.1), "kind": "401 authentication_error", "text": "x"}})
