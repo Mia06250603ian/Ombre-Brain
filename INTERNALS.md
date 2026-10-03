@@ -285,6 +285,14 @@
 **急救**:锁上后晏连不上 → 删掉 OB 的 `OMBRE_MCP_TOKEN` + restart,立刻回到不上锁(不用动晏)。
 **跨服务指路**:shim 那半在 `rivers-system/kelivo-shim/MAINTENANCE.md`《本目录刻意缺的三个文件》→ `mcp-servers.json`。
 
+✅ **现状(2026-10-03 晚,三步全部走完):线上已上锁。** 晏的钥匙随 shim 第四十八次部署配上;OB 设变量 + restart 只断约 6 秒;
+验过不带/带错钥匙 `/mcp` 401、两个钩子 401、晏那把 200 且 `tools/list` 出全部 9 个工具、桶数不变、晏实际调 breath 有 seal。
+**锁不到的、本来就不在门里的**:自动浮现 `/api/recall`(有自己的 `OMBRE_RECALL_TOKEN`)、每日备份 `/api/export-backup`(备份口令)、
+`/dashboard` 与 `/api/*`(网页登录)—— **都照常**。
+⏳ **仍待所有者定**:维护会话的钥匙(上表第二、三行,**现在没配 = 维护会话里没有记忆库工具、开场不浮现**)、体检 secret(可选)。
+**验 `/mcp` 存活从此要带钥匙**,不带回 401 是锁在、不是故障(`rivers-system/OPERATIONS.md` 第 6 节五步验收第 3 步有写法)。
+过程见 `rivers-system/TIMELINE.md` 10-03 第八十件。
+
 ### ⚠️ 改 awaken 之前,先看一眼 shim 手册那一节(2026-08-21 补的指路)
 
 **`rivers-system/kelivo-shim/MAINTENANCE.md` 里有一节讲的是 OB 的 awaken,不是 shim** ——
@@ -319,7 +327,9 @@
 ```bash
 OB=https://ianmian.zeabur.app
 
-# ① 握手拿 session id（OB 的 /mcp 不需要 token）
+# ① 握手拿 session id
+#   ⚠️ 2026-10-03 起 /mcp 上了锁:下面三条 curl 都要再加一行
+#   -H "Authorization: Bearer $OMBRE_MCP_TOKEN"(钥匙别打印);~~原文「OB 的 /mcp 不需要 token」~~
 S=$(curl -s -D- -o/dev/null -X POST $OB/mcp \
   -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"diag","version":"1"}}}' \
