@@ -8,7 +8,7 @@ A long-term emotional memory system for Claude. Tags memories using Russell's va
 > Gitea 备用地址（GitHub 访问有问题时用）：
 > **https://git.p0lar1s.uk/P0lar1s/Ombre_Brain**
 
-> 📁 `kelivo-shim/` 是聊天桥接服务（Kelivo × Claude Code 订阅直连）的部署源码，与本记忆系统分开部署；维护与部署流程见其目录内 [MAINTENANCE.md](kelivo-shim/MAINTENANCE.md)。
+> 📁 聊天桥接服务 `kelivo-shim`（Kelivo × Claude Code 订阅直连）及其他周边服务，2026-10-03 起已移到独立的私有仓库 `rivers-system`，与本记忆系统分开部署、分开维护。
 
 ---
 
