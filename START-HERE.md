@@ -13,4 +13,6 @@
 本仓库文档里写成 `rivers-system/xxx` 的路径都在那个仓库。
 ⚠️ **`dashboard.html` 第 28、435 行和 `server.py` 里的注释提到 `OPERATIONS.md` / `dwell-bridge/` / `kelivo-shim` 时没加前缀** —— 拆仓库那天**刻意没改**:改这两个文件会触发 Zeabur 重建 OB(监控路径)。它们指的也都在 `rivers-system`;下次本来就要改这两个文件时顺手补上。2026-10-03 之前的改动历史(含晏那边的)仍在本仓库的提交记录里。
 
+⚙️ **`.claude/`(会话连记忆库的设置 + 开场钩子)在 `rivers-system` 有一份逐字相同的副本**,改一份就把另一份也改了。
+
 ⚠️ **别把本仓库直接改成公开**:旧提交历史里有全部运维细节(服务地址、部署记录)。真要公开 OB,另开一个干净仓库(见 `rivers-system/OPERATIONS.md` 第 10 节)。
