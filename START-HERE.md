@@ -5,7 +5,7 @@
 | 仓库 | 里面是什么 |
 |---|---|
 | **`Ombre-Brain`(本仓库)** | **OB 记忆库**(Python/FastMCP)。Zeabur 从 main 拉、每日备份、CI、**每小时体检**(`.github/workflows/healthcheck.yml`,它也巡晏和 TG 桥)都在这里 |
-| **`Mia06250603ian/rivers-system`(私有)** | 晏本体(`kelivo-shim/`)、TG / iMessage / dwell 三个桥、gmail、飞行棋、维护工位,**以及全系统的运维手册**:`START-HERE.md`(地图 + 三条铁规矩)、`OPERATIONS.md`、`TIMELINE.md` |
+| **`Mia06250603ian/rivers-system`(私有)** | 晏本体(`rivers-system/kelivo-shim/`)、TG / iMessage / dwell 三个桥、gmail、飞行棋、维护工位,**以及全系统的运维手册**:`START-HERE.md`(地图 + 三条铁规矩)、`OPERATIONS.md`、`TIMELINE.md` |
 
 **新会话两个仓库都挂上,从 `rivers-system` 的 `START-HERE.md` 读起** —— 三条铁规矩、开场指令都在那边。
 **只改 OB** → 读本仓库的 `INTERNALS.md`;但 OB⇄晏 的事(自动浮现、归档桶、体检)两边都要看。
