@@ -2,7 +2,7 @@
 """许晏系统 · 每日体检
 
 为什么要有(按真事故排的,不是拍脑袋):
-  翻 OPERATIONS.md 的事故记录,最贵的三次有同一个特征 —— **全线零报警,都是所有者自己发现的**:
+  翻 rivers-system/OPERATIONS.md 的事故记录,最贵的三次有同一个特征 —— **全线零报警,都是所有者自己发现的**:
     08-11 订阅 OAuth 过期  → 断约 3 小时,/health 正常、日志干净、晏活着,就是不通
     08-12 缓存所有权被抢    → 白烧一天半,唯一症状是「额度掉得快」
     08-19 Node 250ms 闸门   → 空回,严重时连提示都送不出去
@@ -96,7 +96,7 @@ AUTH_ERROR_MARKS = ("401", "403", "authentication", "auth_unavailable",
 #
 # 周期 4 小时是**实测**,不是文档写的:2026-09-02 三个时间戳,09:42:16 → 13:42:17 → 17:42:17,
 # **两段都是 4 小时 0 分上下、精确到秒**,说明是固定定时器而非「快到期才刷」;
-# 所有者的朋友在同一套代理上独立量到同一个数。**现场再量法见 OPERATIONS.md 第 7 节。**
+# 所有者的朋友在同一套代理上独立量到同一个数。**现场再量法见 rivers-system/OPERATIONS.md 第 7 节。**
 REFRESH_CYCLE_HOURS = 4.0
 # 阈值 = 周期 + 1 小时容错。**为什么不设更小**:巡逻本身会晚(见 auth_window_hours 那段,
 # GitHub 的 cron 不准),阈值贴着周期会在一次正常的延迟巡逻上误报,踩铁律①。
@@ -126,11 +126,11 @@ TOKEN_WARN_DAYS = (30, 7, 3, 1)
 # 换一把令牌该怎么做 —— **告警里必须带上这句**。收到提醒的人可能是半年后的她,
 # 也可能是一个全新的会话:提醒里不写步骤 = 等于没提醒。
 TOKEN_RENEW_HOW = ("换法:开一个会话让它驱动 `claude setup-token`(所有者只需在手机上点一下授权链接、"
-                   "把码发回去;⚠️ 她没有电脑,别让她自己跑命令 —— 见 OPERATIONS.md 第 7 节那段),"
+                   "把码发回去;⚠️ 她没有电脑,别让她自己跑命令 —— 见 rivers-system/OPERATIONS.md 第 7 节那段),"
                    "把新令牌填进 Zeabur 的 `CLAUDE_CODE_OAUTH_TOKEN` 再 restart;"
                    "⚠️ 最后一步别漏:**把新的到期日填回本仓库的 " + TOKEN_EXPIRES_ENV + " 变量**,"
                    "不改的话它会在旧日期报一次、然后永远闭嘴。"
-                   "**整套九步照 OPERATIONS.md 第 7 节《一年后换令牌:操作单》走**")
+                   "**整套九步照 rivers-system/OPERATIONS.md 第 7 节《一年后换令牌:操作单》走**")
 
 OB = "https://ianmian.zeabur.app"
 SHIM = "https://yan-shim.zeabur.app"
@@ -306,7 +306,7 @@ def check_backup():
         check("记忆库 · 每日备份在推", False,
               f"连续 {streak} 次失败。最常见是 OB 推备份用的 GitHub 钥匙过期(日志里有 "
               "`could not read Password`);去 Actions 看 Daily Backup 的日志,"
-              "修法见 OPERATIONS.md《备份推不上去》")
+              "修法见 rivers-system/OPERATIONS.md《备份推不上去》")
     elif streak == 1:
         print("  ⓘ 最近一次备份失败了,但只有一次(可能碰上 OB 重启),明天还挂才报警;"
               "GitHub 已经为这次单独发过邮件")
@@ -469,7 +469,7 @@ def check_refresh_alive():
         # ① 已经死了:这个不用算时间,代理自己就说了。**这条是「已经断了」,不是预警。**
         if f.get("disabled") or f.get("unavailable") or (status and status != "active"):
             check(f"凭证 · {who} 可用", False,
-                  f"status={status!r} —— 代理已经认定它不可用,看 OPERATIONS.md《订阅 OAuth 过期》")
+                  f"status={status!r} —— 代理已经认定它不可用,看 rivers-system/OPERATIONS.md《订阅 OAuth 过期》")
             continue
         # ② 还没死,但续命停了:**这才是提前量那一条。**
         if hrs is None:
@@ -481,7 +481,7 @@ def check_refresh_alive():
               f"已经 {hrs:.1f} 小时没刷新(正常每 {REFRESH_CYCLE_HOURS:.0f} 小时一次)。"
               f"刷新停了通常意味着 refresh token 失效,手里的 access token 大约还能撑 "
               f"{max(left, 0):.1f} 小时。**趁还没断,挑个方便的时候重新授权**:"
-              f"先让晏「归档」再走 OPERATIONS.md 第 7 节《订阅 OAuth 过期》那三步")
+              f"先让晏「归档」再走 rivers-system/OPERATIONS.md 第 7 节《订阅 OAuth 过期》那三步")
 
 
 print("=" * 60)
@@ -528,7 +528,7 @@ if check("晏 · 服务活着", st is not None, err or ""):
     SHIM_AUTH = d.get("auth")
     if SHIM_AUTH:
         notes.append(f"上游走法 {SHIM_AUTH!r}")
-    # 2026-09-23 双引擎:5.5 这类新模型只能走第二份新版 CLI(见 kelivo-shim/cli-bin.mjs)。
+    # 2026-09-23 双引擎:5.5 这类新模型只能走第二份新版 CLI(见 rivers-system/kelivo-shim/cli-bin.mjs)。
     # **只有新代码才有这几个字段**;读不到(老代码)就整段跳过,行为与改动前逐字相同。
     # 两条都是「铁定不对」,符合铁律①:
     #   · modelsDropped 非空 = 她配了 5.5,但新版 CLI 没装上 → shim 已把 5.5 从菜单拿掉,她点不到;
@@ -539,7 +539,7 @@ if check("晏 · 服务活着", st is not None, err or ""):
         check("晏 · 新模型那份 CLI 在(双引擎)", not dropped,
               f"配了 {', '.join(map(str, dropped))},但新版 CLI 没装上,已从 Kelivo 菜单拿掉(4.6 不受影响)。"
               "多半是部署时新版的原生二进制没下载成功:重新部署 shim 一般就好;"
-              "排查看 kelivo-shim/MAINTENANCE.md 改动清单第 13 条")
+              "排查看 rivers-system/kelivo-shim/MAINTENANCE.md 改动清单第 13 条")
         next_models = d.get("nextModels") or []
         if d.get("model") in next_models and d.get("cli") is not None:
             check("晏 · 新模型走的是新版 CLI", d.get("cli") == "next",
@@ -593,7 +593,7 @@ else:
     #   ② **只认认证类**(见 AUTH_ERROR_MARKS)。529 overloaded、网络抖动会自愈,
     #      报了就是狼来了 —— 照旧只打印。
     # 为什么值得为它破例:08-11 那场三小时的静默里,**全系统唯一亮过的灯就是它**,
-    # 而当时这只狗看着它、没叫。见 OPERATIONS.md《订阅 OAuth 过期(2026-08-11 事故,必读)》。
+    # 而当时这只狗看着它、没叫。见 rivers-system/OPERATIONS.md《订阅 OAuth 过期(2026-08-11 事故,必读)》。
     win, why_win = auth_window_hours()
     # 这行是白拿的巡逻节拍记录:**每趟都会打印实测间隔**,
     # 攒几天就知道 GitHub 到底给不给我们「每小时」,不用另做一套观测(也不用定时唤醒会话去数)。
@@ -609,7 +609,7 @@ else:
         if looks_like_auth_error(e) and hrs is not None and hrs <= win:
             check(f"晏 · 上游认证没断(最近 {win:.1f} 小时)", False,
                   f"{ago}报 {kind!r} —— 八成是订阅 OAuth 失效了,"
-                  f"看 OPERATIONS.md《订阅 OAuth 过期》")
+                  f"看 rivers-system/OPERATIONS.md《订阅 OAuth 过期》")
         else:
             why = ("不是认证类" if not looks_like_auth_error(e)
                    else "时间读不出来" if hrs is None else "不是最近发生的")
@@ -636,14 +636,14 @@ if problems:
     print(f"\n❌ 体检不通过,{len(problems)} 项有问题:")
     for p in problems:
         print("   · " + p)
-    print("\n排查从 OPERATIONS.md 的《常见故障 → 解法》一节按症状对号。")
+    print("\n排查从 rivers-system/OPERATIONS.md 的《常见故障 → 解法》一节按症状对号。")
     # 第二条腿。前缀 `⚠️[体检]` 是刻意和 `⚠️[bridge]` / `⚠️[shim]` 区分开的:
     # 看见这个前缀就知道**是看门狗在说话,不是晏、也不是桥**。
     print("\n[5] Telegram 推送")
     notify_telegram(
         f"⚠️[体检] 许晏系统体检没过,{len(problems)} 项有问题:\n"
         + "\n".join("· " + p for p in problems)
-        + "\n\n排查:OPERATIONS.md《常见故障 → 解法》按症状对号。"
+        + "\n\n排查:rivers-system/OPERATIONS.md《常见故障 → 解法》按症状对号。"
     )
     sys.exit(1)
 

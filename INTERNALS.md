@@ -243,14 +243,14 @@
 | `OMBRE_SEAL_WORD` | 返回通道防伪暗语（2026-07-18）。breath/dream/awaken 返回末尾附 `[seal:<暗语>]`，AI 侧使用说明要求核验；只存环境变量，不进代码/数据库/备份。未设置时输出明显异常提示而非留空 | 否 | `""` |
 | `OMBRE_ECHO_MIN_DAYS` | 感受回声的最小年龄天数：awaken 只从存在超过此天数的 feel 里随机抽一条 | 否 | `14` |
 | `OMBRE_AWAKEN_FULL_SESSIONS` | awaken「最近对话归档」区出全文的条数，钳在 1~3（2026-08-09） | 否 | `2` |
-| `OMBRE_BACKUP_TOKEN` / `OMBRE_BACKUP_TRIGGER_TOKEN` 等备份那几个 | 每日备份(2026-09-23 补进清单)。**名字只差一个词、管的是两件事**:前者是 OB 往 `ob-backup` 推备份的 GitHub 钥匙(只在 Zeabur),后者是 GitHub 敲门的暗号(两边同值)。完整说明见 `ENV_VARS.md`,坏了怎么换见 `OPERATIONS.md` 第 7 节《备份推不上去》 | 否(不设 = 不备份) | — |
+| `OMBRE_BACKUP_TOKEN` / `OMBRE_BACKUP_TRIGGER_TOKEN` 等备份那几个 | 每日备份(2026-09-23 补进清单)。**名字只差一个词、管的是两件事**:前者是 OB 往 `ob-backup` 推备份的 GitHub 钥匙(只在 Zeabur),后者是 GitHub 敲门的暗号(两边同值)。完整说明见 `ENV_VARS.md`,坏了怎么换见 `rivers-system/OPERATIONS.md` 第 7 节《备份推不上去》 | 否(不设 = 不备份) | — |
 
 > **⚠️ 跨服务(2026-08-21 新增,改 awaken 的归档全文之前必读)**:这一区的每条全文在 `server.py` 里是 **`[:1500]` 字符硬截断**(「最近对话归档」那段的 `full = …[:1500]`),**没有环境变量能调**。
 > 而它读回来的两个桶里,有一个是 kelivo-shim 的上下文守卫在压缩前催出来的**原话桶**——那个桶是**按时间从早排到晚**的,所以被 `[:1500]` 切掉的正是**最靠近现在、最该接上话的那几句**。
 > **后果**:shim 那边的 `CTX_FINAL_CHARS`(给晏的抄写字数上限,线上 1200)**一旦超过约 1400,多存的字开机根本读不到**,
 > 而且白存的是最有用的那一段。**两个数必须一起改**:先把这里的 1500 抬上去,再抬 shim 那个;
 > 只抬一边比不抬更糟。改 OB 走 redeploy,**不重启晏**;改 shim 要整套部署、会丢晏的窗口。
-> 细节见 `kelivo-shim/MAINTENANCE.md` 环境变量表的 `CTX_FINAL_TOKENS` / `CTX_FINAL_CHARS` 两行。
+> 细节见 `rivers-system/kelivo-shim/MAINTENANCE.md` 环境变量表的 `CTX_FINAL_TOKENS` / `CTX_FINAL_CHARS` 两行。
 > ⚠️ **代价**:这里每加 1000 字符,`awaken` 每次开机就多吃约 850 token(两条全文位 = 两倍),见本文件《awaken 会不会把开机撑爆》那把尺子,加之前先量一遍。
 
 | `OMBRE_AWAKEN_PINNED_FULL` | awaken「钉选」区是否出正文全文（2026-08-21）。设 `0` 整区回到旧的摘要行行为（急救开关，不用回滚代码） | 否 | `1`（开） |
@@ -261,7 +261,7 @@
 
 ### ⚠️ 改 awaken 之前,先看一眼 shim 手册那一节(2026-08-21 补的指路)
 
-**`kelivo-shim/MAINTENANCE.md` 里有一节讲的是 OB 的 awaken,不是 shim** ——
+**`rivers-system/kelivo-shim/MAINTENANCE.md` 里有一节讲的是 OB 的 awaken,不是 shim** ——
 标题是「**④ 附带查出:awaken 的全文位已经把日记桶挤掉了(OB 侧,未改)**」
 (在《2026-08-10 第三十一次的机制细节》那一组里,搜标题即可)。
 
@@ -381,7 +381,7 @@ curl -s -X POST $OB/mcp -H 'Content-Type: application/json' \
 
 `dashboard.html` 的 `:root` 里那两张表(灰阶 + 角色表)是 **`claude.com` 线上 CSS 的原文**,
 **2026-08-31 现场取的**。⚠️ **别照截图猜色值** —— 这条是 dwell 那轮拿真事故换来的规矩,
-原文在 `OPERATIONS.md` 第 0 节「dwell UI 留下的三条」,另见 `dwell-bridge/MAINTENANCE.md`
+原文在 `rivers-system/OPERATIONS.md` 第 0 节「dwell UI 留下的三条」,另见 `rivers-system/dwell-bridge/MAINTENANCE.md`
 第五次部署记录(那次同样是从官端 CSS 逐项比对拿到的,**两处的值互相能对上**)。
 
 **怎么再取一遍**(官端改版了就重跑,只读、不碰任何服务):
@@ -532,7 +532,7 @@ Artifact,不在仓库里;重做一个也不难,或者直接改 `dashboard.html` 
 - **字体没换**(仍是 Google Fonts 的 Inter + Cormorant Garamond ——
   ⚠️ **这条是对的**;1.11 别踩第 2 条原来写着「这个后台零外部请求」,和这里矛盾,
   2026-09-03 已就地更正,以本条为准)。官端自有字体扒不了,
-  理由见 `dwell-bridge/MAINTENANCE.md`《碰前端视觉之前的四条》第 3 条(~~原在 `OPERATIONS.md` 第 0 节~~,2026-09-26 搬过去)。**只补了中文兜底**:凡是 `serif` 结尾的字体栈都接了苹方
+  理由见 `rivers-system/dwell-bridge/MAINTENANCE.md`《碰前端视觉之前的四条》第 3 条(~~原在 `rivers-system/OPERATIONS.md` 第 0 节~~,2026-09-26 搬过去)。**只补了中文兜底**:凡是 `serif` 结尾的字体栈都接了苹方
   —— 裸 `serif` 会让中文变宋体,反而不像官端(dwell 第五次踩过,见其手册「反直觉的点」1)。
 - **画布里的颜色一律 `cssVar()` 现读**(~~记忆网络、Breath 那两处~~ **2026-09-03 起只剩 Breath 的评分条**
   ——记忆网络那页已删,后台现在一块 `<canvas>` 都没有)。写死的话深色模式下画出来还是浅色那套。
@@ -890,7 +890,7 @@ python3 -m pytest tests/test_trash.py -q   # 回收站存取层 6 项(真 Bucket
 >
 > **所有者拍板删掉**,原话是「记忆网络我感觉我用不到」。起因是她问能不能把这页换成
 > `Mia06250603ian/fuyue` 里那个飘字符的记忆星图;比下来结论是**她已经有 `/galaxy` 可以逛,
-> 而这一页她不看**,于是删页,不做替换。(那次比较的结论见 `TIMELINE.md` 09-03。)
+> 而这一页她不看**,于是删页,不做替换。(那次比较的结论见 `rivers-system/TIMELINE.md` 09-03。)
 >
 > **删掉的**:`dashboard.html` 里的「记忆网络」标签、那块 `<canvas>`、图例、
 > `loadNetwork()` / `drawNetwork()`、只有它在用的 `hexA()`,以及四个只它在用的 CSS 变量
@@ -973,7 +973,7 @@ time curl -s -b "ombre_session=<你的>" https://ianmian.zeabur.app/api/network 
 
 ## 1.11 便利贴页 `/dashboard` →「便利贴」(2026-09-01 新增)
 
-**这块便利贴是晏的,不是她的。** 存储是卷上的 `todos.json`(2026-08-14 建的,见 `TIMELINE.md` 08-14),
+**这块便利贴是晏的,不是她的。** 存储是卷上的 `todos.json`(2026-08-14 建的,见 `rivers-system/TIMELINE.md` 08-14),
 入口一直只有他的 MCP `todos` 工具 —— **后台一个入口都没有**,她想知道他记了什么只能开口问他。
 2026-09-01 她要:「便利贴是他的,只给他用,但是我想能看到,修改权可以有,但是我不一定用。」
 
@@ -1182,7 +1182,7 @@ bash tests/dashboard-ui/run.sh                                     # 浏览器�
 
 ### 详情卡长什么样:钉死的几条,别自己发挥
 
-所有者 2026-09-03 一轮轮定的,**过程在 `TIMELINE.md` 09-03**,这儿只留能拦住错误动作的:
+所有者 2026-09-03 一轮轮定的,**过程在 `rivers-system/TIMELINE.md` 09-03**,这儿只留能拦住错误动作的:
 
 - ⚠️ **整张卡是玻璃**(2026-09-03 所有者:「**这个页面也改成玻璃质感**」)。
   ~~原来 `--drift-card` 是 `.94`~~ —— 几乎不透,底下的字符雨一点都透不上来 = 一张白纸。
@@ -1194,7 +1194,7 @@ bash tests/dashboard-ui/run.sh                                     # 浏览器�
   不然半透明没了模糊会糊字。演练钉四条(面半透明、开了模糊、面上有光泽、边缘是渐变高光)。
 - ⚠️ **卡片是 iOS 那种连续圆角(超椭圆),四个角一致,而且是浮起来的**
   (2026-09-03 所有者:「**改成 iOS 风格的连续圆角…没有明显的四分之一圆弧感…四个角保持一致**」)。
-  ⚠️⚠️ **同一天早些时候做过一次、被她当场回退**(`TIMELINE.md` 第二十五件:「圆角回退」)——
+  ⚠️⚠️ **同一天早些时候做过一次、被她当场回退**(`rivers-system/TIMELINE.md` 第二十五件:「圆角回退」)——
   ~~那次只把**上两角**做成超椭圆、下缘保持直角~~(当时卡片贴着屏幕底),**四角不一致正是被否的原因**。
   **这次不一样**:卡片先浮了起来(`bottom` 也留 11px),四个角都露在屏里、走同一条曲线。
   **别拿第二十五件那句「别再加 squircle」挡这一版** —— 那句说的是那次的做法。
@@ -1512,7 +1512,7 @@ PW=/tmp/turbulence-e2e/node_modules PORT=8811 \
 
 ### 3.3.2 自动浮现的查询口 `GET /api/recall`(2026-09-30 新增,**尚未上线**)
 
-shim 在她每句话进晏之前来问「有没有一件相关的旧事」,**最多回一件**。shim 那半见 `kelivo-shim/MAINTENANCE.md` 改动清单第 17 条。可转给别人的占位符版教程:`kelivo-shim/自动浮现-实施指南.md`(2026-10-01;**改了本节的规矩,那份的代码和第 5 节「坑」要跟着改**)。
+shim 在她每句话进晏之前来问「有没有一件相关的旧事」,**最多回一件**。shim 那半见 `rivers-system/kelivo-shim/MAINTENANCE.md` 改动清单第 17 条。可转给别人的占位符版教程:`rivers-system/kelivo-shim/自动浮现-实施指南.md`(2026-10-01;**改了本节的规矩,那份的代码和第 5 节「坑」要跟着改**)。
 - **鉴权**:环境变量 `OMBRE_RECALL_TOKEN`,请求带 `Authorization: Bearer <它>`。**不设 = 口子关着(404)**,和面板的 cookie 鉴权无关。
 - **参数**:`q` 她的原话(截 2000 字)、`n` 摘录字数(60~800,默认 240)、`min_age_hours`(默认 24)、`exclude` 逗号分隔的冷却中桶 id。
 - **返回**:`{pick: {id,name,created,score,rare,excerpt} | null, reason, candidates}`;`candidates` 是前三条及各自没选上的原因,**不含正文**。
