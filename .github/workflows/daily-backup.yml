@@ -2,6 +2,8 @@ name: Daily Backup
 
 # Trigger: daily at 02:00 UTC + manual dispatch
 # 触发：每日 UTC 02:00 自动运行，支持手动触发
+# 2026-10-18 重新登记定时:10-14 07:02 之后 GitHub 再没按计划触发过(工作流显示 active、手动能跑)。
+#   改动本文件 = 让 GitHub 重新登记 schedule。再停的话先看 Actions 里「通过计划」的记录。
 on:
   schedule:
     - cron: '0 2 * * *'
