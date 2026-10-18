@@ -132,9 +132,11 @@ TOKEN_RENEW_HOW = ("换法:开一个会话让它驱动 `claude setup-token`(所�
                    "不改的话它会在旧日期报一次、然后永远闭嘴。"
                    "**整套九步照 rivers-system/OPERATIONS.md 第 7 节《一年后换令牌:操作单》走**")
 
-OB = "https://ianmian.zeabur.app"
-SHIM = "https://yan-shim.zeabur.app"
-BRIDGE = "https://yan-telegram-bridge.zeabur.app"
+# 2026-10-18 搬家:Zeabur 停运,三个地址换成新家(腾讯云新加坡,域名 miaian.xyz)。
+# 见 rivers-system/docs/搬家方案-离开Zeabur.md。~~原来是 ianmian / yan-shim / yan-telegram-bridge .zeabur.app~~
+OB = "https://memory.miaian.xyz"
+SHIM = "https://shim.miaian.xyz"
+BRIDGE = "https://tg.miaian.xyz"
 
 problems = []        # 会让这次运行变红(= 给她发邮件)
 notes = []           # 只打印,不报警

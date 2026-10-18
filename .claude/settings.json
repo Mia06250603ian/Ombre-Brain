@@ -2,7 +2,7 @@
   "mcpServers": {
     "ombre-brain": {
       "type": "http",
-      "url": "https://ianmian.zeabur.app/mcp"
+      "url": "https://memory.miaian.xyz/mcp"
     }
   },
   "hooks": {

@@ -9,6 +9,12 @@ from datetime import datetime, timedelta, timezone
 # 本地跑得好好的,一进 GitHub 的机器就 FileNotFoundError(那边的工作目录是
 # `/home/runner/work/...`)。**本地能跑不等于 CI 能跑。**
 SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "healthcheck.py")
+# 假服务按地址认是谁:地址直接从 healthcheck.py 里读,**别在这儿再写死一份**
+# (2026-10-18 搬家换了地址,写死的那份没跟着改,30 项一起红)
+import re as _re
+_SRC = open(SCRIPT, encoding="utf-8").read()
+OB_URL = _re.search(r'^OB = "([^"]+)"', _SRC, _re.M).group(1)
+BRIDGE_URL = _re.search(r'^BRIDGE = "([^"]+)"', _SRC, _re.M).group(1)
 
 
 def iso(hours_ago):
@@ -90,9 +96,9 @@ def run(debug_payload, prev_run_hours=None, auth_files=None, cpa_pw=None,
             if mcp_locked is not None and req.get_header("Authorization") != f"Bearer {mcp_locked}":
                 raise urllib.error.HTTPError(url, 401, "Unauthorized", {}, None)
             return FakeResp("{}")
-        if "yan-telegram-bridge" in url:
+        if url.startswith(BRIDGE_URL):
             return FakeResp(json.dumps({"ok": True, "polling": True}))
-        if "ianmian" in url:
+        if url.startswith(OB_URL):
             return FakeResp(json.dumps({"status": "ok", "buckets": 376}))
         # 剩下的就是 shim 的 /health。⚠️ `auth` 字段**只有新代码才有**,
         # 所以 shim_auth=None 时这里刻意不放这个键,复现线上老代码的样子。
