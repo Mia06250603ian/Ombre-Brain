@@ -60,6 +60,7 @@ from embedding_engine import EmbeddingEngine
 from import_memory import ImportEngine
 from backup_exporter import BackupExporter
 from utils import load_config, setup_logging, strip_wikilinks, count_tokens_approx, now_iso
+from login_guard import LoginGuard, client_ip
 
 # --- Load config & init logging / 加载配置 & 初始化日志 ---
 config = load_config()
@@ -262,6 +263,9 @@ async def auth_setup_endpoint(request):
     return resp
 
 
+_login_guard = LoginGuard()
+
+
 @mcp.custom_route("/auth/login", methods=["POST"])
 async def auth_login(request):
     """Login with password."""
@@ -270,12 +274,22 @@ async def auth_login(request):
         body = await request.json()
     except Exception:
         return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    # 连错锁一会儿(2026-10-28,规则见 login_guard.py 开头)
+    ip = client_ip(request.headers, request.client.host if request.client else "")
+    allowed, wait, scope = _login_guard.check(ip)
+    if not allowed:
+        logger.warning(f"[login] 锁着,不让试: {'全部' if scope == 'all' else ip} {wait} 秒")
+        return JSONResponse({"error": f"试错太多次了,{(wait + 59) // 60} 分钟后再试"}, status_code=429,
+                            headers={"Retry-After": str(wait)})
     password = body.get("password", "")
     if _verify_any_password(password):
+        _login_guard.ok(ip)
         token = _create_session()
         resp = JSONResponse({"ok": True})
         resp.set_cookie("ombre_session", token, httponly=True, samesite="lax", max_age=86400 * 7)
         return resp
+    _login_guard.fail(ip)
+    logger.warning(f"[login] 密码错误 {ip}")
     return JSONResponse({"error": "密码错误"}, status_code=401)
 
 

@@ -666,7 +666,7 @@ function askPassword(){
           headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd})});
         // 非 2xx 一律当口令不对:OB 对含非 ASCII 字符的口令会回 500 而不是 401
         // (2026-08-29 实测,server.py 的 hmac.compare_digest;是 OB 本来就有的,已报备所有者)
-        if(!r.ok){ err.textContent='口令不对'; go.disabled=false; inp.select(); return; }
+        if(!r.ok){ err.textContent=r.status===429?'试错太多次了,过一会儿再试':'口令不对'; go.disabled=false; inp.select(); return; }
         const d=await loadOB();
         gate.classList.remove('on'); inp.value='';
         document.getElementById('loading').style.display='';
