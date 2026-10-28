@@ -1798,7 +1798,7 @@ async function doLogin() {
     document.getElementById('auth-overlay').style.display = 'none';
   } else {
     const d = await resp.json();
-    showAuthError(d.detail || '密码错误');
+    showAuthError(resp.status === 429 ? d.error : (d.detail || '密码错误'));   // 429 = 连错被锁(login_guard.py),照实说要等几分钟
   }
 }
 

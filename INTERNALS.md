@@ -185,7 +185,8 @@
 - 密码存储：SHA-256 + 随机 salt，保存于 `{buckets_dir}/.dashboard_auth.json`
 - 环境变量 `OMBRE_DASHBOARD_PASSWORD` 设置后，覆盖文件密码（只读，不可通过 Dashboard 修改）
 - Session：内存字典（服务重启失效），cookie `ombre_session`（HttpOnly, SameSite=Lax, 7天）
-- `/health`, `/breath-hook`, `/dream-hook`, `/mcp*` 路径不受保护（公开）
+- ~~`/health`, `/breath-hook`, `/dream-hook`, `/mcp*` 路径不受保护（公开）~~ —— **2026-10-03 起只有 `/health` 公开**,另三个归 `OMBRE_MCP_TOKEN` 管(见下面《机器走的门》)
+- **登录连错锁一会儿(2026-10-28,`login_guard.py`)**:同一个 IP 15 分钟内错 5 次锁 15 分钟、所有 IP 一小时共错 50 次全部锁 15 分钟,锁着回 **429**(`Retry-After`),三个登录框(后台 / 银河 / 乱流)照实提示「过一会儿再试」。起因:`rivers-system` 那边体检发现 `/auth/login` 能无限试、密码最短 6 位。IP 取 `X-Forwarded-For` **最右边**(Caddy 写的,访客自带的在左边不信)。**只锁登录**:已登录的 cookie 照常用,晏的 `/mcp` 完全不经过这里。只在内存,重启清零。单测 `tests/test_login_guard.py`(含真接口:错 5 次后第 6 次 429)。同一套规矩在 `rivers-system/dwell-bridge/dwell-lib.mjs` 的 `makeLoginGuard`,**改一边看一眼另一边**。
 
 **Dashboard（6 个 Tab）**
 1. 记忆桶列表：6 种过滤器 + 主题域过滤 + 搜索 + 详情面板
