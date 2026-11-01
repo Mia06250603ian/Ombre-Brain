@@ -7,7 +7,7 @@
 #
 # 所以这个文件钉三件事:
 #   1. 读:她看得见,且不改任何东西
-#   2. 写:她贴的条子必须标成她的(by=owner → 晏那边显示「(她留的)」)
+#   2. 写:她贴的条子必须标成她的(by=owner → 晏那边显示「(她的待办)」;for=him → 「(她留给你的)」,2026-11-02)
 #   3. 边界:空/超长/不存在的编号/未登录,一个都不许放过去
 # ============================================================
 
@@ -96,12 +96,22 @@ class Test她贴的条子:
         client.post("/api/todos/add", json={"text": "她留的"})
 
         out = anyio.run(lambda: server._todos_impl())
-        assert "她留的  (她留的)" in out
-        assert "他自己记的  (她留的)" not in out   # 他自己的不许被标
+        assert "她留的  (她的待办)" in out
+        assert "他自己记的  (" not in out   # 他自己的不许被标
 
         # 开机那份(只列没做的)同样要标
         boot = anyio.run(lambda: server._todos_impl(only_open=True))
-        assert "(她留的)" in boot
+        assert "(她的待办)" in boot
+
+    def test_她写给他的标成留给你的(self, client_and_server):
+        client, server = client_and_server
+        hit = items_of(client.post("/api/todos/add", json={"text": "提醒我喝水", "for": "him"}))[-1]
+        assert hit["by"] == "owner" and hit["for"] == "him"
+        client.post("/api/todos/add", json={"text": "乱写的", "for": "who"})
+        import anyio
+        out = anyio.run(lambda: server._todos_impl())
+        assert "提醒我喝水  (她留给你的)" in out
+        assert "乱写的  (她的待办)" in out          # 不认识的 for 当她自己的
 
     def test_旧条目没有by字段也不会被标(self, client_and_server):
         client, server = client_and_server
@@ -109,7 +119,7 @@ class Test她贴的条子:
         server._save_todos_list([{"id": "ab12", "text": "老条目", "done": False}])
         import anyio
         out = anyio.run(lambda: server._todos_impl())
-        assert "老条目" in out and "(她留的)" not in out
+        assert "老条目" in out and "(她" not in out
         assert client.get("/api/todos").json()["open"] == 1
 
     def test_首尾空白会去掉(self, client_and_server):

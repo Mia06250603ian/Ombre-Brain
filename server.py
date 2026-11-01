@@ -1988,8 +1988,10 @@ def _todo_line(item: dict, box: str) -> str:
     但我不一定用」）。**他有权知道哪一条不是自己写的** —— 不标的话，
     他开机会看见一条不知从哪冒出来的待办，那比看不见更糟。
     判据是条目上的 `by == "owner"`；**旧条目没有这个字段 = 他自己写的**，不用迁移。
+    2026-11-02 她在 App 里把她的和他的分开排、两组各有 +:她自己的事标「(她的待办)」(原「(她留的)」),
+    她在他那组写的 = 她留给他的(`for == "him"`),标「(她留给你的)」;他自己写的不标。
     """
-    mark = "  (她留的)" if item.get("by") == "owner" else ""
+    mark = ("  (她留给你的)" if item.get("for") == "him" else "  (她的待办)") if item.get("by") == "owner" else ""
     return f"  [{box}] #{item.get('id')}  {item.get('text', '')}{mark}"
 
 
@@ -2149,7 +2151,7 @@ async def api_todos(request):
 
 @mcp.custom_route("/api/todos/add", methods=["POST"])
 async def api_todos_add(request):
-    """她在面板上贴一张。body: {text}
+    """她在面板上贴一张。body: {text, for?}。`for: "him"` = 她在 App 他那组写的 = 她留给他的(排在他那组,2026-11-02)
 
     ⚠️ **她贴的条子会打上 `by: "owner"`**,晏开机时那条后面跟着「(她留的)」——
     这块便利贴是他的,他有权知道哪条不是自己写的。
@@ -2177,6 +2179,7 @@ async def api_todos_add(request):
                 "done": False,
                 "created": (datetime.utcnow() + timedelta(hours=8)).isoformat(timespec="seconds"),
                 "by": "owner",
+                **({"for": "him"} if body.get("for") == "him" else {}),
             })
             _save_todos_list(items)
         return JSONResponse({"ok": True, "id": nid, "items": items})
