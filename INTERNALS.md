@@ -223,6 +223,8 @@
 
 ## 0.5 `/health` 里那几个状态怎么读(2026-08-24 补,免得下个窗口白查一遍)
 
+**晏的认证告警(2026-11-19 待合并)**:本仓库 GitHub 体检改从 shim `/health` 的 `upstreamAuthErrorAt` 读取上游认证故障时刻,按原来的巡逻间隔规则报警。旧 shim 没这个字段时,仍从旧 `/debug` 读。新版的窗口占用、缓存和报错原文须从加锁的 `/debug` 读。先合并本仓库体检改动,再依 `rivers-system/kelivo-shim/MAINTENANCE.md`《搭顺风车的待办》部署三个服务。无需部署记忆库。
+
 - **`decay_engine: "stopped"` 是正常的,不是坏了。** 衰减引擎是**懒启动**的
   (`decay_engine.ensure_started()`,由 `breath` / `pulse` / `hold` / `awaken` 等工具调用触发),
   **新容器刚起来、晏还没调过任何记忆工具时,它就是 `stopped`**;他一开口就会变 `running`。

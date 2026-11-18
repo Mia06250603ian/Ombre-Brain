@@ -90,6 +90,8 @@ def run(debug_payload, prev_run_hours=None, auth_files=None, cpa_pw=None,
                 raise OSError("boom")
             return FakeResp(json.dumps(auth_files or {"files": []}))
         if url.endswith("/debug"):
+            if shim_extra is not None and "upstreamAuthErrorAt" in shim_extra:
+                raise urllib.error.HTTPError(url, 401, "Unauthorized", {}, None)
             return FakeResp(json.dumps(debug_payload))
         if "/mcp" in url:
             # mcp_locked(2026-10-03):假装 OB 的 /mcp 已上锁,钥匙是这个值;没带或带错 → 401
@@ -348,6 +350,16 @@ for name, payload, want_code, want_text in CASES:
         fail += 1
         print("     ---- 实际输出 ----")
         print("     " + "\n     ".join(out.strip().splitlines()[-14:]))
+
+for name, at, want_code, want_text in [
+    ("新 /health: 近期认证错仍报警", iso(0.5), 1, "上游认证没断"),
+    ("新 /health: 过期认证错不报警", iso(72), 0, "不是最近发生的"),
+    ("新 /health: 没有认证错, /debug 已上锁也不报警", None, 0, "无认证故障"),
+]:
+    code, out = run({}, shim_extra={"upstreamAuthErrorAt": at})
+    ok = code == want_code and want_text in out and "/debug 读不到" not in out
+    print(("  ✅ " if ok else "  ❌ ") + name)
+    fail += 0 if ok else 1
 
 # 演习开关:勾了必须变红(否则「验证告警能不能到手」这件事本身就是假的);
 # 不勾则必须一点影响都没有(否则定时那趟会天天演习)。
