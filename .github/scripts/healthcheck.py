@@ -533,8 +533,9 @@ check_backup()
 # ---- 2. 晏本体 ----
 print("\n[2] 晏 kelivo-shim")
 st, txt, err = fetch_retry(f"{SHIM}/health")
+shim_health = (jload(txt) or {}) if st is not None else {}
 if check("晏 · 服务活着", st is not None, err or ""):
-    d = jload(txt) or {}
+    d = shim_health
     check("晏 · 状态 ok", d.get("ok") is True, f"实际 ok={d.get('ok')!r}")
     notes.append(f"模型 {d.get('model')!r}")
     # 2026-09-12 起:上游走法。**只有新代码才有这个字段**,读不到就是 None
@@ -587,16 +588,27 @@ check_token_expiry()
 #   · 缓存桶要看晏最近一轮真实调用,他半天没说话时读数是陈的,据此报警必然误报;
 #   · lastApiError 会一直留着(今天看到的就是昨天的 529),不代表现在有问题。
 #   这两条正是 08-11 / 08-12 的指纹,值得每天摆出来看一眼,但**不该由机器下结论**。
-print("\n[4] 只记录不报警(给人看的)")
-st, txt, err = fetch_retry(f"{SHIM}/debug")
-if st is None:
-    print(f"  ⓘ /debug 读不到({err}),跳过 —— 这一项不报警")
+print("\n[4] 晏 · 上游认证")
+# 新 shim 在 /health 报最近一条上游错误是否是认证故障。完整诊断在已上锁的 /debug。
+# 在 shim 更新之前(或回滚以后),仍能从旧版公开 /debug 得到同样的告警信号。
+from_health = "upstreamAuthErrorAt" in shim_health
+debug = None
+if from_health:
+    at = shim_health["upstreamAuthErrorAt"]
+    auth_error = {"at": at, "kind": "上游认证失败"} if at else None
 else:
-    d = jload(txt) or {}
-    u = (d.get("lastUsage") or {}).get("cache_creation") or {}
-    h1, m5 = u.get("ephemeral_1h_input_tokens"), u.get("ephemeral_5m_input_tokens")
-    print(f"  ⓘ 缓存桶 1h={h1} / 5m={m5}"
-          + ("   ← ⚠️ 像 08-12 那次「缓存被抢走」的样子,人来判断" if h1 == 0 and (m5 or 0) > 0 else ""))
+    st, txt, err = fetch_retry(f"{SHIM}/debug")
+    if st is None:
+        print(f"  ⓘ /debug 读不到({err}),跳过 —— 这一项不报警")
+    else:
+        debug = jload(txt) or {}
+        auth_error = debug.get("lastApiError")
+        u = (debug.get("lastUsage") or {}).get("cache_creation") or {}
+        h1, m5 = u.get("ephemeral_1h_input_tokens"), u.get("ephemeral_5m_input_tokens")
+        print(f"  ⓘ 缓存桶 1h={h1} / 5m={m5}"
+              + ("   ← ⚠️ 像 08-12 那次「缓存被抢走」的样子,人来判断" if h1 == 0 and (m5 or 0) > 0 else ""))
+
+if from_health or debug is not None:
     # ---- 上游认证类报错:**这一条会叫**(2026-09-02 新增,原来整节都只打印) ----
     # 当初不敢叫它,理由写在本节开头:「lastApiError 会一直留着,今天看到的就是昨天的 529」。
     # **那个顾虑只对「陈旧」和「不该管的错」成立,不对「刚刚发生的认证错」成立。**
@@ -613,23 +625,25 @@ else:
     # 攒几天就知道 GitHub 到底给不给我们「每小时」,不用另做一套观测(也不用定时唤醒会话去数)。
     print(f"  ⓘ 体检节拍:{why_win} → 认证告警窗口取 {win:.1f} 小时")
     notes.append(f"巡逻间隔 {why_win},告警窗口 {win:.1f} 小时")
-    e = d.get("lastApiError")
+    e = auth_error
     if not e:
-        print("  ⓘ 最近一次上游报错:无")
+        print("  ⓘ 最近一次上游报错:无认证故障" if from_health else "  ⓘ 最近一次上游报错:无")
     else:
         at, kind = e.get("at", "?"), e.get("kind", "")
         hrs = age_hours(e.get("at"))
         ago = "时间读不出来" if hrs is None else f"{hrs:.1f} 小时前"
-        if looks_like_auth_error(e) and hrs is not None and hrs <= win:
+        is_auth = from_health or looks_like_auth_error(e)
+        if is_auth and hrs is not None and hrs <= win:
             check(f"晏 · 上游认证没断(最近 {win:.1f} 小时)", False,
                   f"{ago}报 {kind!r} —— 八成是订阅 OAuth 失效了,"
                   f"看 rivers-system/OPERATIONS.md《订阅 OAuth 过期》")
         else:
-            why = ("不是认证类" if not looks_like_auth_error(e)
+            why = ("不是认证类" if not is_auth
                    else "时间读不出来" if hrs is None else "不是最近发生的")
             print(f"  ⓘ 最近一次上游报错:{at} {kind}({ago};{why},只记不叫)")
-    print(f"  ⓘ 晏的窗口占用:{d.get('contextTokens')} ({d.get('contextPct')}%)")
-    g = d.get("ctxGuard") or {}
+if debug is not None:
+    print(f"  ⓘ 晏的窗口占用:{debug.get('contextTokens')} ({debug.get('contextPct')}%)")
+    g = debug.get("ctxGuard") or {}
     print(f"  ⓘ 上下文守卫:on={g.get('on')} trusted={g.get('trusted')} 压缩过 {g.get('compactions')} 次")
 
 print("\n" + "=" * 60)
